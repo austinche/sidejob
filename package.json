@@ -1,0 +1,7 @@
+{
+  "name": "sidejob",
+  "version": "0.0.0",
+  "dependencies": {
+    "fbp": "~1.1.0"
+  }
+}

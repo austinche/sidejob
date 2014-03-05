@@ -1,0 +1,7 @@
+#!/usr/bin/env ruby
+
+require 'bundler/setup'
+require 'sidejob/server'
+
+require 'pry'
+Pry.start
