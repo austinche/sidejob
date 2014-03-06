@@ -35,9 +35,16 @@ module SideJob
     # Sets a single data in the job's metadata
     # @param field [String,Symbol] Field to set
     # @param value [String]
-    # @return [String] Value of the given data field
     def set(field, value)
       mset({field => value})
+    end
+
+    # Sets a single JSON encoded data in the job's metadata
+    # @param field [String,Symbol] Field to get
+    # @param value [Object] JSON-serializable object
+    def set_json(field, value)
+      return unless value
+      set(field, JSON.generate(value))
     end
 
     # Loads data from the job's metadata
@@ -56,9 +63,21 @@ module SideJob
 
     # Gets a single data from the job's metadata
     # @param field [String,Symbol] Field to get
-    # @return [String] Value of the given data field
+    # @return [String, nil] Value of the given data field or nil
     def get(field)
       mget(field)[field]
+    end
+
+    # Gets a single JSON encoded data from the job's metadata
+    # @param field [String,Symbol] Field to get
+    # @return [Object, nil] JSON parsed value of the given data field
+    def get_json(field)
+      data = get(field)
+      if data
+        JSON.parse(data)
+      else
+        nil
+      end
     end
 
     # Retrieve the job's status
@@ -93,6 +112,12 @@ module SideJob
       @parent = get(:parent)
       @parent = SideJob::Job.new(@parent) if @parent
       return @parent
+    end
+
+    # Notifies our parent if we have one that something has been updated
+    def notify
+      parent.restart if parent
+      self
     end
 
     # Returns the job tree starting from this job
@@ -168,6 +193,24 @@ module SideJob
     # @return [Array<SideJob::Port>] Output ports
     def outports
       SideJob::Port.all(self, :out)
+    end
+
+    # Helpers for storing progress
+    # @param completed [Fixnum] Completed units of work
+    # @param total [Fixnum] Total units of work to be done
+    # @param data [Hash] Extra data, e.g. a message, to be associated with progress
+    def at(completed, total, data={})
+      set_json :progress, data.merge({ completed: completed, total: total })
+      notify
+    end
+
+    # Returns progress hash
+    # @return [Hash, nil] keys: completed, total, percent, and any extra data
+    def progress
+      data = get_json(:progress)
+      return nil if ! data
+      data['percent'] = 100.0 * data['completed'] / data['total'] rescue nil
+      data
     end
   end
 

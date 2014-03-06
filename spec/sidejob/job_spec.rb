@@ -103,6 +103,18 @@ describe SideJob::Job do
     end
   end
 
+  describe '#get_json, #set_json' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker', [])
+    end
+
+    it 'can be used to store objects as json' do
+      data = {'abc' => 123, 'def' => [1, 2]}
+      @job.set_json(:field1, data)
+      expect(@job.get_json(:field1)).to eq(data)
+    end
+  end
+
   describe '#status, #status=' do
     it 'store status as symbol and loads as symbol' do
       job = SideJob.queue('testq', 'TestWorker', [])
@@ -138,7 +150,16 @@ describe SideJob::Job do
     end
   end
 
-  describe '.restart' do
+  describe '#notify' do
+    it 'restarts parent' do
+      job1 = SideJob.queue('q', 'TestWorker')
+      job2 = job1.queue('q', 'TestWorker')
+      expect(job2.parent).to receive(:restart)
+      job2.notify
+    end
+  end
+
+  describe '#restart' do
     before do
       @job = SideJob.queue('testq', 'TestWorker', [1])
     end
@@ -162,7 +183,7 @@ describe SideJob::Job do
     end
   end
 
-  describe '.delete' do
+  describe '#delete' do
     before do
       @job = SideJob.queue('testq', 'TestWorker', [])
     end
@@ -192,21 +213,21 @@ describe SideJob::Job do
     end
   end
 
-  describe '.input' do
+  describe '#input' do
     it 'returns an input port' do
       job = SideJob::Job.new('job')
       expect(job.input('port')).to eq(SideJob::Port.new(job, :in, 'port'))
     end
   end
 
-  describe '.output' do
+  describe '#output' do
     it 'returns an output port' do
       job = SideJob::Job.new('job')
       expect(job.output('port')).to eq(SideJob::Port.new(job, :out, 'port'))
     end
   end
 
-  describe '.inports' do
+  describe '#inports' do
     it 'returns input ports that have been pushed to' do
       job = SideJob::Job.new('job')
       expect(job.inports.size).to be(0)
@@ -220,7 +241,7 @@ describe SideJob::Job do
     end
   end
 
-  describe '.outports' do
+  describe '#outports' do
     it 'returns output ports that have been pushed to' do
       job = SideJob::Job.new('job')
       expect(job.outports.size).to be(0)
@@ -231,6 +252,21 @@ describe SideJob::Job do
       expect(job.outports.size).to be(1)
       job.output('port2').push 'abc'
       expect(job.outports.size).to be(2)
+    end
+  end
+
+  describe '#at, #progress' do
+    it 'notifies parent' do
+      job = SideJob::Job.new('job')
+      expect(job).to receive(:notify)
+      job.at(23, 46)
+    end
+
+    it 'can store extra attributes' do
+      job = SideJob::Job.new('job')
+      expect(job.progress).to be_nil
+      job.at(23, 46, {message: 'hello'})
+      expect(job.progress).to eq({"message"=>"hello", "completed"=>23, "total"=>46, "percent"=>50})
     end
   end
 end

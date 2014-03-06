@@ -16,11 +16,6 @@ module SideJob
       base.extend(ClassMethods)
     end
 
-    # Helper to store current progress
-    def at(num, total)
-      mset({ num: num, total: total })
-    end
-
     # Suspend the current worker
     # Will restart upon manual call to SideJob.restart or when a child job changes status
     # @raise [SideJob::Worker::Suspended]

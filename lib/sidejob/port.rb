@@ -38,6 +38,7 @@ module SideJob
         conn.lpush redis_key, data
       end
       remember
+      self
     end
 
     # Pop data from a port
@@ -80,6 +81,15 @@ module SideJob
       SideJob.redis do |conn|
         conn.ltrim redis_key, 0, size-1
       end
+      self
+    end
+
+    # Empties the port
+    def clear
+      SideJob.redis do |conn|
+        conn.del redis_key
+      end
+      self
     end
 
     # Returns the redis key used for storing inputs or outputs from a port name

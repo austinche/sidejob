@@ -3,18 +3,16 @@
 
 require 'execjs'
 module SideJob
+  # Input ports
+  #   Ports specified via INPORT in graph
+  # Output ports
+  #   Ports specified via OUTPORT in graph
   class Graph
     include SideJob::Worker
 
-    # Input and output ports must be explicitly exported in the graph via INPORT and OUTPORT
     # @param graph [String] graph in the flow based programming (FBP) language
     def perform(graph_fbp, *args)
-      graph = get(:graph)
-      if graph
-        graph = JSON.parse(graph)
-      else
-        graph = fbp_compile(graph_fbp)
-      end
+      graph = get_json(:graph) || fbp_compile(graph_fbp)
 
       # we store extra info in the graph hash beyond what fbp uses
       jobs = {}
@@ -97,7 +95,7 @@ module SideJob
         end
       end
 
-      set(:graph, JSON.generate(graph))
+      set_json :graph, graph
 
       to_restart.each do |job|
         job.restart

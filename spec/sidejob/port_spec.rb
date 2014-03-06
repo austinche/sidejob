@@ -96,6 +96,15 @@ describe SideJob::Port do
     end
   end
 
+  describe '#clear' do
+    it 'empties all data on the port' do
+      @port.push('abc', 'def', 'ghi')
+      expect(@port.size).to be(3)
+      @port.clear
+      expect(@port.size).to be(0)
+    end
+  end
+
   describe '#redis_key' do
     it 'returns key with valid name' do
       expect(@port.redis_key).to eq('job:in:port1')
