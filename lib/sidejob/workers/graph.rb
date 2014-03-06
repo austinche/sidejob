@@ -19,15 +19,19 @@ module SideJob
       # we store extra info in the graph hash beyond what fbp uses
       jobs = {}
       graph['processes'].each_pair do |name, info|
-        if ! info['jid']
+        if info['jid']
+          jobs[name] = SideJob.find(info['jid'])
+        else
           # start a new job
           # component name must be of form queue/ClassName
           # currently there's no easy way to pass job arguments via the fbp language
           queue, klass = info['component'].split('/', 2)
           raise "Unable to parse #{info['component']}: Must be of form queue/ClassName" if ! queue || ! klass
-          info['jid'] = queue(queue, klass)
+          job = queue(queue, klass)
+          job.set(:name, name)
+          info['jid'] = job.jid
+          jobs[name] = job
         end
-        jobs[name] = SideJob::Job.new(info['jid'])
       end
 
       to_restart = Set.new
@@ -63,8 +67,7 @@ module SideJob
             to_restart << targets[0].job
           end
         else
-          # we have to copy the output to multiple ports
-          # make this operation atomic with a transaction
+          # copy the output to multiple ports
           data = src.pop
           if data
             targets.each do |target|

@@ -64,6 +64,38 @@ describe SideJob::Port do
     end
   end
 
+  describe '#peek' do
+    it 'returns data without changing port' do
+      @port.push('abc', 123)
+      expect(@port.size).to be(2)
+      expect(@port.peek).to eq('abc')
+      expect(@port.size).to be(2)
+      expect(@port.peek).to eq('abc')
+    end
+
+    it 'returns nil when port is empty' do
+      expect(@port.size).to be(0)
+      expect(@port.peek).to be_nil
+    end
+  end
+
+  describe '#trim' do
+    it 'does nothing if given size is bigger than data on port' do
+      @port.push('abc', 'def', 'ghi')
+      expect(@port.size).to be(3)
+      @port.trim(3)
+      expect(@port.size).to be(3)
+    end
+
+    it 'removes the oldest data items' do
+      @port.push('abc', 'def', 'ghi')
+      expect(@port.size).to be(3)
+      @port.trim(2)
+      expect(@port.size).to be(2)
+      expect(@port.peek).to eq('def')
+    end
+  end
+
   describe '#redis_key' do
     it 'returns key with valid name' do
       expect(@port.redis_key).to eq('job:in:port1')

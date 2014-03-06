@@ -3,9 +3,20 @@ require 'sidejob/port'
 require 'sidejob/job'
 require 'sidejob/worker'
 require 'sidejob/client_middleware'
+require 'sidejob/server_middleware'
 
 Sidekiq.configure_client do |config|
   config.redis = { namespace: 'sidejob' }
+  config.client_middleware do |chain|
+    chain.add SideJob::ClientMiddleware
+  end
+end
+
+Sidekiq.configure_server do |config|
+  config.redis = { namespace: 'sidejob' }
+  config.server_middleware do |chain|
+    chain.add SideJob::ServerMiddleware
+  end
   config.client_middleware do |chain|
     chain.add SideJob::ClientMiddleware
   end
@@ -35,5 +46,17 @@ module SideJob
       end
     end
     job
+  end
+
+  # Finds a job by id
+  # @param job_id [String] Job Id
+  # @return [SideJob::Job, nil] Job object or nil if it doesn't exist
+  def self.find(job_id)
+    exists = redis { |conn| conn.exists job_id }
+    if exists
+      SideJob::Job.new(job_id)
+    else
+      nil
+    end
   end
 end

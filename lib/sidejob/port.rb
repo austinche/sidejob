@@ -66,6 +66,22 @@ module SideJob
       data
     end
 
+    # Peek at the next data to be popped from a port
+    # @return [String, nil] Data from port or nil if no data exists
+    def peek
+      SideJob.redis do |conn|
+        conn.lrange(redis_key, -1, -1)[0]
+      end
+    end
+
+    # Removes (pops) the oldest items such that the size is at most the given size
+    # @param size [Fixnum] Maximum data to leave on the port
+    def trim(size)
+      SideJob.redis do |conn|
+        conn.ltrim redis_key, 0, size-1
+      end
+    end
+
     # Returns the redis key used for storing inputs or outputs from a port name
     # @return [String] Redis key
     def redis_key

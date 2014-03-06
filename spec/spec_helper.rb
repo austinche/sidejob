@@ -1,5 +1,5 @@
 require 'bundler/setup'
-require 'sidejob/server'
+require 'sidejob'
 
 require 'rspec/core'
 require 'sidejob/testing'
@@ -12,6 +12,7 @@ Sidekiq.configure_server do |config|
   config.redis = redis
 end
 
+require 'sidejob/workers/graph'
 Dir[File.dirname(__FILE__) + '/jobs/*.rb'].each {|file| require file }
 
 RSpec.configure do |config|

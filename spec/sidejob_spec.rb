@@ -26,4 +26,15 @@ describe SideJob do
       expect(child.parent).to eq(parent)
     end
   end
+
+  describe '.find' do
+    it 'returns a job object by id' do
+      job = SideJob.queue('testq', 'TestWorker', [1, 2, 3])
+      expect(SideJob.find(job.jid)).to eq(job)
+    end
+
+    it 'returns nil if the job does not exist' do
+      expect(SideJob.find('job')).to be_nil
+    end
+  end
 end

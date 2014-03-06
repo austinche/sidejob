@@ -25,7 +25,7 @@ describe SideJob::Graph do
     job.input('Y').push 4
     job.input('Z').push 5
     job.input('START').push 1
-    Sidekiq::Worker.drain_all
+    Timeout::timeout(5) { Sidekiq::Worker.drain_all }
     expect(job.status).to be(:completed)
     expect(job.output('OUT').pop).to eq('12')
   end

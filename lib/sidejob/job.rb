@@ -95,6 +95,14 @@ module SideJob
       return @parent
     end
 
+    # Returns the job tree starting from this job
+    # @return [Array<Hash>]
+    def tree
+      children.map do |child|
+        {job: child, children: child.tree }
+      end
+    end
+
     # Restart the job
     # If the job status is not running (:completed, :suspended, :failed), queues it immediately
     # If the job status is :queued or :restarting, does nothing
@@ -111,6 +119,7 @@ module SideJob
             Sidekiq::Client.push(JSON.load(original_message))
           end
       end
+      self
     end
 
     # Deletes and unschedules the job and all children jobs (recursively)

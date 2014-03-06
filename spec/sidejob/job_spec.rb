@@ -127,6 +127,17 @@ describe SideJob::Job do
     end
   end
 
+  describe '#tree' do
+    it 'recursively gets job tree' do
+      job1 = SideJob.queue('q', 'TestWorker')
+      job2 = job1.queue('q', 'TestWorker')
+      job3 = job1.queue('q', 'TestWorker')
+      job4 = job2.queue('q', 'TestWorker')
+      job5 = job4.queue('q', 'TestWorker')
+      expect(job1.tree).to match_array([{job: job2, children: [{job: job4, children: [{job: job5, children: []}]}]}, {job: job3, children: []}])
+    end
+  end
+
   describe '.restart' do
     before do
       @job = SideJob.queue('testq', 'TestWorker', [1])
