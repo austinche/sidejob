@@ -1,7 +1,8 @@
 #!/usr/bin/env ruby
 
 require 'bundler/setup'
-require 'sidejob/server'
+require 'sidejob'
+require 'sidejob/workers'
 
 require 'pry'
 Pry.start

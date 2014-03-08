@@ -1,4 +1,4 @@
 require 'bundler/setup'
 require 'sidekiq/web'
-require 'sidejob/server'
+require 'sidejob'
 run Sidekiq::Web
