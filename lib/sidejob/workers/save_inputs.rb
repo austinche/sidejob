@@ -1,14 +1,15 @@
 module SideJob
-  # Input ports
-  #   TRIGGER: Sends all saved inputs to the same named output port in the received order
+  # Options:
+  # Input ports:
+  #   trigger: Sends all saved inputs to the same named output port in the received order
   #   All other ports: Data is read and saved
-  # Output ports
+  # Output ports:
   #   Same name as input ports
   class SaveInputs
     include SideJob::Worker
-    def perform(*args)
+    def perform(options={})
       inputs = get_json(:inputs) || {} # port name -> Array<String>
-      trigger = input('TRIGGER')
+      trigger = input(:trigger)
       inports.each do |inport|
         next if inport == trigger
         inputs[inport.name] ||= []

@@ -17,9 +17,9 @@ module SideJob
 
     # Queues a child job
     # @see SideJob.queue
-    def queue(queue, klass, args=[])
+    def queue(queue, klass, options={})
       @children = nil
-      SideJob.queue(queue, klass, args, self)
+      SideJob.queue(queue, klass, options, self)
     end
 
     # Sets multiple values

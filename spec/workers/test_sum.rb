@@ -1,11 +1,11 @@
 class TestSum
   include SideJob::Worker
-  def perform(*args)
-    suspend unless input('READY').pop
+  def perform(options={})
+    suspend unless input(:ready).pop
     sum = 0
-    while data = input('IN').pop
+    while data = input(:in).pop
       sum += data.to_i
     end
-    output('SUM').push sum.to_s
+    output(:sum).push sum.to_s
   end
 end

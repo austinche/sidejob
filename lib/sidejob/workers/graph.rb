@@ -1,15 +1,16 @@
 module SideJob
   # Executes a flow graph written in the language parsed by SideJob::Parser
-  # Input ports
+  # Options:
+  #   graph: flow graph
+  # Input ports:
   #   Ports specified in graph
   # Output ports
   #   Ports specified in graph
   class Graph
     include SideJob::Worker
 
-    # @param graph [String] flow graph
-    def perform(graph_str, *args)
-      graph = get_json(:graph) || SideJob::Parser.parse(graph_str)
+    def perform(options)
+      graph = get_json(:graph) || SideJob::Parser.parse(options['graph'])
 
       @jobs = {} # cache SideJob::Job objects by job name
       @to_restart = Set.new
@@ -20,7 +21,7 @@ module SideJob
           @jobs[name] = SideJob.find(info['jid'])
         else
           # start a new job
-          job = queue(info['queue'], info['class'], info['args'] ? [info['args']] : [])
+          job = queue(info['queue'], info['class'], info['args'] ? info['args'] : {})
           info['jid'] = job.jid
           set_json :graph, graph
 

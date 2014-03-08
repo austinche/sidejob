@@ -1,20 +1,17 @@
 module SideJob
-  # Input ports
-  #   FORMAT: Format string in the format of Ruby's Kernel#sprintf with named references
-  #   Any other port is used for substitution
+  # Options:
+  #   format: Format string in the format of Ruby's Kernel#sprintf with named references
+  # Input ports:
+  #   The port names should match the reference name in the format string
   #   Only the last data received on any port is used
-  # Output ports
-  #   OUT: Outputs the formatted string
+  # Output ports:
+  #   out: Outputs the formatted string
   class Sprintf
     include SideJob::Worker
-    def perform(*args)
+    def perform(options={})
       references = get_json(:references) || {}
 
-      format_port = input('FORMAT')
-      format = format_port.pop
-      format ||= get(:format)
       inports.each do |inport|
-        next if inport == format_port
         inport.trim(1) # get rid of everything but the last data
         data = inport.pop
         if data
@@ -22,19 +19,16 @@ module SideJob
         end
       end
 
-      set :format, format
       set_json :references, references
 
-      if format
-        begin
-          # symbolize keys for this to work
-          references = Hash[references.map{ |k, v| [k.to_sym, v] }]
-          formatted = (format % references)
-          output('OUT').push formatted
-        rescue KeyError
-          # assume missing input if we get a KeyError
-          suspend
-        end
+      begin
+        # symbolize keys for this to work
+        references = Hash[references.map{ |k, v| [k.to_sym, v] }]
+        formatted = (options['format'] % references)
+        output(:out).push formatted
+      rescue KeyError
+        # assume missing input if we get a KeyError
+        suspend
       end
     end
   end
