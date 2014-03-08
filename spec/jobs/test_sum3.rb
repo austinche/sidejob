@@ -1,14 +1,19 @@
 class TestSum3Worker < SideJob::Graph
   def graph
     "
-INPORT=Sum1.READY:START
-INPORT=Sum1.IN:X
-INPORT=Sum1.IN:Y
-INPORT=Sum2.IN:Z
-OUTPORT=Sum2.SUM:OUT
-Sum1(test/TestSum) SUM -> IN Sum2(test/TestSum)
-Sum1 SUM -> IN Wait(test/TestWait)
-'1' -> COUNT Wait READY -> READY Sum2
+[Sum1] = test TestSum
+[Sum2] = test TestSum
+[Wait] = test TestWait total:1
+
+@:START -> READY:[Sum1]
+@:X -> IN:[Sum1]
+@:Y -> IN:[Sum1]
+[Sum1]:SUM -> IN:[Sum2]
+@:Z -> IN:[Sum2]
+
+[Sum2]:SUM -> OUT:@
+[Sum1]:SUM -> IN:[Wait]
+[Wait]:READY -> READY:[Sum2]
 "
   end
 end

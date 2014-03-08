@@ -8,11 +8,11 @@ Gem::Specification.new do |s|
 
   s.files = Dir['**/*']
 
+  s.executables = ['sidejob-graph-parse']
   s.require_paths = ['lib']
 
   s.add_dependency 'sidekiq'
-
-  s.add_development_dependency 'execjs' # fbp parser
+  s.add_dependency 'parslet' # flow graph parser
 
   # sidekiq/web
   s.add_development_dependency 'puma'

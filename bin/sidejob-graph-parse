@@ -1,0 +1,7 @@
+#!/usr/bin/env ruby
+
+require 'bundler/setup'
+require 'sidejob'
+
+graph = STDIN.read
+puts JSON.generate(SideJob::Parser.parse(graph))

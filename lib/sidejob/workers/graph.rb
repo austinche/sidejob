@@ -1,109 +1,65 @@
-# Execute flow graphs written in the the flow based programming (FBP) language used by noflo
-# https://github.com/noflo/fbp
-
-require 'execjs'
 module SideJob
+  # Executes a flow graph written in the language parsed by SideJob::Parser
   # Input ports
-  #   Ports specified via INPORT in graph
+  #   Ports specified in graph
   # Output ports
-  #   Ports specified via OUTPORT in graph
+  #   Ports specified in graph
   class Graph
     include SideJob::Worker
 
-    # @param graph [String] graph in the flow based programming (FBP) language
-    def perform(graph_fbp, *args)
-      graph = get_json(:graph) || fbp_compile(graph_fbp)
+    # @param graph [String] flow graph
+    def perform(graph_str, *args)
+      graph = get_json(:graph) || SideJob::Parser.parse(graph_str)
 
-      # we store extra info in the graph hash beyond what fbp uses
-      jobs = {}
-      graph['processes'].each_pair do |name, info|
+      @jobs = {} # cache SideJob::Job objects by job name
+      @to_restart = Set.new
+
+      # make sure all jobs are started
+      graph['jobs'].each_pair do |name, info|
         if info['jid']
-          jobs[name] = SideJob.find(info['jid'])
+          @jobs[name] = SideJob.find(info['jid'])
         else
           # start a new job
-          # component name must be of form queue/ClassName
-          # currently there's no easy way to pass job arguments via the fbp language
-          queue, klass = info['component'].split('/', 2)
-          raise "Unable to parse #{info['component']}: Must be of form queue/ClassName" if ! queue || ! klass
-          job = queue(queue, klass)
-          job.set(:name, name)
+          job = queue(info['queue'], info['class'], info['args'] ? [info['args']] : [])
           info['jid'] = job.jid
-          jobs[name] = job
+          set_json :graph, graph
+
+          job.set(:name, name)
+          @jobs[name] = job
         end
       end
 
-      to_restart = Set.new
+      # now handle all connections
+      graph['jobs'].each_pair do |name, info|
+        next unless info['connections']
 
-      connections = {}
-      graph['connections'].each do |connection|
-        if connection['data']
-          # initial fixed data to be sent only once
-          if ! connection['done']
-            target = connection['tgt']
-            job = jobs[target['process']]
-            job.input(target['port']).push connection['data']
-            connection['done'] = true
-          end
-        else
-          src = connection['src']
-          src_job = jobs[src['process']]
-          src_port = src_job.output(src['port'])
-
-          connections[src_port] ||= []
-
-          tgt = connection['tgt']
-          tgt_job = jobs[tgt['process']]
-          tgt_port = tgt_job.input(tgt['port'])
-
-          connections[src_port] << tgt_port
-        end
-      end
-
-      connections.each_pair do |src, targets|
-        if targets.length == 1
-          if src.pop_all_to(targets[0]).length > 0
-            to_restart << targets[0].job
-          end
-        else
-          # copy the output to multiple ports
-          data = src.pop
-          if data
-            targets.each do |target|
-              target.push data
-              to_restart << target.job
-            end
-          end
+        job = @jobs[name]
+        info['connections'].each_pair do |outport, targets|
+          connect_ports(job.output(outport), targets)
         end
       end
 
       if graph['inports']
-        graph['inports'].each_pair do |port, to|
-          target_job = jobs[to['process']]
-          target_port = target_job.input(to['port'])
-          data = input(port).pop_all_to(target_port)
-          if data.length > 0
-            to_restart << target_job
-          end
+        graph['inports'].each_pair do |port, targets|
+          connect_ports(input(port), targets)
         end
       end
 
       if graph['outports']
         graph['outports'].each_pair do |port, from|
-          src_job = jobs[from['process']]
-          src_port = src_job.output(from['port'])
-          src_port.pop_all_to(output(port))
+          from.each do |source|
+            get_port(:out, source).pop_all_to(output(port))
+          end
         end
       end
 
-      set_json :graph, graph
-
-      to_restart.each do |job|
+      @to_restart.each do |job|
         job.restart
       end
 
       # we complete if all jobs are completed
       # if any job is failed, we fail also
-      jobs.each_pair do |name, job|
+      @jobs.each_pair do |name, job|
         case job.status
           when :completed
           when :failed
@@ -114,10 +70,41 @@ module SideJob
       end
     end
 
-    def fbp_compile(graph)
-      compiler = ExecJS.compile("module = {};" + File.read(File.expand_path('../../../../node_modules/fbp/lib/fbp.js', __FILE__)))
-      return compiler.call("module.exports.parse", graph)
+    # @param source SideJob::Port
+    # @param targets [Array<Hash>] hash of format used by #get_port
+    def connect_ports(source, targets)
+      return if targets.size == 0
+
+      if targets.size == 1
+        # special case when there's only single input to send data to
+        port = get_port(:in, targets[0])
+        @to_restart << port.job if source.pop_all_to(port).length > 0
+      else
+        # copy the output to multiple ports
+        loop do
+          data = source.pop
+          break unless data
+          targets.each do |target|
+            port = get_port(:in, target)
+            port.push data
+            @to_restart << port.job
+          end
+        end
+      end
     end
 
+    # @param type [:in, :out]
+    # @param data [Hash] {'job' => '...', 'port' => '...'}
+    # @return [SideJob::Port]
+    def get_port(type, data)
+      job = @jobs[data['job']]
+      if type == :in
+        job.input(data['port'])
+      elsif type == :out
+        job.output(data['port'])
+      else
+        nil
+      end
+    end
   end
 end

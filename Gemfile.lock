@@ -2,19 +2,22 @@ PATH
   remote: .
   specs:
     sidejob (0.0.2)
+      parslet
       sidekiq
 
 GEM
   remote: https://rubygems.org/
   specs:
+    blankslate (2.1.2.4)
     celluloid (0.15.2)
       timers (~> 1.1.0)
     coderay (1.1.0)
     connection_pool (1.2.0)
     diff-lcs (1.2.5)
-    execjs (2.0.2)
     json (1.8.1)
     method_source (0.8.2)
+    parslet (1.5.0)
+      blankslate (~> 2.0)
     pry (0.9.12.6)
       coderay (~> 1.0)
       method_source (~> 0.8)
@@ -53,7 +56,6 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
-  execjs
   pry
   puma
   rspec
