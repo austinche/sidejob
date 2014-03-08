@@ -5,17 +5,16 @@ module SideJob
 
     # @param job [SideJob::Job, SideJob::Worker]
     # @param type [:in, :out] Specifies whether it is input or output port
-    # @param name [String] Port names are lowercased and must match [a-z0-9_]+
+    # @param name [String] Port names should match [a-zA-Z0-9_]+
     def initialize(job, type, name)
       @job = job
       @type = type
-      # The noflo fbp parser lowercases all port names so we do the same
-      @name = name.downcase
-      raise "Invalid port name: #{@name}" if @name !~ /^[a-z0-9_]+$/
+      @name = name
+      raise "Invalid port name: #{@name}" if @name !~ /^[a-zA-Z0-9_]+$/
     end
 
     def ==(other)
-      other.is_a?(Port) && job == other.job && type == other.type && name == other.name
+      other.is_a?(Port) && job == other.job && type == other.type && name.to_s == other.name.to_s
     end
 
     def eql?(other)

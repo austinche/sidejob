@@ -3,7 +3,7 @@ require 'spec_helper'
 describe SideJob::Port do
   before do
     @job = SideJob::Job.new('job')
-    @port = SideJob::Port.new(@job, :in, 'port1')
+    @port = SideJob::Port.new(@job, :in, :port1)
   end
 
   describe '#initialize' do
@@ -18,6 +18,7 @@ describe SideJob::Port do
 
   describe '#==, #eql?' do
     it 'two ports with the same job, type, and name are eq' do
+      expect(SideJob::Port.new(@job, :in, :port1)).to eq(@port)
       expect(SideJob::Port.new(@job, :in, 'port1')).to eq(@port)
       expect(SideJob::Port.new(@job, :in, 'port1')).to eql(@port)
     end
@@ -27,9 +28,9 @@ describe SideJob::Port do
       expect(SideJob::Port.new(@job, :in, 'port2')).not_to eql(@port)
     end
 
-    it 'port names are case insensitive' do
-      expect(SideJob::Port.new(@job, :in, 'PORT1')).to eq(@port)
-      expect(SideJob::Port.new(@job, :in, 'PORT1')).to eql(@port)
+    it 'port names are case sensitive' do
+      expect(SideJob::Port.new(@job, :in, 'PORT1')).not_to eq(@port)
+      expect(SideJob::Port.new(@job, :in, 'PORT1')).not_to eql(@port)
     end
   end
 
@@ -108,10 +109,6 @@ describe SideJob::Port do
   describe '#redis_key' do
     it 'returns key with valid name' do
       expect(@port.redis_key).to eq('job:in:port1')
-    end
-
-    it 'downcases the port name' do
-      expect(SideJob::Port.new(@job, :in, "PORT2").redis_key).to eq('job:in:port2')
     end
   end
 
