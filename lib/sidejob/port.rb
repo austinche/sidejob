@@ -33,6 +33,8 @@ module SideJob
     # Records the port so that it can be retrieved by Port.all
     # @param data [Array<String>] List of data to push on to port
     def push(*data)
+      Sidekiq::Logging.logger.debug "-> #{to_s} #{data.inspect}"
+
       SideJob.redis do |conn|
         conn.lpush redis_key, data
       end
@@ -43,9 +45,15 @@ module SideJob
     # Pop data from a port
     # @return [String, nil] First data from port or nil if no data exists
     def pop
-      SideJob.redis do |conn|
+      data = SideJob.redis do |conn|
         conn.rpop redis_key
       end
+
+      if data
+        Sidekiq::Logging.logger.debug "#{to_s} -> #{data.inspect}"
+      end
+
+      data
     end
 
     # Pops all data from this port and pushes all data to another port
@@ -61,7 +69,10 @@ module SideJob
           data << x
           pushed = true
         end
-        dst_port.remember if pushed
+        if pushed
+          dst_port.remember
+          Sidekiq::Logging.logger.debug "#{to_s} -> #{dst_port.to_s} #{data.inspect}"
+        end
       end
       data
     end

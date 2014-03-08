@@ -209,8 +209,35 @@ module SideJob
     def progress
       data = get_json(:progress)
       return nil if ! data
-      data['percent'] = 100.0 * data['completed'] / data['total'] rescue nil
+      if data['total'] && data['total'] > 0
+        data['percent'] = 100.0 * data['completed'] / data['total'] rescue nil
+      end
       data
+    end
+
+    # Returns the total number of data packets available on all input and output ports
+    # @return [Hash]
+    def port_stats
+      inputs = {}
+      intotal = 0
+      inports.each do |port|
+        s = port.size
+        if s > 0
+          inputs[port.name] = s
+          intotal += s
+        end
+      end
+
+      outputs = {}
+      outtotal = 0
+      outports.each do |port|
+        s = port.size
+        if s > 0
+          outputs[port.name] = s
+          outtotal += s
+        end
+      end
+      {input: {total: intotal, ports: inputs}, output: {total: outtotal, ports: outputs}}
     end
   end
 

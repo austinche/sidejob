@@ -9,6 +9,7 @@ module SideJob
     rescue => e
       new_status = :failed
       worker.set :error, e.message
+      worker.set_json :backtrace, e.backtrace
     ensure
       restart = (worker.status == :restarting)
       worker.status = new_status
