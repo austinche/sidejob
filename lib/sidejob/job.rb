@@ -94,8 +94,7 @@ module SideJob
       set(:status, status)
 
       if status.to_sym != :queued
-        # see if a parent job is specified
-        parent.restart if parent
+        notify
       end
     end
 
@@ -115,8 +114,12 @@ module SideJob
     end
 
     # Notifies our parent if we have one that something has been updated
+    # Also sends redis publish message
     def notify
       parent.restart if parent
+      SideJob.redis do |conn|
+        conn.publish @jid, 'notify'
+      end
       self
     end
 

@@ -157,6 +157,12 @@ describe SideJob::Job do
       expect(job2.parent).to receive(:restart)
       job2.notify
     end
+
+    it 'sends redis pubsub message' do
+      job1 = SideJob.queue('q', 'TestWorker')
+      expect(Sidekiq.redis{|conn| conn}).to receive(:publish).once
+      job1.notify
+    end
   end
 
   describe '#restart' do
