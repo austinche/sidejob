@@ -15,6 +15,8 @@ module SideJob
       @jobs = {} # cache SideJob::Job objects by job name
       @to_restart = Set.new
 
+      connections = {} # Port -> Array of targets (either Port object or Hash)
+
       # make sure all jobs are started
       graph['jobs'].each_pair do |name, info|
         if info['jid']
@@ -28,17 +30,29 @@ module SideJob
           job.set(:name, name)
           @jobs[name] = job
         end
-      end
 
-      # now handle all connections
-      graph['jobs'].each_pair do |name, info|
-        next unless info['connections']
-
-        job = @jobs[name]
-        info['connections'].each_pair do |outport, targets|
-          connect_ports(job.output(outport), targets)
+        if info['connections']
+          job = @jobs[name]
+          info['connections'].each_pair do |outport, targets|
+            connections[job.output(outport)] ||= []
+            connections[job.output(outport)].concat targets
+          end
         end
       end
+
+      # outport connections have to be merged with job connections in case
+      # some data needs to go to both another job and a graph outport
+      if graph['outports']
+        graph['outports'].each_pair do |port, from|
+          from.each do |source|
+            src = get_port(:out, source)
+            connections[src] ||= []
+            connections[src] << output(port)
+          end
+        end
+      end
+
+      # process all connections
 
       if graph['inports']
         graph['inports'].each_pair do |port, targets|
@@ -46,12 +60,8 @@ module SideJob
         end
       end
 
-      if graph['outports']
-        graph['outports'].each_pair do |port, from|
-          from.each do |source|
-            get_port(:out, source).pop_all_to(output(port))
-          end
-        end
+      connections.each_pair do |port, targets|
+        connect_ports(port, targets)
       end
 
       @to_restart.each do |job|
@@ -72,10 +82,9 @@ module SideJob
     end
 
     # @param source SideJob::Port
-    # @param targets [Array<Hash>] hash of format used by #get_port
+    # @param targets [Array<Hash, Port>] hash of format used by #get_port
     def connect_ports(source, targets)
       return if targets.size == 0
-
       if targets.size == 1
         # special case when there's only single input to send data to
         port = get_port(:in, targets[0])
@@ -95,9 +104,10 @@ module SideJob
     end
 
     # @param type [:in, :out]
-    # @param data [Hash] {'job' => '...', 'port' => '...'}
+    # @param data [Hash, Port] {'job' => '...', 'port' => '...'}. If Port given, just returns it
     # @return [SideJob::Port]
     def get_port(type, data)
+      return data if data.is_a?(SideJob::Port)
       job = @jobs[data['job']]
       if type == :in
         job.input(data['port'])
