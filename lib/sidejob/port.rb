@@ -42,6 +42,12 @@ module SideJob
       self
     end
 
+    # JSON encodes all data before pushing
+    # @see #push
+    def push_json(*data)
+      push *(data.map {|x| JSON.generate(x)})
+    end
+
     # Pop data from a port
     # @return [String, nil] First data from port or nil if no data exists
     def pop
@@ -54,6 +60,17 @@ module SideJob
       end
 
       data
+    end
+
+    # JSON decodes popped data
+    # @see #pop
+    def pop_json
+      data = pop
+      if data
+        JSON.parse(data)
+      else
+        nil
+      end
     end
 
     # Pops all data from this port and pushes all data to another port
@@ -82,6 +99,17 @@ module SideJob
     def peek
       SideJob.redis do |conn|
         conn.lrange(redis_key, -1, -1)[0]
+      end
+    end
+
+    # JSON decodes peeked data
+    # @see #peek
+    def peek_json
+      data = peek
+      if data
+        JSON.parse(data)
+      else
+        nil
       end
     end
 

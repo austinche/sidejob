@@ -48,6 +48,19 @@ describe SideJob::Port do
     end
   end
 
+  describe '#push_json, #pop_json, #peek_json' do
+    it 'encodes/decodes from JSON' do
+      expect(@port.pop_json).to be_nil
+      expect(@port.peek_json).to be_nil
+      data1 = ['data1', 1, {'key' => 'val'}]
+      data2 = {'abc' => 123}
+      @port.push_json(data1, data2)
+      expect(@port.peek_json).to eq(data1)
+      expect(@port.pop_json).to eq(data1)
+      expect(@port.pop_json).to eq(data2)
+    end
+  end
+
   describe '#pop_all_to' do
     it 'pops all data from one port and pushes it to another' do
       dst = SideJob::Port.new(@job, :out, 'port2')
