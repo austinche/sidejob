@@ -15,10 +15,6 @@ Gem::Specification.new do |s|
   s.add_dependency 'sidekiq'
   s.add_dependency 'parslet' # flow graph parser
 
-  # sidekiq/web
-  s.add_development_dependency 'puma'
-  s.add_development_dependency 'sinatra'
-
   # development
   s.add_development_dependency 'pry'
   s.add_development_dependency 'rspec'
