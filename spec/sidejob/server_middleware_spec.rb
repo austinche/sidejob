@@ -3,7 +3,7 @@ require 'spec_helper'
 describe SideJob::ServerMiddleware do
   before do
     @queue = 'testq'
-    @job = SideJob.queue(@queue, 'TestWorker', [1])
+    @job = SideJob.queue(@queue, 'TestWorker')
     @worker = TestWorker.new
     @worker.jid = @job.jid
     @chain = Sidekiq::Middleware::Chain.new

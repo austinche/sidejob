@@ -1,5 +1,4 @@
 require 'sidekiq'
-require 'sidejob/parser'
 require 'sidejob/port'
 require 'sidejob/job'
 require 'sidejob/worker'
@@ -34,11 +33,10 @@ module SideJob
   # Main function to queue a job
   # @param queue [String] Name of the queue to put the job in
   # @param klass [String] Name of the class that will handle the job
-  # @param options [Hash] Options sent to the worker's perform method
   # @param parent [SideJob::Job, nil] Parent job or nil if none
   # @return [SideJob::Job] Job
-  def self.queue(queue, klass, options={}, parent=nil)
-    job_id = Sidekiq::Client.push('queue' => queue, 'class' => klass, 'args' => [options], 'retry' => false)
+  def self.queue(queue, klass, parent=nil)
+    job_id = Sidekiq::Client.push('queue' => queue, 'class' => klass, 'args' => [], 'retry' => false)
     job = SideJob::Job.new(job_id)
     if parent
       job.set(:parent, parent.jid)

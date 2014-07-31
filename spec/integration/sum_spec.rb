@@ -2,7 +2,7 @@ require 'spec_helper'
 
 class TestSumFlow
   include SideJob::Worker
-  def perform(options)
+  def perform
     if children.length == 0
       queue('testq', 'TestSum')
       suspend

@@ -27,7 +27,7 @@ Workers
 Jobs
 ----
 
-* A job is specified by a queue, class name, and named options
+* A job is specified by a queue and class name
 * Jobs have a unique job id
 * A job can have any number of child jobs
 * Each job has at most one parent job

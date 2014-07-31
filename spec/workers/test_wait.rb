@@ -2,8 +2,10 @@
 # then sends a signal output
 class TestWait
   include SideJob::Worker
-  def perform(options)
-    total = options['total'].to_i
+  def perform
+    total = get_config(:total)
+    suspend unless total
+    total = total.to_i
     count = get(:count).to_i
 
     loop do

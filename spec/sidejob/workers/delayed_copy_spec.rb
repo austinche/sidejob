@@ -14,6 +14,7 @@ describe SideJob::DelayedCopy do
     job = SideJob::DelayedCopy.new
     job.input(:in).push 'a'
     job.input(:in).push 'b'
-    expect { Timeout::timeout(0.5) { job.perform({'delay' => 1}) } }.to raise_error(TimeoutError)
+    job.input(:delay).push '1'
+    expect { Timeout::timeout(0.5) { job.perform } }.to raise_error(TimeoutError)
   end
 end

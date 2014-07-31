@@ -1,16 +1,17 @@
 module SideJob
   # Runs a jq filter
   # Expects the jq program to be in the path
-  # Options:
-  #   filter: Filter in the jq language: http://stedolan.github.io/jq/manual/
   # Input ports:
+  #   filter: Filter in the jq language: http://stedolan.github.io/jq/manual/
   #   in: Input data
   # Output ports:
   #   out: Filter output
   class Filter
     include SideJob::Worker
-    def perform(options={})
-      filter = options['filter']
+    def perform
+      filter = get_config(:filter)
+      suspend unless filter
+
       IO.popen(['jq', '-c', filter], 'r+') do |io|
         # send data on input port to filter input
         inport = input(:in)

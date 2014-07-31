@@ -2,7 +2,7 @@ require 'spec_helper'
 
 describe SideJob::Worker do
   before do
-    @job = SideJob.queue('testq', 'TestWorker', [1])
+    @job = SideJob.queue('testq', 'TestWorker')
     @worker = TestWorker.new
     @worker.jid = @job
   end

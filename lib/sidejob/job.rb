@@ -17,9 +17,9 @@ module SideJob
 
     # Queues a child job
     # @see SideJob.queue
-    def queue(queue, klass, options={})
+    def queue(queue, klass)
       @children = nil
-      SideJob.queue(queue, klass, options, self)
+      SideJob.queue(queue, klass, self)
     end
 
     # Sets multiple values
@@ -73,6 +73,36 @@ module SideJob
     # @return [Object, nil] JSON parsed value of the given data field
     def get_json(field)
       data = get(field)
+      if data
+        JSON.parse(data)
+      else
+        nil
+      end
+    end
+
+    # Helps with getting and storing configuration-like data from a port
+    # The assumption is that a configuration port only cares about the last data received on it
+    # The last data is also saved in to the state
+    # If no data in on the input port, load from saved state
+    # @param field [String,Symbol] Name of configuration field/port
+    # @return [String, nil] Configuration value or nil
+    def get_config(field)
+      port = input(field)
+      port.trim(1)
+      data = input(field).pop
+      if data
+        set(field, data)
+      else
+        data = get(field)
+      end
+      data
+    end
+
+    # @see #get_config
+    # @param field [String,Symbol] Field to get
+    # @return [Object, nil] JSON parsed value of the given configuration value
+    def get_config_json(field)
+      data = get_config(field)
       if data
         JSON.parse(data)
       else

@@ -1,5 +1,5 @@
 class TestWorker
   include SideJob::Worker
-  def perform(options)
+  def perform
   end
 end

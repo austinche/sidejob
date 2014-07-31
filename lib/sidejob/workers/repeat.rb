@@ -1,6 +1,5 @@
 module SideJob
   # Resends all data from :in to :out port when triggered
-  # Options:
   # Input ports:
   #   trigger: Any data on this port triggers sending to output port
   #   in: Input data
@@ -8,7 +7,7 @@ module SideJob
   #   out: Sends all data received on input when triggered
   class Repeat
     include SideJob::Worker
-    def perform(options={})
+    def perform
       inputs = get_json(:inputs) || [] # received inputs
       trigger = input(:trigger)
       inport = input(:in)

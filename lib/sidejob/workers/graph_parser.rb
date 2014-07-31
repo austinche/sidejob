@@ -1,5 +1,5 @@
+require 'sidejob/parser'
 module SideJob
-  # Options:
   # Input ports:
   #   in: graph in the language parsed by SideJob::Parser
   # Output ports

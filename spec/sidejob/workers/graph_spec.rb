@@ -5,8 +5,9 @@ describe SideJob::Graph do
     graph = "
 [Sum1] = test TestSum
 [Sum2] = test TestSum
-[Wait] = test TestWait total:1
+[Wait] = test TestWait
 
+'1' -> total:[Wait]
 @:start -> ready:[Sum1]
 @:x -> in:[Sum1]
 @:y -> in:[Sum1]
@@ -17,7 +18,8 @@ describe SideJob::Graph do
 [Sum1]:sum -> in:[Wait]
 [Wait]:ready -> ready:[Sum2]
 "
-    job = SideJob.queue('testq', 'SideJob::Graph', {graph: graph})
+    job = SideJob.queue('testq', 'SideJob::Graph')
+    job.input(:graph).push_json SideJob::Parser.parse(graph)
     job.input(:x).push 3
     job.input(:y).push 4
     job.input(:z).push 5
@@ -30,14 +32,16 @@ describe SideJob::Graph do
   it 'sends data to outport correctly if another job also uses the output' do
     graph = "
 [Sum1] = test TestSum
-[Dummy] = test TestWait total:0
+[Dummy] = test TestWait
+'0' -> total:[Dummy]
 @:start -> ready:[Sum1]
 @:x -> in:[Sum1]
 @:y -> in:[Sum1]
 [Sum1]:sum -> ignore:[Dummy]
 [Sum1]:sum -> result:@
 "
-    job = SideJob.queue('testq', 'SideJob::Graph', {graph: graph})
+    job = SideJob.queue('testq', 'SideJob::Graph')
+    job.input(:graph).push_json SideJob::Parser.parse(graph)
     job.input(:x).push 3
     job.input(:y).push 4
     job.input(:start).push 1

@@ -1,6 +1,6 @@
 class TestSum
   include SideJob::Worker
-  def perform(options={})
+  def perform
     suspend unless input(:ready).pop
     sum = 0
     while data = input(:in).pop

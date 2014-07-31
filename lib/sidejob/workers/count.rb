@@ -1,5 +1,4 @@
 module SideJob
-  # Options:
   # Input ports:
   #   in: Counts the number of data packets received on this port
   #   reset: Resets the count
@@ -8,7 +7,7 @@ module SideJob
   #   count: Outputs the cumulative count
   class Count
     include SideJob::Worker
-    def perform(options={})
+    def perform
       count = get(:count).to_i # nil.to_i => 0
       if input(:reset).size > 0
         input(:reset).clear

@@ -12,10 +12,11 @@ describe SideJob do
   describe '.queue' do
     it 'queues a sidekiq job' do
       expect {
-        job = SideJob.queue('testq', 'TestWorker', {arg: 'value'})
+        job = SideJob.queue('testq', 'TestWorker')
         expect(job.status).to eq(:queued)
       }.to change(TestWorker.jobs, :size).by(1)
-      expect(TestWorker.jobs.last['args']).to eq([{'arg' => 'value'}])
+      expect(TestWorker.jobs.last['queue']).to eq('testq')
+      expect(TestWorker.jobs.last['class']).to eq('TestWorker')
     end
 
     it 'can specify a parent job' do
