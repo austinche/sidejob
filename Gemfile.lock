@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    sidejob (0.1.12)
+    sidejob (0.2.0)
       sidekiq (~> 3.2.0)
 
 GEM
