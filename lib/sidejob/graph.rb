@@ -1,16 +1,27 @@
+# Runs a graph in the noflo json format https://github.com/noflo/noflo/blob/master/graph-schema.json
+# Subclasses can override load_graph to load a graph from somewhere other than by reading from the graph input port
 module SideJob
-  # Input ports:
-  #   graph: flow graph in noflo graph json format https://github.com/noflo/noflo/blob/master/graph-schema.json
-  #   Ports specified in graph
-  # Output ports
-  #   Ports specified in graph
   class Graph
     include SideJob::Worker
 
     def perform
-      graph = get_config_json(:graph)
+      graph = get_json(:graph)
+      if ! graph
+        graph = load_graph
+        set_json(:graph, graph) if graph
+      end
       suspend unless graph
+      process_graph(graph)
+    end
 
+    protected
+
+    def load_graph
+      input(:graph).pop_json
+    end
+
+    # @param graph [Hash] flow graph
+    def process_graph(graph)
       @jobs = {} # cache SideJob::Job objects by job name
       @to_restart = Set.new
 

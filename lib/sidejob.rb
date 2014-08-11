@@ -5,6 +5,7 @@ require 'sidejob/job'
 require 'sidejob/worker'
 require 'sidejob/client_middleware'
 require 'sidejob/server_middleware'
+require 'sidejob/graph'
 
 Sidekiq.configure_client do |config|
   config.redis = { namespace: 'sidejob' }
