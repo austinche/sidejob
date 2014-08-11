@@ -2,10 +2,25 @@ module SideJob
   # All workers should include SideJob::Worker and implement the perform method.
   # @see SideJob::JobMethods
   module Worker
+    @all = []
+    class << self
+      attr_reader :all
+      def register(spec)
+        @all << spec
+      end
+    end
+
     class Suspended < StandardError
     end
 
     module ClassMethods
+      # Registers a worker class
+      # The spec is unused by sidejob and can be in any format
+      # Use SideJob::Worker.all to return an array of registered worker specs
+      # @param spec [Hash]
+      def register(spec)
+        SideJob::Worker.register(spec)
+      end
     end
 
     def self.included(base)

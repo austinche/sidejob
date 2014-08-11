@@ -14,4 +14,11 @@ describe SideJob::Worker do
   it '#suspend raises exception' do
     expect { @worker.suspend }.to raise_error(SideJob::Worker::Suspended)
   end
+
+  it 'provides a worker registry' do
+    expect(SideJob::Worker.all).to eq []
+    spec = {foo: 'bar'}
+    @worker.class.register(spec)
+    expect(SideJob::Worker.all).to eq [spec]
+  end
 end
