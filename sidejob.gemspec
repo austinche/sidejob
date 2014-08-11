@@ -9,11 +9,9 @@ Gem::Specification.new do |s|
 
   s.files = `git ls-files`.split($/)
 
-  s.executables = ['sidejob-graph-parse']
   s.require_paths = ['lib']
 
   s.add_dependency 'sidekiq', '~>3.2.0'
-  s.add_dependency 'parslet' # flow graph parser
 
   # development
   s.add_development_dependency 'pry'

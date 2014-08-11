@@ -1,6 +1,6 @@
 module SideJob
   # Input ports:
-  #   graph: flow graph in json format output by SideJob::Parser
+  #   graph: flow graph in noflo graph json format https://github.com/noflo/noflo/blob/master/graph-schema.json
   #   Ports specified in graph
   # Output ports
   #   Ports specified in graph
@@ -14,50 +14,60 @@ module SideJob
       @jobs = {} # cache SideJob::Job objects by job name
       @to_restart = Set.new
 
-      connections = {} # Port -> Array of targets (either Port object or Hash)
-
       # make sure all jobs are started
-      graph['jobs'].each_pair do |name, info|
-        @jobs[name] = SideJob.find(info['jid']) if info['jid']
+      graph['processes'].each_pair do |name, info|
+        info['metadata'] ||= {}
+        @jobs[name] = SideJob.find(info['metadata']['jid']) if info['metadata']['jid']
         if ! @jobs[name]
           # start a new job
-          job = queue(info['queue'], info['class'])
-          (info['init'] || {}).each_pair do |port, data|
-            job.input(port).push data
-          end
-          info['jid'] = job.jid
+          # component name must be of form queue/ClassName
+          queue, klass = info['component'].split('/', 2)
+          raise "Unable to parse #{info['component']}: Must be of form queue/ClassName" if ! queue || ! klass
+          job = queue(queue, klass)
+          info['metadata']['jid'] = job.jid
+
           set_json :graph, graph
 
           job.set(:name, name)
           @jobs[name] = job
         end
+      end
 
-        if info['connections']
-          job = @jobs[name]
-          info['connections'].each_pair do |outport, targets|
-            connections[job.output(outport)] ||= []
-            connections[job.output(outport)].concat targets
+      connections = {} # SideJob::Port (output port) -> Array<SideJob::Port> (input ports)
+      graph['connections'].each do |connection|
+        tgt_port = get_port(:in, connection['tgt'])
+
+        if connection['data']
+          # initial fixed data to be sent only once
+          connection['metadata'] ||= {}
+          if ! connection['metadata']['sent']
+            tgt_port.push connection['data']
+            connection['metadata']['sent'] = true
+            set_json :graph, graph
           end
+        else
+          src_port = get_port(:out, connection['src'])
+
+          connections[src_port] ||= []
+          connections[src_port] << tgt_port
         end
       end
 
       # outport connections have to be merged with job connections in case
       # some data needs to go to both another job and a graph outport
       if graph['outports']
-        graph['outports'].each_pair do |port, from|
-          from.each do |source|
-            src = get_port(:out, source)
-            connections[src] ||= []
-            connections[src] << output(port)
-          end
+        graph['outports'].each_pair do |name, port|
+          out = get_port(:out, port)
+          connections[out] ||= []
+          connections[out] << output(name)
         end
       end
 
       # process all connections
 
       if graph['inports']
-        graph['inports'].each_pair do |port, targets|
-          connect_ports(input(port), targets)
+        graph['inports'].each_pair do |name, port|
+          connect_ports(input(name), [get_port(:in, port)])
         end
       end
 
@@ -83,7 +93,7 @@ module SideJob
     end
 
     # @param source SideJob::Port
-    # @param targets [Array<Hash, Port>] hash of format used by #get_port
+    # @param targets [Array<SideJob::Port>]
     def connect_ports(source, targets)
       return if targets.size == 0
       if targets.size == 1
@@ -105,11 +115,11 @@ module SideJob
     end
 
     # @param type [:in, :out]
-    # @param data [Hash, Port] {'job' => '...', 'port' => '...'}. If Port given, just returns it
+    # @param data [Hash, Port] {'process' => '...', 'port' => '...'}. If Port given, just returns it
     # @return [SideJob::Port]
     def get_port(type, data)
       return data if data.is_a?(SideJob::Port)
-      job = @jobs[data['job']]
+      job = @jobs[data['process']]
       if type == :in
         job.input(data['port'])
       elsif type == :out

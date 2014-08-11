@@ -2,24 +2,79 @@ require 'spec_helper'
 
 describe SideJob::Graph do
   it 'sum three numbers' do
-    graph = "
-[Sum1] = test TestSum
-[Sum2] = test TestSum
-[Wait] = test TestWait
+    graph = {
+      inports: {
+        start: {
+          process: 'Sum1',
+          port: 'ready',
+        },
+        x: {
+          process: 'Sum1',
+          port: 'in',
+        },
+        y: {
+          process: 'Sum1',
+          port: 'in',
+        },
+        z: {
+          process: 'Sum2',
+          port: 'in',
+        },
+      },
+      outports: {
+        out: {
+          process: 'Sum2',
+          port: 'sum',
+        },
+      },
+      processes: {
+        Sum1: { component: 'test/TestSum' },
+        Sum2: { component: 'test/TestSum' },
+        Wait: { component: 'test/TestWait' },
+      },
+      connections: [
+        {
+          data: '1',
+          tgt: {
+            process: 'Wait',
+            port: 'total',
+          },
+        },
+        {
+          src: {
+            process: 'Sum1',
+            port: 'sum',
+          },
+          tgt: {
+            process: 'Sum2',
+            port: 'in',
+          },
+        },
+        {
+          src: {
+            process: 'Sum1',
+            port: 'sum',
+          },
+          tgt: {
+            process: 'Wait',
+            port: 'in',
+          },
+        },
+        {
+          src: {
+            process: 'Wait',
+            port: 'ready',
+          },
+          tgt: {
+            process: 'Sum2',
+            port: 'ready',
+          },
+        },
+      ],
+    }
 
-'1' -> total:[Wait]
-@:start -> ready:[Sum1]
-@:x -> in:[Sum1]
-@:y -> in:[Sum1]
-[Sum1]:sum -> in:[Sum2]
-@:z -> in:[Sum2]
-
-[Sum2]:sum -> out:@
-[Sum1]:sum -> in:[Wait]
-[Wait]:ready -> ready:[Sum2]
-"
     job = SideJob.queue('testq', 'SideJob::Graph')
-    job.input(:graph).push_json SideJob::Parser.parse(graph)
+    job.input(:graph).push_json graph
     job.input(:x).push 3
     job.input(:y).push 4
     job.input(:z).push 5
@@ -30,18 +85,54 @@ describe SideJob::Graph do
   end
 
   it 'sends data to outport correctly if another job also uses the output' do
-    graph = "
-[Sum1] = test TestSum
-[Dummy] = test TestWait
-'0' -> total:[Dummy]
-@:start -> ready:[Sum1]
-@:x -> in:[Sum1]
-@:y -> in:[Sum1]
-[Sum1]:sum -> ignore:[Dummy]
-[Sum1]:sum -> result:@
-"
+    graph = {
+      inports: {
+        start: {
+          process: 'Sum1',
+          port: 'ready',
+        },
+        x: {
+          process: 'Sum1',
+          port: 'in',
+        },
+        y: {
+          process: 'Sum1',
+          port: 'in',
+        },
+      },
+      outports: {
+        result: {
+          process: 'Sum1',
+          port: 'sum',
+        },
+      },
+      processes: {
+        Sum1: { component: 'test/TestSum' },
+        Dummy: { component: 'test/TestWait' },
+      },
+      connections: [
+        {
+          data: '0',
+          tgt: {
+            process: 'Dummy',
+            port: 'total',
+          },
+        },
+        {
+          src: {
+            process: 'Sum1',
+            port: 'sum',
+          },
+          tgt: {
+            process: 'Dummy',
+            port: 'ignore',
+          },
+        },
+      ],
+    }
+
     job = SideJob.queue('testq', 'SideJob::Graph')
-    job.input(:graph).push_json SideJob::Parser.parse(graph)
+    job.input(:graph).push_json graph
     job.input(:x).push 3
     job.input(:y).push 4
     job.input(:start).push 1

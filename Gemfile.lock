@@ -2,13 +2,11 @@ PATH
   remote: .
   specs:
     sidejob (0.1.12)
-      parslet
       sidekiq (~> 3.2.0)
 
 GEM
   remote: https://rubygems.org/
   specs:
-    blankslate (2.1.2.4)
     celluloid (0.15.2)
       timers (~> 1.1.0)
     coderay (1.1.0)
@@ -16,8 +14,6 @@ GEM
     diff-lcs (1.2.5)
     json (1.8.1)
     method_source (0.8.2)
-    parslet (1.5.0)
-      blankslate (~> 2.0)
     pry (0.9.12.6)
       coderay (~> 1.0)
       method_source (~> 0.8)
