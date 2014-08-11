@@ -1,2 +1,0 @@
-#!/bin/bash
-bundle exec sidekiq -q sidejob -r ./lib/sidejob/workers.rb

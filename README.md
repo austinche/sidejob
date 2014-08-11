@@ -13,9 +13,7 @@ Workers should preferably use a Resque-compatible library.
 Requirements
 ------------
 
-Ruby 1.9.3 or greater and Redis 2.4 or greater is required.
-
-The SideJob::Filter worker depends on [jq](https://github.com/stedolan/jq).
+Ruby 2.0 or greater and Redis 2.4 or greater is required.
 
 Workers
 -------

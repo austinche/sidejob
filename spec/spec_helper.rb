@@ -12,7 +12,6 @@ Sidekiq.configure_server do |config|
   config.redis = redis
 end
 
-require 'sidejob/workers'
 Dir[File.dirname(__FILE__) + '/workers/*.rb'].each {|file| require file }
 
 RSpec.configure do |config|
