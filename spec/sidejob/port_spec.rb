@@ -48,14 +48,12 @@ describe SideJob::Port do
     end
   end
 
-  describe '#push_json, #pop_json, #peek_json' do
+  describe '#push_json, #pop_json' do
     it 'encodes/decodes from JSON' do
       expect(@port.pop_json).to be_nil
-      expect(@port.peek_json).to be_nil
       data1 = ['data1', 1, {'key' => 'val'}]
       data2 = {'abc' => 123}
       @port.push_json(data1, data2)
-      expect(@port.peek_json).to eq(data1)
       expect(@port.pop_json).to eq(data1)
       expect(@port.pop_json).to eq(data2)
     end
@@ -78,21 +76,6 @@ describe SideJob::Port do
     end
   end
 
-  describe '#peek' do
-    it 'returns data without changing port' do
-      @port.push('abc', 123)
-      expect(@port.size).to be(2)
-      expect(@port.peek).to eq('abc')
-      expect(@port.size).to be(2)
-      expect(@port.peek).to eq('abc')
-    end
-
-    it 'returns nil when port is empty' do
-      expect(@port.size).to be(0)
-      expect(@port.peek).to be_nil
-    end
-  end
-
   describe '#trim' do
     it 'does nothing if given size is bigger than data on port' do
       @port.push('abc', 'def', 'ghi')
@@ -106,7 +89,7 @@ describe SideJob::Port do
       expect(@port.size).to be(3)
       @port.trim(2)
       expect(@port.size).to be(2)
-      expect(@port.peek).to eq('def')
+      expect(@port.pop).to eq('def')
     end
   end
 
