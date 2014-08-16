@@ -8,14 +8,12 @@ require 'sidejob/server_middleware'
 require 'sidejob/graph'
 
 Sidekiq.configure_client do |config|
-  config.redis = { namespace: 'sidejob' }
   config.client_middleware do |chain|
     chain.add SideJob::ClientMiddleware
   end
 end
 
 Sidekiq.configure_server do |config|
-  config.redis = { namespace: 'sidejob' }
   config.server_middleware do |chain|
     chain.add SideJob::ServerMiddleware
   end

@@ -1,16 +1,10 @@
 require 'bundler/setup'
-require 'sidejob'
-
 require 'rspec/core'
+require 'sidejob'
 require 'sidejob/testing'
 
-redis = { namespace: 'sidejob_test' }
-Sidekiq.configure_client do |config|
-  config.redis = redis
-end
-Sidekiq.configure_server do |config|
-  config.redis = redis
-end
+# set default redis to something other than database 0 to avoid accidentally clearing a redis with valuable data
+ENV['REDIS_URL'] ||= 'redis://localhost:6379/6'
 
 Dir[File.dirname(__FILE__) + '/workers/*.rb'].each {|file| require file }
 
@@ -19,8 +13,7 @@ RSpec.configure do |config|
   config.before(:each) do
     Sidekiq::Worker.clear_all
     SideJob.redis do |conn|
-      keys = conn.keys('*') # this is namespaced but flushall is not
-      conn.del keys if keys.length > 0
+      conn.flushdb
     end
     Sidekiq::Testing.fake!
   end
