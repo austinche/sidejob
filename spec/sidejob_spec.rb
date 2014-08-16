@@ -19,12 +19,12 @@ describe SideJob do
       expect(TestWorker.jobs.last['class']).to eq('TestWorker')
     end
 
-    it 'can specify a parent job' do
-      parent = SideJob.queue('testq', 'TestWorker')
-      expect(parent.children).to eq([])
-      child = parent.queue('testq', 'TestWorker')
-      expect(parent.children).to eq([child])
-      expect(child.parent).to eq(parent)
+    it 'can specify job args' do
+      expect {
+        job = SideJob.queue('testq', 'TestWorker', {args: [1, 2]})
+        expect(job.status).to eq(:queued)
+      }.to change(TestWorker.jobs, :size).by(1)
+      expect(TestWorker.jobs.last['args']).to eq([1,2])
     end
   end
 

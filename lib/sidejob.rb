@@ -35,18 +35,13 @@ module SideJob
   # Main function to queue a job
   # @param queue [String] Name of the queue to put the job in
   # @param klass [String] Name of the class that will handle the job
-  # @param parent [SideJob::Job, nil] Parent job or nil if none
+  # @param options [Hash] Additional options, keys should be symbols
+  #   args: [Array] additional args to pass to the class (default none)
   # @return [SideJob::Job] Job
-  def self.queue(queue, klass, parent=nil)
-    job_id = Sidekiq::Client.push('queue' => queue, 'class' => klass, 'args' => [], 'retry' => false)
-    job = SideJob::Job.new(job_id)
-    if parent
-      job.set(:parent, parent.jid)
-      redis do |conn|
-        conn.sadd "#{parent.jid}:children", job_id
-      end
-    end
-    job
+  def self.queue(queue, klass, options={})
+    args = options[:args] || []
+    job_id = Sidekiq::Client.push('queue' => queue, 'class' => klass, 'args' => args, 'retry' => false)
+    SideJob::Job.new(job_id)
   end
 
   # Finds a job by id

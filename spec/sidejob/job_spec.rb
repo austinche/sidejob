@@ -33,9 +33,9 @@ describe SideJob::Job do
     end
 
     it 'can queue child jobs' do
-      expect(SideJob).to receive(:queue).with('q2', 'TestWorker', @job).and_call_original
+      expect(SideJob).to receive(:queue).with('q2', 'TestWorker', {args: [1,2]}).and_call_original
       expect {
-        child = @job.queue('q2', 'TestWorker')
+        child = @job.queue('q2', 'TestWorker', {args: [1, 2]})
         expect(child.parent).to eq(@job)
         expect(@job.children).to eq([child])
       }.to change(TestWorker.jobs, :size).by(1)

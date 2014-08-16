@@ -1,5 +1,5 @@
 class TestWorker
   include SideJob::Worker
-  def perform
+  def perform(*args)
   end
 end

@@ -17,9 +17,14 @@ module SideJob
 
     # Queues a child job
     # @see SideJob.queue
-    def queue(queue, klass)
-      @children = nil
-      SideJob.queue(queue, klass, self)
+    def queue(queue, klass, options={})
+      @children = nil # invalidate child jobs cache
+      job = SideJob.queue(queue, klass, options)
+      job.set(:parent, jid)
+      SideJob.redis do |conn|
+        conn.sadd "#{jid}:children", job.jid
+      end
+      job
     end
 
     # Sets multiple values
