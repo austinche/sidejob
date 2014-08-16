@@ -104,7 +104,7 @@ describe SideJob::Port do
 
   describe '#redis_key' do
     it 'returns key with valid name' do
-      expect(@port.redis_key).to eq('job:in:port1')
+      expect(@port.redis_key).to eq("#{@port.job.redis_key}:in:port1")
     end
   end
 

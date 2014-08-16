@@ -15,6 +15,16 @@ module SideJob
       jid.hash
     end
 
+    def redis_key
+      "job:#{@jid}"
+    end
+
+    def exists?
+      SideJob.redis do |conn|
+        conn.exists redis_key
+      end
+    end
+
     # Queues a child job
     # @see SideJob.queue
     def queue(queue, klass, options={})
@@ -22,18 +32,17 @@ module SideJob
       job = SideJob.queue(queue, klass, options)
       job.set(:parent, jid)
       SideJob.redis do |conn|
-        conn.sadd "#{jid}:children", job.jid
+        conn.sadd "#{redis_key}:children", job.jid
       end
       job
     end
 
     # Sets multiple values
     # Merges data into a job's metadata
-    # Updates updated_at field with current timestamp
     # @param data [Hash{String => String}] Data to update
     def mset(data)
       SideJob.redis do |conn|
-        conn.hmset jid, 'updated_at', Time.now.to_i, *(data.to_a.flatten(1))
+        conn.hmset redis_key, *(data.to_a.flatten(1))
       end
     end
 
@@ -58,10 +67,10 @@ module SideJob
     def mget(*fields)
       SideJob.redis do |conn|
         if fields.length > 0
-          values = conn.hmget(jid, *fields)
+          values = conn.hmget(redis_key, *fields)
           Hash[fields.zip(values)]
         else
-          conn.hgetall jid
+          conn.hgetall redis_key
         end
       end
     end
@@ -136,7 +145,7 @@ module SideJob
     # @return [Array<String>] List of children job ids for the given job
     def children
       @children ||= SideJob.redis do |conn|
-        conn.smembers("#{jid}:children").map {|id| SideJob::Job.new(id)}
+        conn.smembers("#{redis_key}:children").map {|id| SideJob::Job.new(id)}
       end
     end
 
@@ -203,7 +212,7 @@ module SideJob
       SideJob::Port.delete_all(self, :in)
       SideJob::Port.delete_all(self, :out)
       SideJob.redis do |conn|
-        conn.del [jid, "#{jid}:children"]
+        conn.del [redis_key, "#{redis_key}:children"]
       end
     end
 

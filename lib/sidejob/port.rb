@@ -114,7 +114,7 @@ module SideJob
     # Returns the redis key used for storing inputs or outputs from a port name
     # @return [String] Redis key
     def redis_key
-      "#{@job.jid}:#{@type}:#{@name}"
+      "#{@job.redis_key}:#{@type}:#{@name}"
     end
 
     def hash
@@ -128,7 +128,7 @@ module SideJob
     # Have this port be returned by Port.all
     def remember
       SideJob.redis do |conn|
-        conn.sadd "#{@job.jid}:#{@type}ports", @name # set to store all port names
+        conn.sadd "#{@job.redis_key}:#{@type}ports", @name # set to store all port names
       end
     end
 
@@ -138,7 +138,7 @@ module SideJob
     # @return [Array<SideJob::Port>] All pushed to ports for the given job and type
     def self.all(job, type)
       SideJob.redis do |conn|
-        conn.smembers("#{job.jid}:#{type}ports").map {|name| SideJob::Port.new(job, type, name)}
+        conn.smembers("#{job.redis_key}:#{type}ports").map {|name| SideJob::Port.new(job, type, name)}
       end
     end
 
@@ -147,8 +147,8 @@ module SideJob
     # @param type [:in, :out] Specifies whether it is input or output port
     def self.delete_all(job, type)
       SideJob.redis do |conn|
-        conn.del ["#{job.jid}:#{type}ports"] +
-                     conn.smembers("#{job.jid}:#{type}ports").map {|name| "#{job.jid}:#{type}:#{name}"}
+        conn.del ["#{job.redis_key}:#{type}ports"] +
+                     conn.smembers("#{job.redis_key}:#{type}ports").map {|name| "#{job.redis_key}:#{type}:#{name}"}
       end
     end
   end

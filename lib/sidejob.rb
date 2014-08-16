@@ -46,11 +46,7 @@ module SideJob
   # @param job_id [String] Job Id
   # @return [SideJob::Job, nil] Job object or nil if it doesn't exist
   def self.find(job_id)
-    exists = redis { |conn| conn.exists job_id }
-    if exists
-      SideJob::Job.new(job_id)
-    else
-      nil
-    end
+    job = SideJob::Job.new(job_id)
+    return job.exists? ? job : nil
   end
 end

@@ -27,6 +27,16 @@ describe SideJob::Job do
     end
   end
 
+  describe '#exists?' do
+    it 'returns true if job exists' do
+      @job = SideJob.queue('testq', 'TestWorker')
+      expect(@job.exists?).to be true
+    end
+    it 'returns false if job does not exist' do
+      expect(SideJob::Job.new('job').exists?).to be false
+    end
+  end
+
   describe '#queue' do
     before do
       @job = SideJob.queue('testq', 'TestWorker')
@@ -49,18 +59,11 @@ describe SideJob::Job do
 
     it 'stores metadata in redis' do
       @job.mset({test: 'data'})
-      expect(SideJob.redis {|conn| conn.hget(@job.jid, 'test')}).to eq('data')
+      expect(SideJob.redis {|conn| conn.hget(@job.redis_key, 'test')}).to eq('data')
 
       # test updating
       @job.mset({test: 'data2'})
-      expect(SideJob.redis {|conn| conn.hget(@job.jid, 'test')}).to eq('data2')
-    end
-
-    it 'sets updated_at timestamp' do
-      now = Time.now
-      Time.stub(:now).and_return(now)
-      @job.mset({})
-      expect(SideJob.redis {|conn| conn.hget(@job.jid, 'updated_at')}).to eq(now.to_i.to_s)
+      expect(SideJob.redis {|conn| conn.hget(@job.redis_key, 'test')}).to eq('data2')
     end
   end
 
