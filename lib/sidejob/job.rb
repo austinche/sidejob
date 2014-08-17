@@ -242,50 +242,6 @@ module SideJob
       SideJob::Port.all(self, :out)
     end
 
-    # Helpers for storing progress
-    # @param completed [Fixnum] Completed units of work
-    # @param total [Fixnum] Total units of work to be done
-    # @param data [Hash] Extra data, e.g. a message, to be associated with progress
-    def at(completed, total, data={})
-      set_json :progress, data.merge({ completed: completed, total: total })
-      notify
-    end
-
-    # Returns progress hash
-    # @return [Hash, nil] keys: completed, total, percent, and any extra data
-    def progress
-      data = get_json(:progress)
-      return nil if ! data
-      if data['total'] && data['total'] > 0
-        data['percent'] = 100.0 * data['completed'] / data['total'] rescue nil
-      end
-      data
-    end
-
-    # Returns the total number of data packets available on all input and output ports
-    # @return [Hash]
-    def port_stats
-      inputs = {}
-      intotal = 0
-      inports.each do |port|
-        s = port.size
-        if s > 0
-          inputs[port.name] = s
-          intotal += s
-        end
-      end
-
-      outputs = {}
-      outtotal = 0
-      outports.each do |port|
-        s = port.size
-        if s > 0
-          outputs[port.name] = s
-          outtotal += s
-        end
-      end
-      {input: {total: intotal, ports: inputs}, output: {total: outtotal, ports: outputs}}
-    end
   end
 
   # Wrapper for a job which may not be in progress unlike SideJob::Worker

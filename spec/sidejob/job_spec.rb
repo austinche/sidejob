@@ -330,31 +330,4 @@ describe SideJob::Job do
       expect(job.outports.size).to be(2)
     end
   end
-
-  describe '#at, #progress' do
-    it 'notifies parent' do
-      job = SideJob::Job.new('job')
-      expect(job).to receive(:notify)
-      job.at(23, 46)
-    end
-
-    it 'can store extra attributes' do
-      job = SideJob::Job.new('job')
-      expect(job.progress).to be_nil
-      job.at(23, 46, {message: 'hello'})
-      expect(job.progress).to eq({"message"=>"hello", "completed"=>23, "total"=>46, "percent"=>50})
-    end
-  end
-
-  describe '#port_stats' do
-    it 'gets waiting data packet count' do
-      job = SideJob::Job.new('job')
-      expect(job.port_stats).to eq({input: {total: 0, ports: {}}, output: {total: 0, ports: {}}})
-      job.output('port1').push 'abc'
-      job.output('port2').push 'abc'
-      job.output('port1').push 'abc'
-      job.input('port1').push 'abc'
-      expect(job.port_stats).to eq({input: {total: 1, ports: {'port1' => 1}}, output: {total: 3, ports: {'port1' => 2, 'port2' => 1}}})
-    end
-  end
 end
