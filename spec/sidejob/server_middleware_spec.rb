@@ -10,11 +10,11 @@ describe SideJob::ServerMiddleware do
     @chain.add SideJob::ServerMiddleware
   end
 
-  it 'sets status to working on start' do
+  it 'sets status to :running on start' do
     @chain.invoke(@worker, {}, @queue) do
       @status = @job.status
     end
-    expect(@status).to be(:working)
+    expect(@status).to be(:running)
   end
 
   it 'sets status to completed on completion' do
@@ -30,18 +30,26 @@ describe SideJob::ServerMiddleware do
     expect(@job.status).to be(:suspended)
   end
 
-  it 'sets status to failed on exception' do
+  it 'sets status to failed on exception and logs error' do
+    now = Time.now
+    Time.stub(:now).and_return(now)
     @chain.invoke(@worker, {}, @queue) do
       raise 'oops'
     end
     expect(@job.status).to be(:failed)
-    expect(@job.get(:error)).to eq('oops')
+    
+    log = nil
+    while l = @job.log_pop do
+      log = l if l['type'] == 'error'
+    end
+    expect(log['error']).to eq('oops')
+    expect(log['backtrace'].class).to eq(Array)
   end
 
-  it 'restarts the worker if status is restarting' do
+  it 'restarts the worker if it is restarted while running' do
     expect { 
       @chain.invoke(@worker, {}, @queue) do
-        @job.status = :restarting
+        @job.restart
       end
     }.to change(TestWorker.jobs, :size).by(1)
     expect(@job.status).to be(:queued)

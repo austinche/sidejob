@@ -34,10 +34,64 @@ describe SideJob::Port do
     end
   end
 
-  describe '#push, #pop, #size' do
-    it 'can push and pop data to a port' do
+  describe '#size' do
+    it 'returns 0 when the port is empty' do
+      expect(@port.size).to eq 0
+    end
+
+    it 'number of elements is increased on push' do
+      expect {
+        @port.push 1
+      }.to change(@port, :size).by(1)
+    end
+
+    it 'number of elements is decreased on pop' do
+      @port.push 1
+      expect {
+        @port.pop
+      }.to change(@port, :size).by(-1)
+    end
+  end
+
+  describe '#push' do
+    it 'can push data to a port' do
+      @port.push('abc', 123)
+      data = SideJob.redis { |redis| redis.lrange(@port.redis_key, 0, -1) }
+      expect(data).to eq(['123', 'abc'])
+    end
+
+    it 'logs pushes' do
+      now = Time.now
+      Time.stub(:now).and_return(now)
+      expect(@job.log_pop).to be nil
+      @port.push('abc', '123')
+      expect(@job.log_pop).to eq({'type' => 'write', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.to_s})
+      expect(@job.log_pop).to eq({'type' => 'write', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.to_s})
+      expect(@job.log_pop).to be nil
+    end
+
+    it 'restarts job when pushing to an input port' do
+      @job.status = :running
+      inport = SideJob::Port.new(@job, :in, :port1)
+      expect(@job.restarting?).to be false
+      inport.push('abc')
+      expect(@job.restarting?).to be true
+    end
+
+    it 'restarts parent job when pushing to an output port' do
+      @parent = SideJob::Job.new('job')
+      @job.parent = @parent
+      @parent.status = :running
+      outport = SideJob::Port.new(@job, :out, :port1)
+      expect(@parent.restarting?).to be false
+      outport.push('abc')
+      expect(@parent.restarting?).to be true
+    end
+  end
+
+  describe '#pop' do
+    it 'can pop data from a port' do
       expect(@port.pop).to be_nil
-      expect(@port.size).to be(0)
       @port.push('abc', 123, JSON.generate(['data1', 1, {key: 'val'}]))
       expect(@port.size).to be(3)
       expect(@port.pop).to eq('abc')
@@ -46,9 +100,36 @@ describe SideJob::Port do
       expect(@port.pop).to be_nil
       expect(@port.size).to be(0)
     end
+
+    it 'logs pops' do
+      now = Time.now
+      Time.stub(:now).and_return(now)
+      @port.push('abc', '123')
+      while @job.log_pop; end
+      expect(@port.pop).to eq('abc')
+      expect(@port.pop).to eq('123')
+      expect(@job.log_pop).to eq({'type' => 'read', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.to_s})
+      expect(@job.log_pop).to eq({'type' => 'read', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.to_s})
+      expect(@job.log_pop).to be nil
+    end
   end
 
-  describe '#push_json, #pop_json' do
+  describe '#pop_all' do
+    it 'returns empty array when port is empty' do
+      expect(@port.pop_all).to eq([])
+    end
+
+    it 'returns array with most recent items first' do
+      @port.push '1'
+      @port.push '2'
+      @port.push '3'
+      expect(@port.pop_all).to eq(['3', '2', '1'])
+      expect(@port.pop_all).to eq([])
+      expect(@port.pop).to be nil
+    end
+  end
+
+  describe '#push_json, #pop_json, #pop_all_json' do
     it 'encodes/decodes from JSON' do
       expect(@port.pop_json).to be_nil
       data1 = ['data1', 1, {'key' => 'val'}]
@@ -56,49 +137,8 @@ describe SideJob::Port do
       @port.push_json(data1, data2)
       expect(@port.pop_json).to eq(data1)
       expect(@port.pop_json).to eq(data2)
-    end
-  end
-
-  describe '#pop_all_to' do
-    it 'pops all data from one port and pushes it to another' do
-      dst = SideJob::Port.new(@job, :out, 'port2')
-      @port.push '1'
-      @port.push '2'
-      @port.push '3'
-      expect(@port.size).to be(3)
-      expect(dst.size).to be(0)
-      expect(@port.pop_all_to(dst)).to eq(['1', '2', '3'])
-      expect(dst.size).to be(3)
-      expect(dst.pop).to eq('1')
-      expect(dst.pop).to eq('2')
-      expect(dst.pop).to eq('3')
-      expect(dst.pop).to be_nil
-    end
-  end
-
-  describe '#trim' do
-    it 'does nothing if given size is bigger than data on port' do
-      @port.push('abc', 'def', 'ghi')
-      expect(@port.size).to be(3)
-      @port.trim(3)
-      expect(@port.size).to be(3)
-    end
-
-    it 'removes the oldest data items' do
-      @port.push('abc', 'def', 'ghi')
-      expect(@port.size).to be(3)
-      @port.trim(2)
-      expect(@port.size).to be(2)
-      expect(@port.pop).to eq('def')
-    end
-  end
-
-  describe '#clear' do
-    it 'empties all data on the port' do
-      @port.push('abc', 'def', 'ghi')
-      expect(@port.size).to be(3)
-      @port.clear
-      expect(@port.size).to be(0)
+      @port.push_json(data1, data2)
+      expect(@port.pop_all_json).to eq([data2, data1])
     end
   end
 
@@ -135,25 +175,19 @@ describe SideJob::Port do
       port2.push '123'
       expect(SideJob::Port.all(@job, :in)).to match_array([@port, port2])
     end
-
-    it 'returns ports that have had remember called' do
-      expect(SideJob::Port.all(@job, :in)).to eq([])
-      @port.remember
-      expect(SideJob::Port.all(@job, :in)).to match_array([@port])
-    end
   end
 
   describe '.delete_all' do
     it 'delete all port keys' do
-      expect(SideJob.redis {|conn| conn.keys('*').length}).to be(0)
+      expect(SideJob.redis {|redis| redis.keys("#{@port.redis_key}*").length}).to be(0)
       @port.push 'abc'
-      keys = SideJob.redis {|conn| conn.keys('*').length}
+      keys = SideJob.redis {|redis| redis.keys("#{@port.redis_key}*").length}
       SideJob::Port.new(@job, :out, 'port2').push 'abc'
       SideJob::Port.new(@job, :out, 'port3').push 'abc'
       SideJob::Port.delete_all(@job, :out)
-      expect(SideJob.redis {|conn| conn.keys('*').length}).to be(keys)
+      expect(SideJob.redis {|redis| redis.keys("#{@port.redis_key}*").length}).to be(keys)
       SideJob::Port.delete_all(@job, :in)
-      expect(SideJob.redis {|conn| conn.keys('*').length}).to be(0)
+      expect(SideJob.redis {|redis| redis.keys("#{@port.redis_key}*").length}).to be(0)
     end
   end
 end

@@ -24,8 +24,8 @@ end
 module SideJob
   # Returns redis connection
   def self.redis(&block)
-    Sidekiq.redis do |conn|
-      yield conn
+    Sidekiq.redis do |redis|
+      yield redis
     end
   end
 

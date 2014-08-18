@@ -1,5 +1,6 @@
 require 'bundler/setup'
 require 'rspec/core'
+require 'pry'
 require 'sidejob'
 require 'sidejob/testing'
 
@@ -12,8 +13,8 @@ RSpec.configure do |config|
   config.order = 'random'
   config.before(:each) do
     Sidekiq::Worker.clear_all
-    SideJob.redis do |conn|
-      conn.flushdb
+    SideJob.redis do |redis|
+      redis.flushdb
     end
     Sidekiq::Testing.fake!
   end

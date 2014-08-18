@@ -3,8 +3,8 @@ require 'spec_helper'
 describe SideJob do
   describe '.redis' do
     it 'returns Redis instance via Sidekiq' do
-      r1 = SideJob.redis {|conn| conn}
-      r2 = Sidekiq.redis {|conn| conn}
+      r1 = SideJob.redis {|redis| redis}
+      r2 = Sidekiq.redis {|redis| redis}
       expect(r1).to be(r2)
     end
   end

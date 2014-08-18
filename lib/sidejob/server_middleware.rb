@@ -1,19 +1,19 @@
 module SideJob
   class ServerMiddleware
     def call(worker, msg, queue)
-      worker.status = :working
+      worker.status = :running
+      SideJob.redis do |redis|
+        redis.hdel worker.redis_key, :restart
+      end
       yield
-      new_status = :completed
+      worker.status = :completed
     rescue SideJob::Worker::Suspended
-      new_status = :suspended
+      worker.status = :suspended
     rescue => e
-      new_status = :failed
-      worker.set :error, e.message
-      worker.set_json :backtrace, e.backtrace
+      worker.status = :failed
+      worker.log_push 'error', {error: e.message, backtrace: e.backtrace}
     ensure
-      restart = (worker.status == :restarting)
-      worker.status = new_status
-      worker.restart if restart
+      worker.restart if worker.restarting?
     end
   end
 end

@@ -19,21 +19,18 @@ module SideJob
       "job:#{@jid}"
     end
 
+    # @return [Boolean] Returns true if this job exists and has not been deleted
     def exists?
-      SideJob.redis do |conn|
-        conn.exists redis_key
+      SideJob.redis do |redis|
+        redis.exists redis_key
       end
     end
 
     # Queues a child job
     # @see SideJob.queue
     def queue(queue, klass, options={})
-      @children = nil # invalidate child jobs cache
       job = SideJob.queue(queue, klass, options)
-      job.set(:parent, jid)
-      SideJob.redis do |conn|
-        conn.sadd "#{redis_key}:children", job.jid
-      end
+      job.parent = self
       job
     end
 
@@ -41,8 +38,8 @@ module SideJob
     # Merges data into a job's metadata
     # @param data [Hash{String => String}] Data to update
     def mset(data)
-      SideJob.redis do |conn|
-        conn.hmset redis_key, *(data.to_a.flatten(1))
+      SideJob.redis do |redis|
+        redis.hmset "#{redis_key}:data", *(data.to_a.flatten(1))
       end
     end
 
@@ -65,12 +62,12 @@ module SideJob
     # @param fields [Array<String,Symbol>] Fields to load or all fields if none specified
     # @return [Hash{String,Symbol => String}] Job's metadata with the fields specified
     def mget(*fields)
-      SideJob.redis do |conn|
+      SideJob.redis do |redis|
         if fields.length > 0
-          values = conn.hmget(redis_key, *fields)
+          values = redis.hmget("#{redis_key}:data", *fields)
           Hash[fields.zip(values)]
         else
-          conn.hgetall redis_key
+          redis.hgetall "#{redis_key}:data"
         end
       end
     end
@@ -102,8 +99,7 @@ module SideJob
     # @return [String, nil] Configuration value or nil
     def get_config(field)
       port = input(field)
-      port.trim(1)
-      data = input(field).pop
+      data = input(field).pop_all.first
       if data
         set(field, data)
       else
@@ -124,74 +120,111 @@ module SideJob
       end
     end
 
+    # Adds a log entry
+    # @param type [String] Log type
+    # @param data [Hash] Any extra log data
+    def log_push(type, data)
+      SideJob.redis do |redis|
+        redis.lpush "#{redis_key}:log", JSON.generate(data.merge(type: type, timestamp: Time.now))
+      end
+    end
+
+    # Pops a log entry
+    # @return [Hash]
+    def log_pop
+      log = SideJob.redis do |redis|
+        redis.rpop "#{redis_key}:log"
+      end
+      log = JSON.parse(log) if log
+      log
+    end
+
     # Retrieve the job's status
     # @return [Symbol] Job status
     def status
-      st = get(:status)
-      return st ? st.to_sym : nil
+      st = SideJob.redis do |redis|
+        redis.hget "#{redis_key}", 'status'
+      end
+      st ? st.to_sym : nil
     end
 
     # Set the job's status
-    # If status is set to anything other than queued, any parent job is restarted
+    # If status is set to :completed, :suspended, or :failed, the parent job is restarted
     # @param status [String, Symbol] New status
     def status=(status)
-      set(:status, status)
+      log_push('status', {status: status})
+      SideJob.redis do |redis|
+        redis.hset redis_key, 'status', status
+      end
 
-      if status.to_sym != :queued
-        notify
+      if parent && [:completed, :suspended, :failed].include?(status.to_sym)
+        parent.restart
+      end
+    end
+
+    # Restart the job
+    # If the job status is not running (:completed, :suspended, :failed), queues it immediately
+    # If the job status is :queued does nothing
+    # If the job status is :running, ensures the job will be restarted by SideJob::ServerMiddleware
+    def restart
+      case status
+        when :queued
+          # nothing needs to be done
+        when :running
+          SideJob.redis do |redis|
+            redis.hset redis_key, :restart, 1
+          end
+        when :completed, :suspended, :failed
+          original_message = SideJob.redis do |redis|
+            redis.hget redis_key, :call
+          end
+          Sidekiq::Client.push(JSON.parse(original_message))
+      end
+      self
+    end
+
+    # @return [Boolean] Return true if this job is restarting
+    def restarting?
+      SideJob.redis do |redis|
+        redis.hexists(redis_key, :restart)
       end
     end
 
     # @return [Array<String>] List of children job ids for the given job
     def children
-      @children ||= SideJob.redis do |conn|
-        conn.smembers("#{redis_key}:children").map {|id| SideJob::Job.new(id)}
+      SideJob.redis do |redis|
+        redis.smembers("#{redis_key}:children").map {|id| SideJob::Job.new(id)}
       end
     end
 
     # @return [SideJob::Job, nil] Parent job or nil if none
     def parent
       return @parent if @parent # parent job will never change
-      @parent = get(:parent)
-      @parent = SideJob::Job.new(@parent) if @parent
+      SideJob.redis do |redis|
+        @parent = redis.hget(redis_key, 'parent')
+        @parent = SideJob::Job.new(@parent) if @parent
+      end
       return @parent
     end
 
-    # Notifies our parent if we have one that something has been updated
-    # Also sends redis publish message
-    def notify
-      parent.restart if parent
-      SideJob.redis do |conn|
-        conn.publish @jid, 'notify'
+    # Set a job's parent
+    # @param parent [SideJob::Job] parent job
+    def parent=(parent)
+      SideJob.redis do |redis|
+        raise 'Cannot change parent job' if redis.hget(redis_key, 'parent')
+        redis.multi do |multi|
+          multi.hset redis_key, 'parent', parent.jid
+          multi.sadd "#{parent.redis_key}:children", @jid
+        end
       end
-      self
     end
 
     # Returns the job tree starting from this job
     # @return [Array<Hash>]
     def tree
       children.map do |child|
-        {job: child, children: child.tree }
+        { job: child, children: child.tree }
       end
-    end
-
-    # Restart the job
-    # If the job status is not running (:completed, :suspended, :failed), queues it immediately
-    # If the job status is :queued or :restarting, does nothing
-    # If the job status is :working, sets status to :restarting and the job will be restarted by SideJob::ServerMiddleware
-    def restart
-      case status
-        when :queued, :restarting
-          # nothing needs to be done
-        when :working
-          status = :restarting
-        when :completed, :suspended, :failed
-          original_message = get(:call)
-          if original_message
-            Sidekiq::Client.push(JSON.load(original_message))
-          end
-      end
-      self
     end
 
     # Deletes and unschedules the job and all children jobs (recursively)
@@ -211,8 +244,8 @@ module SideJob
       # delete all SideJob keys
       SideJob::Port.delete_all(self, :in)
       SideJob::Port.delete_all(self, :out)
-      SideJob.redis do |conn|
-        conn.del [redis_key, "#{redis_key}:children"]
+      SideJob.redis do |redis|
+        redis.del [redis_key, "#{redis_key}:children", "#{redis_key}:data", "#{redis_key}:log"]
       end
     end
 
