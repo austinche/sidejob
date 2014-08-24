@@ -37,13 +37,27 @@ describe SideJob::Job do
     end
   end
 
+  describe '#queue_name' do
+    it 'returns queue name' do
+      @job = SideJob.queue('testq', 'TestWorker')
+      expect(@job.queue_name).to eq('testq')
+    end
+  end
+
+  describe '#class_name' do
+    it 'returns class name' do
+      @job = SideJob.queue('testq', 'TestWorker')
+      expect(@job.class_name).to eq('TestWorker')
+    end
+  end
+
   describe '#queue' do
     before do
       @job = SideJob.queue('testq', 'TestWorker')
     end
 
     it 'can queue child jobs' do
-      expect(SideJob).to receive(:queue).with('q2', 'TestWorker', {args: [1,2]}).and_call_original
+      expect(SideJob).to receive(:queue).with('q2', 'TestWorker', {args: [1,2], parent: @job}).and_call_original
       expect {
         child = @job.queue('q2', 'TestWorker', {args: [1, 2]})
         expect(child.parent).to eq(@job)
@@ -273,6 +287,89 @@ describe SideJob::Job do
       expect { @job.restart }.to change(TestWorker.jobs, :size).by(1)
       expect(@job.status).to eq(:queued)
     end
+
+    it 'schedules a job to run' do
+      @job.status = :completed
+      time = Time.now.to_f + 10000
+      expect { @job.restart(time) }.to change(TestWorker.jobs, :size).by(1)
+      expect(TestWorker.jobs.last['at']).to eq(time)
+      expect(@job.status).to eq(:scheduled)
+    end
+
+    it 'schedules a job to run with a Time object' do
+      @job.status = :completed
+      time = Time.now + 10000
+      expect { @job.restart(time) }.to change(TestWorker.jobs, :size).by(1)
+      expect(TestWorker.jobs.last['at']).to eq(time.to_f)
+      expect(@job.status).to eq(:scheduled)
+    end
+
+    it 'sets future immediate restart for running queued job' do
+      @job.status = :running
+      expect { @job.restart }.to change(TestWorker.jobs, :size).by(0)
+      expect(@job.status).to eq(:running)
+      expect(SideJob.redis {|redis| redis.hget @job.redis_key, :restart}).to eq('0')
+    end
+
+    it 'sets future scheduled restart for running queued job' do
+      @job.status = :running
+      expect { @job.restart(123) }.to change(TestWorker.jobs, :size).by(0)
+      expect(@job.status).to eq(:running)
+      expect(SideJob.redis {|redis| redis.hget @job.redis_key, :restart}).to eq('123')
+    end
+
+    it 'does nothing if job is already scheduled for sooner than requested' do
+      Sidekiq::Testing.disable!
+      stats = Sidekiq::Stats.new
+      @job.status = :completed
+      time = Time.now.to_f + 10000
+      expect { @job.restart(time) }.to change(stats, :scheduled_size).by(1)
+      job = Sidekiq::ScheduledSet.new.find_job(@job.jid)
+      expect(job.at).to eq(Time.at(time))
+      expect(@job.status).to eq(:scheduled)
+      expect { @job.restart(time+1000) }.to change(stats, :scheduled_size).by(0)
+      job = Sidekiq::ScheduledSet.new.find_job(@job.jid)
+      expect(job.at).to eq(Time.at(time))
+      expect(@job.status).to eq(:scheduled)
+    end
+
+    it 'deletes old scheduled job if it was scheduled for later than requested' do
+      Sidekiq::Testing.disable!
+      stats = Sidekiq::Stats.new
+      @job.status = :completed
+      time = Time.now.to_f + 10000
+      expect { @job.restart(time) }.to change(stats, :scheduled_size).by(1)
+      job = Sidekiq::ScheduledSet.new.find_job(@job.jid)
+      expect(job.at).to eq(Time.at(time))
+      expect(@job.status).to eq(:scheduled)
+      expect { @job.restart(time-1000) }.to change(stats, :scheduled_size).by(0)
+      job = Sidekiq::ScheduledSet.new.find_job(@job.jid)
+      expect(job.at).to eq(Time.at(time-1000))
+      expect(@job.status).to eq(:scheduled)
+    end
+
+    it 'immediately queues an already scheduled job' do
+      Sidekiq::Testing.disable!
+      time = Time.now.to_f + 10000
+      @job.status = :completed
+      @job.restart(time)
+      expect(@job.status).to eq(:scheduled)
+      expect(Sidekiq::ScheduledSet.new.find_job(@job.jid)).not_to be nil
+      @job.restart
+      expect(@job.status).to eq(:queued)
+      expect(Sidekiq::ScheduledSet.new.find_job(@job.jid)).to be nil
+    end
+  end
+
+  describe '#restart_in' do
+    it 'calls #restart with the time' do
+      @job = SideJob.queue('testq', 'TestWorker')
+      now = Time.now
+      Time.stub(:now).and_return(now)
+      time = now.to_f + 1000
+      expect(@job).to receive(:restart).with(time)
+      @job.restart_in(1000)
+    end
   end
 
   describe '#restarting?' do
@@ -300,9 +397,9 @@ describe SideJob::Job do
       child = @job.queue('q2', 'TestWorker')
       expect(@job.status).to eq(:queued)
       expect(child.status).to eq(:queued)
-      expect(SideJob.redis {|redis| redis.keys('*').length}).to be > 0
+      expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be > 0
       @job.delete
-      expect(SideJob.redis {|redis| redis.keys('*').length}).to be(0)
+      expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be(0)
       expect(@job.status).to be_nil
       expect(child.status).to be_nil
     end
@@ -317,27 +414,27 @@ describe SideJob::Job do
       expect(@job.outports).to eq([])
       expect(@job.input('port1').pop).to be_nil
       expect(@job.output('port2').pop).to be_nil
-      expect(SideJob.redis {|redis| redis.keys('*').length}).to be(0)
+      expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be(0)
     end
   end
 
   describe '#input' do
     it 'returns an input port' do
-      job = SideJob::Job.new('job')
+      job = SideJob.queue('testq', 'TestWorker')
       expect(job.input('port')).to eq(SideJob::Port.new(job, :in, 'port'))
     end
   end
 
   describe '#output' do
     it 'returns an output port' do
-      job = SideJob::Job.new('job')
+      job = SideJob.queue('testq', 'TestWorker')
       expect(job.output('port')).to eq(SideJob::Port.new(job, :out, 'port'))
     end
   end
 
   describe '#inports' do
     it 'returns input ports that have been pushed to' do
-      job = SideJob::Job.new('job')
+      job = SideJob.queue('testq', 'TestWorker')
       expect(job.inports.size).to be(0)
       job.input('port1').push 'abc'
       expect(job.inports.size).to be(1)
@@ -351,7 +448,7 @@ describe SideJob::Job do
 
   describe '#outports' do
     it 'returns output ports that have been pushed to' do
-      job = SideJob::Job.new('job')
+      job = SideJob.queue('testq', 'TestWorker')
       expect(job.outports.size).to be(0)
       job.output('port1').push 'abc'
       expect(job.outports.size).to be(1)

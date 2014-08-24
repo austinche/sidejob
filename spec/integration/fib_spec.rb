@@ -7,7 +7,7 @@ class TestFib
     n = get(:n)
     if ! n
       n = input('N').pop
-      suspend unless n
+      suspend and return unless n
       set(:n, n)
     end
 
@@ -28,9 +28,11 @@ class TestFib
         set(:job2, jobs[:job2].jid)
       end
 
-      suspend if children.length != 2 || children[0].status != :completed || children[1].status != :completed
-
-      output('NUM').push (children[0].output('NUM').pop.to_i + children[1].output('NUM').pop.to_i)
+      if children.length != 2 || children[0].status != :completed || children[1].status != :completed
+        suspend
+      else
+        output('NUM').push (children[0].output('NUM').pop.to_i + children[1].output('NUM').pop.to_i)
+      end
     end
   end
 end

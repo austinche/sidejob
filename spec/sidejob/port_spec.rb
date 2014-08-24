@@ -2,7 +2,7 @@ require 'spec_helper'
 
 describe SideJob::Port do
   before do
-    @job = SideJob::Job.new('job')
+    @job = SideJob.queue('testq', 'TestWorker')
     @port = SideJob::Port.new(@job, :in, :port1)
   end
 
@@ -63,7 +63,7 @@ describe SideJob::Port do
     it 'logs pushes' do
       now = Time.now
       Time.stub(:now).and_return(now)
-      expect(@job.log_pop).to be nil
+      while @job.log_pop; end
       @port.push('abc', '123')
       expect(@job.log_pop).to eq({'type' => 'write', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.to_s})
       expect(@job.log_pop).to eq({'type' => 'write', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.to_s})

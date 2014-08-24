@@ -19,12 +19,37 @@ describe SideJob do
       expect(TestWorker.jobs.last['class']).to eq('TestWorker')
     end
 
+    it 'generates an incrementing job id from 1' do
+      job = SideJob.queue('testq', 'TestWorker')
+      expect(job.jid).to eq('1')
+      job = SideJob.queue('testq', 'TestWorker')
+      expect(job.jid).to eq('2')
+    end
+
+    it 'can specify job parent' do
+      expect {
+        parent = SideJob.queue('testq', 'TestWorker')
+        job = SideJob.queue('testq', 'TestWorker', {parent: parent})
+        expect(job.status).to eq(:queued)
+        expect(job.parent).to eq(parent)
+      }.to change(TestWorker.jobs, :size).by(2)
+    end
+
     it 'can specify job args' do
       expect {
         job = SideJob.queue('testq', 'TestWorker', {args: [1, 2]})
         expect(job.status).to eq(:queued)
       }.to change(TestWorker.jobs, :size).by(1)
       expect(TestWorker.jobs.last['args']).to eq([1,2])
+    end
+
+    it 'can specify a job time' do
+      at = Time.now.to_f + 1000
+      expect {
+        job = SideJob.queue('testq', 'TestWorker', {at: at})
+        expect(job.status).to eq(:scheduled)
+      }.to change(TestWorker.jobs, :size).by(1)
+      expect(TestWorker.jobs.last['at']).to eq(at)
     end
   end
 

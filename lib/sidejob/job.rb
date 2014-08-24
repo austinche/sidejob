@@ -26,12 +26,24 @@ module SideJob
       end
     end
 
+    # @return [String] Returns queue name for the job
+    def queue_name
+      SideJob.redis do |redis|
+        redis.hget redis_key, 'queue'
+      end
+    end
+
+    # @return [String] Returns class name for the job
+    def class_name
+      SideJob.redis do |redis|
+        redis.hget redis_key, 'class'
+      end
+    end
+
     # Queues a child job
     # @see SideJob.queue
     def queue(queue, klass, options={})
-      job = SideJob.queue(queue, klass, options)
-      job.parent = self
-      job
+      SideJob.queue(queue, klass, options.merge({parent: self}))
     end
 
     # Sets multiple values
@@ -143,44 +155,77 @@ module SideJob
     # @return [Symbol] Job status
     def status
       st = SideJob.redis do |redis|
-        redis.hget "#{redis_key}", 'status'
+        redis.hget redis_key, 'status'
       end
       st ? st.to_sym : nil
     end
 
     # Set the job's status
-    # If status is set to :completed, :suspended, or :failed, the parent job is restarted
     # @param status [String, Symbol] New status
     def status=(status)
       log_push('status', {status: status})
       SideJob.redis do |redis|
         redis.hset redis_key, 'status', status
       end
-
-      if parent && [:completed, :suspended, :failed].include?(status.to_sym)
-        parent.restart
-      end
     end
 
     # Restart the job
-    # If the job status is not running (:completed, :suspended, :failed), queues it immediately
-    # If the job status is :queued does nothing
-    # If the job status is :running, ensures the job will be restarted by SideJob::ServerMiddleware
-    def restart
+    # This method ensures that the job runs at least once from the beginning
+    # Therefore, if the job is already running, it will run again
+    # If job is already queued or scheduled for an earlier time, this call does nothing
+    # @param time [Time, Float, nil] Time to schedule the job if specified
+    def restart(time=nil)
+      time = time.to_f if time.is_a?(Time)
       case status
         when :queued
-          # nothing needs to be done
+          # don't requeue already queued job
+          return
+
         when :running
+          # we will requeue the job once the currently running worker completes by SideJob::ServerMiddleware
           SideJob.redis do |redis|
-            redis.hset redis_key, :restart, 1
+            redis.hset redis_key, :restart, time || 0
           end
-        when :completed, :suspended, :failed
-          original_message = SideJob.redis do |redis|
-            redis.hget redis_key, :call
+          return
+
+        when :scheduled
+          # move from scheduled queue to current queue
+          job = Sidekiq::ScheduledSet.new.find_job(@jid)
+          if job
+            if time
+              if Time.at(time).utc > job.at
+                # scheduled time is further in the future than currently scheduled run
+                return
+              else
+                job.delete # Will re-add it below
+              end
+            else
+              # queue immediately
+              self.status = :queued
+              job.add_to_queue
+              return
+            end
           end
-          Sidekiq::Client.push(JSON.parse(original_message))
       end
-      self
+
+      queue_name, class_name, args = SideJob.redis do |redis|
+        redis.hmget(redis_key, :queue, :class, :args)
+      end
+      args = JSON.parse(args) if args
+
+      if time && time > Time.now.to_f
+        self.status = :scheduled
+        Sidekiq::Client.push('jid' => @jid, 'queue' => queue_name, 'class' => class_name, 'args' => args, 'retry' => false, 'at' => time)
+      else
+        self.status = :queued
+        Sidekiq::Client.push('jid' => @jid, 'queue' => queue_name, 'class' => class_name, 'args' => args, 'retry' => false)
+      end
+    end
+
+    # Restart the job in a certain amount of time
+    # @param delta_t [Float]
+    def restart_in(delta_t)
+      restart(Time.now.to_f + delta_t)
     end
 
     # @return [Boolean] Return true if this job is restarting
@@ -235,11 +280,9 @@ module SideJob
       end
 
       # remove from sidekiq queue
-      Sidekiq::Queue.all.each do |queue|
-        queue.each do |job|
-          job.delete if job.jid == jid
-        end
-      end
+      job = Sidekiq::Queue.new(queue_name).find_job(@jid)
+      job = Sidekiq::ScheduledSet.new.find_job(@jid) if ! job
+      job.delete if job
 
       # delete all SideJob keys
       SideJob::Port.delete_all(self, :in)
@@ -274,7 +317,6 @@ module SideJob
     def outports
       SideJob::Port.all(self, :out)
     end
-
   end
 
   # Wrapper for a job which may not be in progress unlike SideJob::Worker

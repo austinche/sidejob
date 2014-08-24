@@ -10,9 +10,6 @@ module SideJob
       end
     end
 
-    class Suspended < StandardError
-    end
-
     module ClassMethods
       # Registers a worker class
       # The spec is unused by sidejob and can be in any format
@@ -32,10 +29,9 @@ module SideJob
     end
 
     # Suspend the current worker
-    # Will restart upon manual call to SideJob.restart or when a child job changes status
-    # @raise [SideJob::Worker::Suspended]
+    # Will restart upon call to SideJob::Job#restart
     def suspend
-      raise Suspended
+      self.status = :suspended
     end
   end
 end

@@ -3,21 +3,11 @@ require 'sidekiq/api'
 require 'sidejob/port'
 require 'sidejob/job'
 require 'sidejob/worker'
-require 'sidejob/client_middleware'
 require 'sidejob/server_middleware'
-
-Sidekiq.configure_client do |config|
-  config.client_middleware do |chain|
-    chain.add SideJob::ClientMiddleware
-  end
-end
 
 Sidekiq.configure_server do |config|
   config.server_middleware do |chain|
     chain.add SideJob::ServerMiddleware
-  end
-  config.client_middleware do |chain|
-    chain.add SideJob::ClientMiddleware
   end
 end
 
@@ -33,12 +23,30 @@ module SideJob
   # @param queue [String] Name of the queue to put the job in
   # @param klass [String] Name of the class that will handle the job
   # @param options [Hash] Additional options, keys should be symbols
+  #   parent: [SideJob::Job] parent job
   #   args: [Array] additional args to pass to the class (default none)
+  #   at: [Float] Time to schedule the job, otherwise queue immediately
   # @return [SideJob::Job] Job
   def self.queue(queue, klass, options={})
     args = options[:args] || []
-    job_id = Sidekiq::Client.push('queue' => queue, 'class' => klass, 'args' => args, 'retry' => false)
-    SideJob::Job.new(job_id)
+
+    # To prevent race conditions, we generate the jid and set all metadata before queuing the job to sidekiq
+    # Otherwise, sidekiq may start the job too quickly
+    jid = SideJob.redis {|redis| redis.incr :job_id}.to_s
+    job = SideJob::Job.new(jid)
+
+    SideJob.redis do |redis|
+      redis.hmset job.redis_key, :queue, queue, :class, klass, :args, JSON.generate(args)
+    end
+
+    if options[:parent]
+      job.parent = options[:parent]
+    end
+
+    # Now actually queue the job
+    job.restart options[:at]
+
+    job
   end
 
   # Finds a job by id

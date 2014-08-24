@@ -7,7 +7,14 @@ class TestSumFlow
       queue('testq', 'TestSum')
       suspend
     else
-      if ! get(:sent)
+      if get(:sent)
+        sum = children[0].output(:sum).pop
+        if sum
+          output(:out).push sum
+        else
+          suspend
+        end
+      else
         children[0].input(:in).push '5'
         children[0].input(:in).push '6'
         children[0].input(:ready).push '1'
@@ -15,10 +22,6 @@ class TestSumFlow
         children[0].restart
         suspend
       end
-
-      sum = children[0].output(:sum).pop
-      suspend unless sum
-      output(:out).push sum
     end
   end
 end

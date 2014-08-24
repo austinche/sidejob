@@ -23,19 +23,12 @@ describe SideJob::ServerMiddleware do
     expect(@job.status).to be(:completed)
   end
 
-  it 'sets status to suspended on suspend' do
-    @chain.invoke(@worker, {}, @queue) do
-      @worker.suspend
-    end
-    expect(@job.status).to be(:suspended)
-  end
-
   it 'sets status to failed on exception and logs error' do
     now = Time.now
     Time.stub(:now).and_return(now)
-    @chain.invoke(@worker, {}, @queue) do
+    expect { @chain.invoke(@worker, {}, @queue) do
       raise 'oops'
-    end
+    end }.to raise_error
     expect(@job.status).to be(:failed)
     
     log = nil

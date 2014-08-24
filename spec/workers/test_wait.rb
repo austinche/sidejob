@@ -4,7 +4,7 @@ class TestWait
   include SideJob::Worker
   def perform
     total = get_config(:total)
-    suspend unless total
+    suspend and return unless total
     total = total.to_i
     count = get(:count).to_i
 
