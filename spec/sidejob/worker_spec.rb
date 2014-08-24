@@ -16,11 +16,4 @@ describe SideJob::Worker do
     @worker.suspend
     expect(@worker.status).to eq(:suspended)
   end
-
-  it 'provides a worker registry' do
-    expect(SideJob::Worker.all).to eq []
-    spec = {foo: 'bar'}
-    @worker.class.register(spec)
-    expect(SideJob::Worker.all).to eq [spec]
-  end
 end
