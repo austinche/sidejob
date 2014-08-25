@@ -26,110 +26,23 @@ module SideJob
       end
     end
 
-    # @return [String] Returns queue name for the job
-    def queue_name
+    # @return [Hash] Info hash about the job
+    def info
+      info = SideJob.redis do |redis|
+        redis.hgetall redis_key
+      end
+      return {queue: info['queue'], class: info['class'], args: JSON.parse(info['args']),
+              parent: info['parent'] ? SideJob::Job.new(info['parent']) : nil, restart: info['restart'],
+              status: info['status'].to_sym}
+    end
+
+    # Sets the job arguments and restarts it
+    # @param args [Array<String>] New arguments for the job
+    def args=(args)
       SideJob.redis do |redis|
-        redis.hget redis_key, 'queue'
+        redis.hset redis_key, 'args', JSON.generate(args)
       end
-    end
-
-    # @return [String] Returns class name for the job
-    def class_name
-      SideJob.redis do |redis|
-        redis.hget redis_key, 'class'
-      end
-    end
-
-    # Queues a child job
-    # @see SideJob.queue
-    def queue(queue, klass, options={})
-      SideJob.queue(queue, klass, options.merge({parent: self}))
-    end
-
-    # Sets multiple values
-    # Merges data into a job's metadata
-    # @param data [Hash{String => String}] Data to update
-    def mset(data)
-      SideJob.redis do |redis|
-        redis.hmset "#{redis_key}:data", *(data.to_a.flatten(1))
-      end
-    end
-
-    # Sets a single data in the job's metadata
-    # @param field [String,Symbol] Field to set
-    # @param value [String]
-    def set(field, value)
-      mset({field => value})
-    end
-
-    # Sets a single JSON encoded data in the job's metadata
-    # @param field [String,Symbol] Field to get
-    # @param value [Object] JSON-serializable object
-    def set_json(field, value)
-      return unless value
-      set(field, JSON.generate(value))
-    end
-
-    # Loads data from the job's metadata
-    # @param fields [Array<String,Symbol>] Fields to load or all fields if none specified
-    # @return [Hash{String,Symbol => String}] Job's metadata with the fields specified
-    def mget(*fields)
-      SideJob.redis do |redis|
-        if fields.length > 0
-          values = redis.hmget("#{redis_key}:data", *fields)
-          Hash[fields.zip(values)]
-        else
-          redis.hgetall "#{redis_key}:data"
-        end
-      end
-    end
-
-    # Gets a single data from the job's metadata
-    # @param field [String,Symbol] Field to get
-    # @return [String, nil] Value of the given data field or nil
-    def get(field)
-      mget(field)[field]
-    end
-
-    # Gets a single JSON encoded data from the job's metadata
-    # @param field [String,Symbol] Field to get
-    # @return [Object, nil] JSON parsed value of the given data field
-    def get_json(field)
-      data = get(field)
-      if data
-        JSON.parse(data)
-      else
-        nil
-      end
-    end
-
-    # Helps with getting and storing configuration-like data from a port
-    # The assumption is that a configuration port only cares about the last data received on it
-    # The last data is also saved in to the state
-    # If no data in on the input port, load from saved state
-    # @param field [String,Symbol] Name of configuration field/port
-    # @return [String, nil] Configuration value or nil
-    def get_config(field)
-      port = input(field)
-      data = input(field).pop_all.first
-      if data
-        set(field, data)
-      else
-        data = get(field)
-      end
-      data
-    end
-
-    # @see #get_config
-    # @param field [String,Symbol] Field to get
-    # @return [Object, nil] JSON parsed value of the given configuration value
-    def get_config_json(field)
-      data = get_config(field)
-      if data
-        JSON.parse(data)
-      else
-        nil
-      end
+      restart
     end
 
     # Adds a log entry
@@ -176,7 +89,10 @@ module SideJob
     # @param time [Time, Float, nil] Time to schedule the job if specified
     def restart(time=nil)
       time = time.to_f if time.is_a?(Time)
-      case status
+
+      info_hash = info
+
+      case info_hash[:status]
         when :queued
           # don't requeue already queued job
           return
@@ -192,33 +108,21 @@ module SideJob
           # move from scheduled queue to current queue
           job = Sidekiq::ScheduledSet.new.find_job(@jid)
           if job
-            if time
-              if Time.at(time).utc > job.at
-                # scheduled time is further in the future than currently scheduled run
-                return
-              else
-                job.delete # Will re-add it below
-              end
-            else
-              # queue immediately
-              self.status = :queued
-              job.add_to_queue
+            if time && Time.at(time).utc > job.at
+              # scheduled time is further in the future than currently scheduled run so ignore restart request
               return
+            else
+              job.delete # Will re-add it below
             end
           end
       end
 
-      queue_name, class_name, args = SideJob.redis do |redis|
-        redis.hmget(redis_key, :queue, :class, :args)
-      end
-      args = JSON.parse(args) if args
-
       if time && time > Time.now.to_f
         self.status = :scheduled
-        Sidekiq::Client.push('jid' => @jid, 'queue' => queue_name, 'class' => class_name, 'args' => args, 'retry' => false, 'at' => time)
+        Sidekiq::Client.push('jid' => @jid, 'queue' => info_hash[:queue], 'class' => info_hash[:class], 'args' => info_hash[:args], 'retry' => false, 'at' => time)
       else
         self.status = :queued
-        Sidekiq::Client.push('jid' => @jid, 'queue' => queue_name, 'class' => class_name, 'args' => args, 'retry' => false)
+        Sidekiq::Client.push('jid' => @jid, 'queue' => info_hash[:queue], 'class' => info_hash[:class], 'args' => info_hash[:args], 'retry' => false)
       end
     end
 
@@ -252,18 +156,6 @@ module SideJob
       return @parent
     end
 
-    # Set a job's parent
-    # @param parent [SideJob::Job] parent job
-    def parent=(parent)
-      SideJob.redis do |redis|
-        raise 'Cannot change parent job' if redis.hget(redis_key, 'parent')
-        redis.multi do |multi|
-          multi.hset redis_key, 'parent', parent.jid
-          multi.sadd "#{parent.redis_key}:children", @jid
-        end
-      end
-    end
-
     # Returns the job tree starting from this job
     # @return [Array<Hash>]
     def tree
@@ -280,7 +172,7 @@ module SideJob
       end
 
       # remove from sidekiq queue
-      job = Sidekiq::Queue.new(queue_name).find_job(@jid)
+      job = Sidekiq::Queue.new(info[:queue]).find_job(@jid)
       job = Sidekiq::ScheduledSet.new.find_job(@jid) if ! job
       job.delete if job
 

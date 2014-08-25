@@ -37,165 +37,21 @@ describe SideJob::Job do
     end
   end
 
-  describe '#queue_name' do
-    it 'returns queue name' do
-      @job = SideJob.queue('testq', 'TestWorker')
-      expect(@job.queue_name).to eq('testq')
+  describe '#info' do
+    it 'returns all job info' do
+      @job = SideJob.queue('testq', 'TestWorker', {args: [1, 2]})
+      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', args: [1, 2], parent: nil, restart: nil, status: :queued })
     end
   end
 
-  describe '#class_name' do
-    it 'returns class name' do
-      @job = SideJob.queue('testq', 'TestWorker')
-      expect(@job.class_name).to eq('TestWorker')
-    end
-  end
-
-  describe '#queue' do
-    before do
-      @job = SideJob.queue('testq', 'TestWorker')
-    end
-
-    it 'can queue child jobs' do
-      expect(SideJob).to receive(:queue).with('q2', 'TestWorker', {args: [1,2], parent: @job}).and_call_original
-      expect {
-        child = @job.queue('q2', 'TestWorker', {args: [1, 2]})
-        expect(child.parent).to eq(@job)
-        expect(@job.children).to eq([child])
-      }.to change(TestWorker.jobs, :size).by(1)
-    end
-  end
-
-  describe '#mset' do
-    before do
-      @job = SideJob.queue('testq', 'TestWorker')
-    end
-
-    it 'stores metadata in redis' do
-      @job.mset({test: 'data'})
-      expect(SideJob.redis {|redis| redis.hget("#{@job.redis_key}:data", 'test')}).to eq('data')
-
-      # test updating
-      @job.mset({test: 'data2'})
-      expect(SideJob.redis {|redis| redis.hget("#{@job.redis_key}:data", 'test')}).to eq('data2')
-    end
-  end
-
-  describe '#mget' do
-    before do
-      @job = SideJob.queue('testq', 'TestWorker')
-    end
-
-    it 'only loads specified fields' do
-      data = { field1: 'value1', field2: 'value2' }
-      @job.mset data
-      expect(@job.mget(:field1, :field2)).to eq(data)
-    end
-
-    it 'returns String or Symbol depending on passed in field' do
-      data = { field1: 'value1', field2: 'value2' }
-      @job.mset data
-      data = @job.mget(:field1, 'field2')
-      expect(data[:field1]).to eq('value1')
-      expect(data['field2']).to eq('value2')
-    end
-
-    it 'loads all fields if none specified' do
-      data = { field1: 'value1', field2: 'value2' }
-      @job.mset data
-      data = @job.mget
-      expect(data['field1']).to eq('value1')
-      expect(data['field2']).to eq('value2')
-    end
-  end
-
-  describe '#get, #set' do
-    before do
-      @job = SideJob.queue('testq', 'TestWorker')
-    end
-
-    it 'are shorthands for getting/setting single data fields' do
-      @job.set('field1', 'value1')
-      expect(@job.get('field1')).to eq('value1')
-    end
-  end
-
-  describe '#get_json, #set_json' do
-    before do
-      @job = SideJob.queue('testq', 'TestWorker')
-    end
-
-    it 'can be used to store objects as json' do
-      data = {'abc' => 123, 'def' => [1, 2]}
-      @job.set_json(:field1, data)
-      expect(@job.get_json(:field1)).to eq(data)
-    end
-  end
-
-  describe '#get_config' do
-    before do
-      @job = SideJob.queue('testq', 'TestWorker')
-    end
-
-    it 'returns nil if data is not available' do
-      expect(@job.get_config('field1')).to be nil
-    end
-
-    it 'uses saved data if no data on input port' do
-      @job.set('field1', 'value1')
-      expect(@job.get_config('field1')).to eq('value1')
-    end
-
-    it 'uses input data if present' do
-      @job.set('config:field1', 'value1')
-      @job.input(:field1).push('value2')
-      expect(@job.get_config('field1')).to eq('value2')
-      expect(@job.get_config('field1')).to eq('value2')
-      expect(@job.get('field1')).to eq('value2')
-    end
-
-    it 'uses the latest input data when present' do
-      @job.set('field1', 'value1')
-      @job.input(:field1).push('value2')
-      @job.input(:field1).push('value3')
-      expect(@job.get_config('field1')).to eq('value3')
-      expect(@job.get_config('field1')).to eq('value3')
-      expect(@job.get('field1')).to eq('value3')
-    end
-  end
-
-  describe '#get_config_json' do
-    before do
-      @job = SideJob.queue('testq', 'TestWorker')
-    end
-
-    it 'returns nil if data is not available' do
-      expect(@job.get_config_json ('field1')).to be nil
-    end
-
-    it 'uses saved data if no data on input port' do
-      val = {'val' => 1}
-      @job.set_json('field1', val)
-      expect(@job.get_config_json('field1')).to eq(val)
-    end
-
-    it 'uses input data if present' do
-      val = {'val' => 2}
-      @job.set_json('field1', {'val' => 1})
-      @job.input(:field1).push_json(val)
-      expect(@job.get_config_json('field1')).to eq(val)
-      expect(@job.get_config_json('field1')).to eq(val)
-      expect(@job.get_json('field1')).to eq(val)
-    end
-
-    it 'uses the latest input data when present' do
-      val = {'val' => 3}
-      @job.set_json('field1', {'val' => 1})
-      @job.input(:field1).push_json({'val' => 2})
-      @job.input(:field1).push_json(val)
-      expect(@job.get_config_json('field1')).to eq(val)
-      expect(@job.get_config_json('field1')).to eq(val)
-      expect(@job.get_json('field1')).to eq(val)
+  describe '#args=' do
+    it 'sets job arguments and restarts the job' do
+      @job = SideJob.queue('testq', 'TestWorker', {args: [1, 2]})
+      @job.status = :completed
+      expect(@job.info[:args]).to eq([1,2])
+      @job.args = [3]
+      expect(@job.status).to be :queued
+      expect(@job.info[:args]).to eq([3])
     end
   end
 
@@ -237,30 +93,20 @@ describe SideJob::Job do
   describe '#children, #parent' do
     it 'can get children and parent jobs' do
       parent = SideJob.queue('testq', 'TestWorker')
-      child = parent.queue('q2', 'TestWorker')
+      child = SideJob.queue('q2', 'TestWorker', {parent: parent})
       expect(TestWorker.jobs.size).to eq(2)
       expect(parent.children).to eq([child])
       expect(child.parent).to eq(parent)
     end
   end
 
-  describe '#parent=' do
-    it 'raises error if parent is already set' do
-      parent = SideJob.queue('testq', 'TestWorker')
-      child = SideJob.queue('testq', 'TestWorker')
-      parent2 = SideJob.queue('testq', 'TestWorker')
-      child.parent = parent
-      expect { child.parent = parent2 }.to raise_error
-    end
-  end
-
   describe '#tree' do
     it 'recursively gets job tree' do
       job1 = SideJob.queue('q', 'TestWorker')
-      job2 = job1.queue('q', 'TestWorker')
-      job3 = job1.queue('q', 'TestWorker')
-      job4 = job2.queue('q', 'TestWorker')
-      job5 = job4.queue('q', 'TestWorker')
+      job2 = SideJob.queue('q', 'TestWorker', {parent: job1})
+      job3 = SideJob.queue('q', 'TestWorker', {parent: job1})
+      job4 = SideJob.queue('q', 'TestWorker', {parent: job2})
+      job5 = SideJob.queue('q', 'TestWorker', {parent: job4})
       expect(job1.tree).to match_array([{job: job2, children: [{job: job4, children: [{job: job5, children: []}]}]}, {job: job3, children: []}])
     end
   end
@@ -394,7 +240,7 @@ describe SideJob::Job do
     end
 
     it 'recursively deletes jobs' do
-      child = @job.queue('q2', 'TestWorker')
+      child = SideJob.queue('q2', 'TestWorker', {parent: @job})
       expect(@job.status).to eq(:queued)
       expect(child.status).to eq(:queued)
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be > 0

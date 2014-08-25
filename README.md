@@ -78,12 +78,12 @@ Additional keys used by SideJob:
 ** class - name of class
 ** args - JSON array of arguments
 ** parent: parent job id
-** restart - if set, the job will be requeued once it currently completes
-** status - job status: queued, scheduled, running, suspended, completed, failed
+** restart - if set, the job will be requeued for the specified time once it completes (0 means queue immediately)
+** status - job status: starting, queued, scheduled, running, suspended, completed, failed
 *** Allowed status transitions:
 **** queued | scheduled -> running
 **** scheduled -> queued
-**** suspended | completed | failed -> queued | scheduled
+**** starting | suspended | completed | failed -> queued | scheduled
 **** running -> suspended | completed | failed
 * job:<jid>:data - Hash containing the job's internal data
 * job:<jid>:inports and job:<jid>:outports - Set containing all port names

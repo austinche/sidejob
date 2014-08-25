@@ -79,13 +79,12 @@ describe SideJob::Port do
     end
 
     it 'restarts parent job when pushing to an output port' do
-      @parent = SideJob::Job.new('job')
-      @job.parent = @parent
-      @parent.status = :running
-      outport = SideJob::Port.new(@job, :out, :port1)
-      expect(@parent.restarting?).to be false
+      child = SideJob.queue('q', 'TestWorker', {parent: @job})
+      @job.status = :running
+      outport = SideJob::Port.new(child, :out, :port1)
+      expect(@job.restarting?).to be false
       outport.push('abc')
-      expect(@parent.restarting?).to be true
+      expect(@job.restarting?).to be true
     end
   end
 

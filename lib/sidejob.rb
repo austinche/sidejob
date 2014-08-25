@@ -36,11 +36,14 @@ module SideJob
     job = SideJob::Job.new(jid)
 
     SideJob.redis do |redis|
-      redis.hmset job.redis_key, :queue, queue, :class, klass, :args, JSON.generate(args)
-    end
+      redis.multi do |multi|
+        multi.hmset job.redis_key, :status, :starting, :queue, queue, :class, klass, :args, JSON.generate(args)
 
-    if options[:parent]
-      job.parent = options[:parent]
+        if options[:parent]
+          multi.hset job.redis_key, 'parent', options[:parent].jid
+          multi.sadd "#{options[:parent].redis_key}:children", jid
+        end
+      end
     end
 
     # Now actually queue the job
