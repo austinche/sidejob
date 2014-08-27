@@ -7,9 +7,6 @@ Just like a typical side job, a job in SideJob may depend on other jobs or may m
 and take a long time (such as months). They may be suspended and restarted many times.
 The job should be robust to the crashing or downtime of any portion of the infrastructure.
 
-Jobs can be language agnostic. Any language that talks to Redis can be used as a client.
-Workers should preferably use a Resque-compatible library.
-
 Requirements
 ------------
 
@@ -52,7 +49,7 @@ but this is a description of the current data storage format.
 The easiest way to set the redis location is via the environment
 variable REDIS_URL, e.g. redis://redis.myhost.com:6379/4
 
-The keys used by Sidekiq (Resque compatible):
+The keys used by Sidekiq:
 * queues - Set containing all queue names
 * queue:<queue> - List containing jobs to be run (new jobs pushed on left) on the given queue
 ** A sidekiq job is encoded as json and contains at minimum: queue, retry, class, jid, args
