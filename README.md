@@ -86,7 +86,6 @@ Additional keys used by SideJob:
 **** starting | suspended | completed | failed -> queued | scheduled
 **** running -> suspended | completed | failed
 * job:<jid>:data - Hash containing the job's internal data
-* job:<jid>:inports and job:<jid>:outports - Set containing all port names
 * job:<jid>:in:<inport> and job:<jid>:out:<outport> - List with unread port data
 * job:<jid>:children - Set containing all children job IDs
 * job:<jid>:log - List with job changes, new log entries pushed on left. Each log entry is JSON encoded.

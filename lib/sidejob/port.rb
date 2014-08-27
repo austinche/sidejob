@@ -32,7 +32,6 @@ module SideJob
     # Push some data on to the port
     # If the port is an input port, wakes up the job so it has chance to process the data
     # If the port is an output port, wake up the parent job so it has a chance to process it
-    # Records the port so that it can be retrieved by Port.all
     # @param data [Array<String>] List of data to push on to port
     def push(*data)
       data.each do |x|
@@ -48,10 +47,7 @@ module SideJob
       end
 
       SideJob.redis do |redis|
-        redis.multi do |multi|
-          multi.lpush redis_key, data
-          multi.sadd "#{@job.redis_key}:#{@type}ports", @name # set to store all port names
-        end
+        redis.lpush redis_key, data
       end
       self
     end
@@ -122,23 +118,13 @@ module SideJob
       redis_key
     end
 
-    # Returns all ports that have had been pushed to for the given job and type
-    # @param job [SideJob::Job, SideJob::Worker]
-    # @param type [:in, :out] Specifies whether it is input or output port
-    # @return [Array<SideJob::Port>] All pushed to ports for the given job and type
-    def self.all(job, type)
-      SideJob.redis do |redis|
-        redis.smembers("#{job.redis_key}:#{type}ports").map {|name| SideJob::Port.new(job, type, name)}
-      end
-    end
-
     # Deletes all Redis keys for all ports of the given job/type
     # @param job [SideJob::Job, SideJob::Worker]
     # @param type [:in, :out] Specifies whether it is input or output port
     def self.delete_all(job, type)
       SideJob.redis do |redis|
-        redis.del ["#{job.redis_key}:#{type}ports"] +
-                     redis.smembers("#{job.redis_key}:#{type}ports").map {|name| "#{job.redis_key}:#{type}:#{name}"}
+        keys = redis.keys("#{job.redis_key}:#{type}:*")
+        redis.del keys if keys && keys.length > 0
       end
     end
   end

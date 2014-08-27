@@ -45,12 +45,14 @@ module SideJob
       restart
     end
 
-    # Adds a log entry
+    # Adds a log entry to redis and also broadcasts it via pubsub
     # @param type [String] Log type
     # @param data [Hash] Any extra log data
     def log_push(type, data)
       SideJob.redis do |redis|
-        redis.lpush "#{redis_key}:log", JSON.generate(data.merge(type: type, timestamp: Time.now))
+        entry = JSON.generate(data.merge(type: type, timestamp: Time.now))
+        redis.lpush "#{redis_key}:log", entry
+        redis.publish redis_key, entry
       end
     end
 
@@ -198,16 +200,26 @@ module SideJob
       SideJob::Port.new(self, :out, port)
     end
 
-    # Gets all input ports that have been pushed to
+    # Gets all input ports that have data
     # @return [Array<SideJob::Port>] Input ports
     def inports
-      SideJob::Port.all(self, :in)
+      SideJob.redis do |redis|
+        redis.keys("#{redis_key}:in:*").map do |name|
+          name =~ /#{redis_key}:in:(.*)/
+          SideJob::Port.new(self, :in, $1)
+        end
+      end
     end
 
-    # Gets all output ports that have been pushed to
+    # Gets all output ports that have data
     # @return [Array<SideJob::Port>] Output ports
     def outports
-      SideJob::Port.all(self, :out)
+      SideJob.redis do |redis|
+        redis.keys("#{redis_key}:out:*").map do |name|
+          name =~ /#{redis_key}:out:(.*)/
+          SideJob::Port.new(self, :out, $1)
+        end
+      end
     end
   end
 

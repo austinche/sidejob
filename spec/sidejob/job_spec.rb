@@ -279,7 +279,7 @@ describe SideJob::Job do
   end
 
   describe '#inports' do
-    it 'returns input ports that have been pushed to' do
+    it 'returns input ports that have data' do
       job = SideJob.queue('testq', 'TestWorker')
       expect(job.inports.size).to be(0)
       job.input('port1').push 'abc'
@@ -289,11 +289,13 @@ describe SideJob::Job do
       expect(job.inports.size).to be(1)
       job.input('port2').push 'abc'
       expect(job.inports.size).to be(2)
+      job.input('port2').pop
+      expect(job.inports.size).to be(1)
     end
   end
 
   describe '#outports' do
-    it 'returns output ports that have been pushed to' do
+    it 'returns output ports that have data' do
       job = SideJob.queue('testq', 'TestWorker')
       expect(job.outports.size).to be(0)
       job.output('port1').push 'abc'
@@ -303,6 +305,8 @@ describe SideJob::Job do
       expect(job.outports.size).to be(1)
       job.output('port2').push 'abc'
       expect(job.outports.size).to be(2)
+      job.output('port2').pop
+      expect(job.outports.size).to be(1)
     end
   end
 end

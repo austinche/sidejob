@@ -163,19 +163,6 @@ describe SideJob::Port do
     end
   end
 
-  describe '.all' do
-    it 'returns ports that have been pushed to but not popped from' do
-      expect(SideJob::Port.all(@job, :in)).to eq([])
-      @port.push 'abc'
-      expect(SideJob::Port.all(@job, :in)).to match_array([@port])
-      port2 = SideJob::Port.new(@job, :in, 'port2')
-      port2.pop
-      expect(SideJob::Port.all(@job, :in)).to match_array([@port])
-      port2.push '123'
-      expect(SideJob::Port.all(@job, :in)).to match_array([@port, port2])
-    end
-  end
-
   describe '.delete_all' do
     it 'delete all port keys' do
       expect(SideJob.redis {|redis| redis.keys("#{@port.redis_key}*").length}).to be(0)
