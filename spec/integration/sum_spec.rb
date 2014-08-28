@@ -8,16 +8,16 @@ class TestSumFlow
       suspend
     else
       if get(:sent)
-        sum = children[0].output(:sum).pop
+        sum = children[0].output(:sum).read
         if sum
-          output(:out).push sum
+          output(:out).write sum
         else
           suspend
         end
       else
-        children[0].input(:in).push '5'
-        children[0].input(:in).push '6'
-        children[0].input(:ready).push '1'
+        children[0].input(:in).write '5'
+        children[0].input(:in).write '6'
+        children[0].input(:ready).write '1'
         set(:sent, 1)
         children[0].restart
         suspend
@@ -31,6 +31,6 @@ describe TestSumFlow do
     job = SideJob.queue('testq', 'TestSumFlow')
     Sidekiq::Worker.drain_all
     expect(job.status).to be(:completed)
-    expect(job.output(:out).pop).to eq('11')
+    expect(job.output(:out).read).to eq('11')
   end
 end

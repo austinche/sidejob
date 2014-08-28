@@ -90,7 +90,7 @@ describe SideJob::Worker do
 
     it 'uses input data if present' do
       @worker.set('config:field1', 'value1')
-      @worker.input(:field1).push('value2')
+      @worker.input(:field1).write('value2')
       expect(@worker.get_config('field1')).to eq('value2')
       expect(@worker.get_config('field1')).to eq('value2')
       expect(@worker.get('field1')).to eq('value2')
@@ -98,8 +98,8 @@ describe SideJob::Worker do
 
     it 'uses the latest input data when present' do
       @worker.set('field1', 'value1')
-      @worker.input(:field1).push('value2')
-      @worker.input(:field1).push('value3')
+      @worker.input(:field1).write('value2')
+      @worker.input(:field1).write('value3')
       expect(@worker.get_config('field1')).to eq('value3')
       expect(@worker.get_config('field1')).to eq('value3')
       expect(@worker.get('field1')).to eq('value3')
@@ -120,7 +120,7 @@ describe SideJob::Worker do
     it 'uses input data if present' do
       val = {'val' => 2}
       @worker.set_json('field1', {'val' => 1})
-      @worker.input(:field1).push_json(val)
+      @worker.input(:field1).write_json(val)
       expect(@worker.get_config_json('field1')).to eq(val)
       expect(@worker.get_config_json('field1')).to eq(val)
       expect(@worker.get_json('field1')).to eq(val)
@@ -129,8 +129,8 @@ describe SideJob::Worker do
     it 'uses the latest input data when present' do
       val = {'val' => 3}
       @worker.set_json('field1', {'val' => 1})
-      @worker.input(:field1).push_json({'val' => 2})
-      @worker.input(:field1).push_json(val)
+      @worker.input(:field1).write_json({'val' => 2})
+      @worker.input(:field1).write_json(val)
       expect(@worker.get_config_json('field1')).to eq(val)
       expect(@worker.get_config_json('field1')).to eq(val)
       expect(@worker.get_json('field1')).to eq(val)

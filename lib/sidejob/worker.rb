@@ -89,7 +89,7 @@ module SideJob
     # @param field [String,Symbol] Name of configuration field/port
     # @return [String, nil] Configuration value or nil
     def get_config(field)
-      data = input(field).pop_all.first
+      data = input(field).drain.first
       if data
         set(field, data)
       else

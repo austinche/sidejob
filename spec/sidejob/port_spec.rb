@@ -39,105 +39,119 @@ describe SideJob::Port do
       expect(@port.size).to eq 0
     end
 
-    it 'number of elements is increased on push' do
+    it 'number of elements is increased on write' do
       expect {
-        @port.push 1
+        @port.write 1
       }.to change(@port, :size).by(1)
     end
 
-    it 'number of elements is decreased on pop' do
-      @port.push 1
+    it 'number of elements is decreased on read' do
+      @port.write 1
       expect {
-        @port.pop
+        @port.read
       }.to change(@port, :size).by(-1)
     end
   end
 
-  describe '#push' do
-    it 'can push data to a port' do
-      @port.push('abc', 123)
+  describe '#write' do
+    it 'can write data to a port' do
+      @port.write('abc', 123)
       data = SideJob.redis { |redis| redis.lrange(@port.redis_key, 0, -1) }
       expect(data).to eq(['123', 'abc'])
     end
 
-    it 'logs pushes' do
+    it 'logs writes' do
       now = Time.now
       Time.stub(:now).and_return(now)
       while @job.log_pop; end
-      @port.push('abc', '123')
+      @port.write('abc', '123')
       expect(@job.log_pop).to eq({'type' => 'write', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.to_s})
       expect(@job.log_pop).to eq({'type' => 'write', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.to_s})
       expect(@job.log_pop).to be nil
     end
 
-    it 'restarts job when pushing to an input port' do
+    it 'restarts job when writing to an input port' do
       @job.status = :running
       inport = SideJob::Port.new(@job, :in, :port1)
       expect(@job.restarting?).to be false
-      inport.push('abc')
+      inport.write('abc')
       expect(@job.restarting?).to be true
     end
 
-    it 'restarts parent job when pushing to an output port' do
+    it 'restarts parent job when writing to an output port' do
       child = SideJob.queue('q', 'TestWorker', {parent: @job})
       @job.status = :running
       outport = SideJob::Port.new(child, :out, :port1)
       expect(@job.restarting?).to be false
-      outport.push('abc')
+      outport.write('abc')
       expect(@job.restarting?).to be true
     end
   end
 
-  describe '#pop' do
-    it 'can pop data from a port' do
-      expect(@port.pop).to be_nil
-      @port.push('abc', 123, JSON.generate(['data1', 1, {key: 'val'}]))
+  describe '#write_json' do
+    it 'JSON encodes data before writing' do
+      data1 = [1, 2]
+      data2 = {abc: 123}
+      expect(@port).to receive(:write).with(JSON.generate(data1), JSON.generate(data2))
+      @port.write_json(data1, data2)
+    end
+  end
+
+  describe '#read' do
+    it 'can read data from a port' do
+      expect(@port.read).to be_nil
+      @port.write('abc', 123, JSON.generate(['data1', 1, {key: 'val'}]))
       expect(@port.size).to be(3)
-      expect(@port.pop).to eq('abc')
-      expect(@port.pop).to eq('123')
-      expect(JSON.parse(@port.pop)).to eq(['data1', 1, {'key' => 'val'}])
-      expect(@port.pop).to be_nil
+      expect(@port.read).to eq('abc')
+      expect(@port.read).to eq('123')
+      expect(JSON.parse(@port.read)).to eq(['data1', 1, {'key' => 'val'}])
+      expect(@port.read).to be_nil
       expect(@port.size).to be(0)
     end
 
-    it 'logs pops' do
+    it 'logs reads' do
       now = Time.now
       Time.stub(:now).and_return(now)
-      @port.push('abc', '123')
+      @port.write('abc', '123')
       while @job.log_pop; end
-      expect(@port.pop).to eq('abc')
-      expect(@port.pop).to eq('123')
+      expect(@port.read).to eq('abc')
+      expect(@port.read).to eq('123')
       expect(@job.log_pop).to eq({'type' => 'read', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.to_s})
       expect(@job.log_pop).to eq({'type' => 'read', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.to_s})
       expect(@job.log_pop).to be nil
     end
   end
 
-  describe '#pop_all' do
+  describe '#read_json' do
+    it 'JSON decodes read data' do
+      expect(@port.read_json).to be_nil
+      data1 = ['data1', 1, {'key' => 'val'}]
+      data2 = {'abc' => 123}
+      @port.write_json(data1, data2)
+      expect(@port.read_json).to eq(data1)
+      expect(@port.read_json).to eq(data2)
+    end
+  end
+  describe '#drain' do
     it 'returns empty array when port is empty' do
-      expect(@port.pop_all).to eq([])
+      expect(@port.drain).to eq([])
     end
 
     it 'returns array with most recent items first' do
-      @port.push '1'
-      @port.push '2'
-      @port.push '3'
-      expect(@port.pop_all).to eq(['3', '2', '1'])
-      expect(@port.pop_all).to eq([])
-      expect(@port.pop).to be nil
+      @port.write '1'
+      @port.write '2', '3'
+      expect(@port.drain).to eq(['3', '2', '1'])
+      expect(@port.drain).to eq([])
+      expect(@port.read).to be nil
     end
   end
 
-  describe '#push_json, #pop_json, #pop_all_json' do
-    it 'encodes/decodes from JSON' do
-      expect(@port.pop_json).to be_nil
+  describe '#drain_json' do
+    it 'drains and JSON decodes data on port' do
       data1 = ['data1', 1, {'key' => 'val'}]
       data2 = {'abc' => 123}
-      @port.push_json(data1, data2)
-      expect(@port.pop_json).to eq(data1)
-      expect(@port.pop_json).to eq(data2)
-      @port.push_json(data1, data2)
-      expect(@port.pop_all_json).to eq([data2, data1])
+      @port.write_json(data1, data2)
+      expect(@port.drain_json).to eq([data2, data1])
     end
   end
 
@@ -166,10 +180,10 @@ describe SideJob::Port do
   describe '.delete_all' do
     it 'delete all port keys' do
       expect(SideJob.redis {|redis| redis.keys("#{@port.redis_key}*").length}).to be(0)
-      @port.push 'abc'
+      @port.write 'abc'
       keys = SideJob.redis {|redis| redis.keys("#{@port.redis_key}*").length}
-      SideJob::Port.new(@job, :out, 'port2').push 'abc'
-      SideJob::Port.new(@job, :out, 'port3').push 'abc'
+      SideJob::Port.new(@job, :out, 'port2').write 'abc'
+      SideJob::Port.new(@job, :out, 'port3').write 'abc'
       SideJob::Port.delete_all(@job, :out)
       expect(SideJob.redis {|redis| redis.keys("#{@port.redis_key}*").length}).to be(keys)
       SideJob::Port.delete_all(@job, :in)

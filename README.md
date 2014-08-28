@@ -36,7 +36,7 @@ Ports
 -----
 
 * Ports are named (case sensitive)
-* Any string can be pushed or popped from any input or output port
+* Any string can be written or read from any input or output port
 * JSON is the preferred encoding for complex objects
 
 Data Structure

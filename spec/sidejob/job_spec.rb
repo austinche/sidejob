@@ -251,15 +251,15 @@ describe SideJob::Job do
     end
 
     it 'deletes data on input and output ports' do
-      @job.input('port1').push 'data'
-      @job.output('port2').push 'data'
+      @job.input('port1').write 'data'
+      @job.output('port2').write 'data'
       expect(@job.inports).to eq([@job.input('port1')])
       expect(@job.outports).to eq([@job.output('port2')])
       @job.delete
       expect(@job.inports).to eq([])
       expect(@job.outports).to eq([])
-      expect(@job.input('port1').pop).to be_nil
-      expect(@job.output('port2').pop).to be_nil
+      expect(@job.input('port1').read).to be_nil
+      expect(@job.output('port2').read).to be_nil
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be(0)
     end
   end
@@ -282,14 +282,14 @@ describe SideJob::Job do
     it 'returns input ports that have data' do
       job = SideJob.queue('testq', 'TestWorker')
       expect(job.inports.size).to be(0)
-      job.input('port1').push 'abc'
+      job.input('port1').write 'abc'
       expect(job.inports.size).to be(1)
       expect(job.inports[0].name).to eq 'port1'
-      job.input('port2').pop
+      job.input('port2').read
       expect(job.inports.size).to be(1)
-      job.input('port2').push 'abc'
+      job.input('port2').write 'abc'
       expect(job.inports.size).to be(2)
-      job.input('port2').pop
+      job.input('port2').read
       expect(job.inports.size).to be(1)
     end
   end
@@ -298,14 +298,14 @@ describe SideJob::Job do
     it 'returns output ports that have data' do
       job = SideJob.queue('testq', 'TestWorker')
       expect(job.outports.size).to be(0)
-      job.output('port1').push 'abc'
+      job.output('port1').write 'abc'
       expect(job.outports.size).to be(1)
       expect(job.outports[0].name).to eq 'port1'
-      job.output('port2').pop
+      job.output('port2').read
       expect(job.outports.size).to be(1)
-      job.output('port2').push 'abc'
+      job.output('port2').write 'abc'
       expect(job.outports.size).to be(2)
-      job.output('port2').pop
+      job.output('port2').read
       expect(job.outports.size).to be(1)
     end
   end

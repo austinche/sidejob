@@ -29,11 +29,11 @@ module SideJob
       end
     end
 
-    # Push some data on to the port
+    # Write some data to the port
     # If the port is an input port, wakes up the job so it has chance to process the data
     # If the port is an output port, wake up the parent job so it has a chance to process it
-    # @param data [Array<String>] List of data to push on to port
-    def push(*data)
+    # @param data [Array<String>] List of data to write to the port
+    def write(*data)
       data.each do |x|
         log = {data: x}
         log["#{@type}port"] = @name
@@ -52,15 +52,15 @@ module SideJob
       self
     end
 
-    # JSON encodes all data before pushing
-    # @see #push
-    def push_json(*data)
-      push *(data.map {|x| JSON.generate(x)})
+    # JSON encodes all data before writing to the port
+    # @see #write
+    def write_json(*data)
+      write *(data.map {|x| JSON.generate(x)})
     end
 
-    # Pops oldest data from the port
+    # Reads the oldest data from the port
     # @return [String, nil] First data from port or nil if no data exists
-    def pop
+    def read
       data = SideJob.redis do |redis|
         redis.rpop redis_key
       end
@@ -74,9 +74,20 @@ module SideJob
       data
     end
 
-    # Pops all data from the port
+    # JSON decodes data read from the port
+    # @see #read
+    def read_json
+      data = read
+      if data
+        JSON.parse(data)
+      else
+        nil
+      end
+    end
+
+    # Drains and returns all data from the port
     # @return [Array<String>] All data from the port. Oldest data is last, most recent is first.
-    def pop_all
+    def drain
       SideJob.redis do |redis|
         redis.watch(redis_key) do
           redis.multi do |multi|
@@ -87,21 +98,10 @@ module SideJob
       end[0]
     end
 
-    # JSON decodes popped data
-    # @see #pop
-    def pop_json
-      data = pop
-      if data
-        JSON.parse(data)
-      else
-        nil
-      end
-    end
-
-    # Pops and JSON decodes all data from the port
-    # @see #pop_all
-    def pop_all_json
-      pop_all.map { |data| JSON.parse(data) }
+    # Drains and JSON decodes all data from the port
+    # @see #drain
+    def drain_json
+      drain.map { |data| JSON.parse(data) }
     end
 
     # Returns the redis key used for storing inputs or outputs from a port name
