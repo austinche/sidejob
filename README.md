@@ -70,6 +70,7 @@ The keys used by Sidekiq:
 
 Additional keys used by SideJob:
 * job_id - Stores the last job ID (we use incrementing integers from 1)
+* jobs - Set containing all active job IDs
 * job:<jid> - Hash containing SideJob managed job data
 ** queue - queue name
 ** class - name of class
@@ -83,6 +84,8 @@ Additional keys used by SideJob:
 **** starting | suspended | completed | failed -> queued | scheduled
 **** running -> suspended | completed | failed
 * job:<jid>:data - Hash containing the job's internal data
+* job:<jid>:inports - Set containing input port names
+* job:<jid>:outports - Set containing output port names
 * job:<jid>:in:<inport> and job:<jid>:out:<outport> - List with unread port data
 * job:<jid>:children - Set containing all children job IDs
 * job:<jid>:log - List with job changes, new log entries pushed on left. Each log entry is JSON encoded.

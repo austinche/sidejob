@@ -60,6 +60,24 @@ describe SideJob::Port do
       expect(data).to eq(['123', 'abc'])
     end
 
+    it 'saves port name in redis for input port' do
+      @port = SideJob::Port.new(@job, :in, :port1)
+      SideJob.redis do |redis|
+        expect(redis.sismember("#{@job.redis_key}:inports", 'port1')).to be false
+        @port.write('abc', 123)
+        expect(redis.sismember("#{@job.redis_key}:inports", 'port1')).to be true
+      end
+    end
+
+    it 'saves port name in redis for output port' do
+      @port = SideJob::Port.new(@job, :out, :port2)
+      SideJob.redis do |redis|
+        expect(redis.sismember("#{@job.redis_key}:outports", 'port2')).to be false
+        @port.write('abc', 123)
+        expect(redis.sismember("#{@job.redis_key}:outports", 'port2')).to be true
+      end
+    end
+
     it 'logs writes' do
       now = Time.now
       Time.stub(:now).and_return(now)
@@ -192,20 +210,6 @@ describe SideJob::Port do
       h[port2] = 3
       expect(h.keys.length).to be(1)
       expect(h[@port]).to be(3)
-    end
-  end
-
-  describe '.delete_all' do
-    it 'delete all port keys' do
-      expect(SideJob.redis {|redis| redis.keys("#{@port.redis_key}*").length}).to be(0)
-      @port.write 'abc'
-      keys = SideJob.redis {|redis| redis.keys("#{@port.redis_key}*").length}
-      SideJob::Port.new(@job, :out, 'port2').write 'abc'
-      SideJob::Port.new(@job, :out, 'port3').write 'abc'
-      SideJob::Port.delete_all(@job, :out)
-      expect(SideJob.redis {|redis| redis.keys("#{@port.redis_key}*").length}).to be(keys)
-      SideJob::Port.delete_all(@job, :in)
-      expect(SideJob.redis {|redis| redis.keys("#{@port.redis_key}*").length}).to be(0)
     end
   end
 end

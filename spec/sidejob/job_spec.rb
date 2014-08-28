@@ -259,6 +259,12 @@ describe SideJob::Job do
       expect(@job.output('port2').read).to be_nil
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be(0)
     end
+
+    it 'removes job from jobs set' do
+      expect(SideJob.redis {|redis| redis.sismember('jobs', @job.jid)}).to be true
+      @job.delete
+      expect(SideJob.redis {|redis| redis.sismember('jobs', @job.jid)}).to be false
+    end
   end
 
   describe '#input' do
@@ -278,32 +284,30 @@ describe SideJob::Job do
   describe '#inports' do
     it 'returns input ports that have data' do
       job = SideJob.queue('testq', 'TestWorker')
-      expect(job.inports.size).to be(0)
+      expect(job.inports).to eq([])
       job.input('port1').write 'abc'
-      expect(job.inports.size).to be(1)
-      expect(job.inports[0].name).to eq 'port1'
+      expect(job.inports).to eq([SideJob::Port.new(job, :in, 'port1')])
       job.input('port2').read
-      expect(job.inports.size).to be(1)
+      expect(job.inports).to eq([SideJob::Port.new(job, :in, 'port1')])
       job.input('port2').write 'abc'
-      expect(job.inports.size).to be(2)
-      job.input('port2').read
-      expect(job.inports.size).to be(1)
+      expect(job.inports).to match_array([SideJob::Port.new(job, :in, 'port1'), SideJob::Port.new(job, :in, 'port2')])
+      job.input('port1').read
+      expect(job.inports).to eq([SideJob::Port.new(job, :in, 'port2')])
     end
   end
 
   describe '#outports' do
     it 'returns output ports that have data' do
       job = SideJob.queue('testq', 'TestWorker')
-      expect(job.outports.size).to be(0)
+      expect(job.outports).to eq([])
       job.output('port1').write 'abc'
-      expect(job.outports.size).to be(1)
-      expect(job.outports[0].name).to eq 'port1'
+      expect(job.outports).to eq([SideJob::Port.new(job, :out, 'port1')])
       job.output('port2').read
-      expect(job.outports.size).to be(1)
+      expect(job.outports).to eq([SideJob::Port.new(job, :out, 'port1')])
       job.output('port2').write 'abc'
-      expect(job.outports.size).to be(2)
-      job.output('port2').read
-      expect(job.outports.size).to be(1)
+      expect(job.outports).to match_array([SideJob::Port.new(job, :out, 'port1'), SideJob::Port.new(job, :out, 'port2')])
+      job.output('port1').read
+      expect(job.outports).to eq([SideJob::Port.new(job, :out, 'port2')])
     end
   end
 end

@@ -37,6 +37,7 @@ module SideJob
 
     SideJob.redis do |redis|
       redis.multi do |multi|
+        multi.sadd 'jobs', jid
         multi.hmset job.redis_key, :status, :starting, :queue, queue, :class, klass, :args, JSON.generate(args)
 
         if options[:parent]

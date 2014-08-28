@@ -28,6 +28,11 @@ describe SideJob do
       expect(job.jid).to eq('2')
     end
 
+    it 'stores jid in jobs set' do
+      job = SideJob.queue('testq', 'TestWorker')
+      expect(SideJob.redis {|redis| redis.sismember('jobs', job.jid)}).to be true
+    end
+
     it 'can specify job parent' do
       expect {
         parent = SideJob.queue('testq', 'TestWorker')

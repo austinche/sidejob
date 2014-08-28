@@ -45,14 +45,13 @@ module SideJob
       restart
     end
 
-    # Adds a log entry to redis and also broadcasts it via pubsub
+    # Adds a log entry to redis
     # @param type [String] Log type
     # @param data [Hash] Any extra log data
     def log(type, data)
       SideJob.redis do |redis|
         entry = JSON.generate(data.merge(type: type, timestamp: Time.now))
         redis.lpush "#{redis_key}:log", entry
-        redis.publish redis_key, entry
       end
     end
 
@@ -169,10 +168,14 @@ module SideJob
       job.delete if job
 
       # delete all SideJob keys
-      SideJob::Port.delete_all(self, :in)
-      SideJob::Port.delete_all(self, :out)
       SideJob.redis do |redis|
-        redis.del [redis_key, "#{redis_key}:children", "#{redis_key}:data", "#{redis_key}:log"]
+        inports = redis.smembers("#{redis_key}:inports").map {|port| "#{redis_key}:in:#{port}"}
+        outports = redis.smembers("#{redis_key}:outports").map {|port| "#{redis_key}:out:#{port}"}
+        redis.multi do |multi|
+          multi.del inports + outports +
+                        [redis_key, "#{redis_key}:inports", "#{redis_key}:outports", "#{redis_key}:children", "#{redis_key}:data", "#{redis_key}:log"]
+          multi.srem 'jobs', @jid
+        end
       end
     end
 
@@ -194,9 +197,10 @@ module SideJob
     # @return [Array<SideJob::Port>] Input ports
     def inports
       SideJob.redis do |redis|
-        redis.keys("#{redis_key}:in:*").map do |name|
-          name =~ /#{redis_key}:in:(.*)/
-          SideJob::Port.new(self, :in, $1)
+        redis.smembers("#{redis_key}:inports").select do |port|
+          redis.exists "#{redis_key}:in:#{port}"
+        end.map do |port|
+          SideJob::Port.new(self, :in, port)
         end
       end
     end
@@ -205,9 +209,10 @@ module SideJob
     # @return [Array<SideJob::Port>] Output ports
     def outports
       SideJob.redis do |redis|
-        redis.keys("#{redis_key}:out:*").map do |name|
-          name =~ /#{redis_key}:out:(.*)/
-          SideJob::Port.new(self, :out, $1)
+        redis.smembers("#{redis_key}:outports").select do |port|
+          redis.exists "#{redis_key}:out:#{port}"
+        end.map do |port|
+          SideJob::Port.new(self, :out, port)
         end
       end
     end

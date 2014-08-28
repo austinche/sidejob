@@ -47,7 +47,10 @@ module SideJob
       end
 
       SideJob.redis do |redis|
-        redis.lpush redis_key, data
+        redis.multi do |multi|
+          multi.lpush redis_key, data
+          multi.sadd "#{@job.redis_key}:#{@type}ports", @name
+        end
       end
       self
     end
@@ -124,16 +127,6 @@ module SideJob
 
     def to_s
       redis_key
-    end
-
-    # Deletes all Redis keys for all ports of the given job/type
-    # @param job [SideJob::Job, SideJob::Worker]
-    # @param type [:in, :out] Specifies whether it is input or output port
-    def self.delete_all(job, type)
-      SideJob.redis do |redis|
-        keys = redis.keys("#{job.redis_key}:#{type}:*")
-        redis.del keys if keys && keys.length > 0
-      end
     end
   end
 end
