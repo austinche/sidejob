@@ -79,6 +79,8 @@ Additional keys used by SideJob:
 ** top - the job id of the top job with no parent in this job's hierarchy
 ** restart - if set, the job will be requeued for the specified time once it completes (0 means queue immediately)
 ** status - job status: starting, queued, scheduled, running, suspended, completed, failed
+** created_at - timestamp that the job was first queued
+** updated_at - latest timestamp for when something happened (a log entry was generated)
 *** Allowed status transitions:
 **** queued | scheduled -> running
 **** scheduled -> queued

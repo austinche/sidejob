@@ -32,6 +32,13 @@ describe SideJob do
       expect(job.jid).to eq('2')
     end
 
+    it 'stores created at timestamp' do
+      now = Time.now
+      Time.stub(:now).and_return(now)
+      job = SideJob.queue('testq', 'TestWorker')
+      expect(job.info[:created_at]).to eq(now.utc.iso8601)
+    end
+
     it 'stores jid in jobs set' do
       job = SideJob.queue('testq', 'TestWorker')
       expect(SideJob.redis.sismember('jobs', job.jid)).to be true

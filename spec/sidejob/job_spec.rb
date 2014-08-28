@@ -39,8 +39,11 @@ describe SideJob::Job do
 
   describe '#info' do
     it 'returns all job info' do
+      now = Time.now
+      Time.stub(:now).and_return(now)
       @job = SideJob.queue('testq', 'TestWorker', {args: [1, 2]})
-      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', args: [1, 2], parent: nil, top: @job, restart: nil, status: :queued })
+      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', args: [1, 2], parent: nil, top: @job,
+                               restart: nil, status: :queued, created_at: now.utc.iso8601, updated_at: now.utc.iso8601 })
     end
   end
 
@@ -63,6 +66,14 @@ describe SideJob::Job do
       job.log('foo', {abc: 123})
       log = SideJob.redis {|redis| redis.lpop "#{job.redis_key}:log"}
       expect(JSON.parse(log)).to eq({'type' => 'foo', 'abc' => 123, 'timestamp' => now.utc.iso8601})
+    end
+
+    it 'updates updated_at timestamp' do
+      now = Time.now
+      Time.stub(:now).and_return(now)
+      job = SideJob.queue('testq', 'TestWorker')
+      job.log('foo', {abc: 123})
+      expect(job.info[:updated_at]).to eq(now.utc.iso8601)
     end
   end
 

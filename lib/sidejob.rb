@@ -4,6 +4,7 @@ require 'sidejob/port'
 require 'sidejob/job'
 require 'sidejob/worker'
 require 'sidejob/server_middleware'
+require 'time' # for iso8601 method
 
 Sidekiq.configure_server do |config|
   config.server_middleware do |chain|
@@ -45,10 +46,11 @@ module SideJob
 
     SideJob.redis.multi do |multi|
       multi.sadd 'jobs', jid
-      multi.hmset job.redis_key, :status, :starting, :queue, queue, :class, klass, :args, JSON.generate(args), :top, top
+      multi.hmset job.redis_key, 'status', :starting, 'queue', queue, 'class', klass,
+                  'args', JSON.generate(args), 'top', top, 'created_at', Time.now.utc.iso8601
 
       if options[:parent]
-        multi.hset job.redis_key, :parent, options[:parent].jid
+        multi.hset job.redis_key, 'parent', options[:parent].jid
         multi.sadd "#{options[:parent].redis_key}:children", jid
       end
     end

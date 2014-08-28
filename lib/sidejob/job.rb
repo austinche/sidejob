@@ -1,5 +1,3 @@
-require 'time' # for iso8601 method for log
-
 module SideJob
   # Methods shared between SideJob::Job and SideJob::Worker
   module JobMethods
@@ -32,6 +30,7 @@ module SideJob
       return {queue: info['queue'], class: info['class'], args: JSON.parse(info['args']),
               parent: info['parent'] ? SideJob::Job.new(info['parent']) : nil,
               top: info['top'] ? SideJob::Job.new(info['top']) : nil,
+              created_at: info['created_at'], updated_at: info['updated_at'],
               restart: info['restart'],
               status: info['status'].to_sym}
     end
@@ -47,8 +46,12 @@ module SideJob
     # @param type [String] Log type
     # @param data [Hash] Any extra log data
     def log(type, data)
-      entry = JSON.generate(data.merge(type: type, timestamp: Time.now.utc.iso8601))
-      SideJob.redis.lpush "#{redis_key}:log", entry
+      timestamp = Time.now.utc.iso8601
+      entry = JSON.generate(data.merge(type: type, timestamp: timestamp))
+      SideJob.redis.multi do |multi|
+        multi.hset redis_key, 'updated_at', timestamp
+        multi.lpush "#{redis_key}:log", entry
+      end
     end
 
     # Retrieve the job's status
