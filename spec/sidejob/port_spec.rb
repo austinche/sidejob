@@ -81,8 +81,8 @@ describe SideJob::Port do
       @port.write('abc', '123')
       logs = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).
           map {|log| JSON.parse(log)}
-      expect(logs).to eq [{'type' => 'write', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.to_s},
-                          {'type' => 'write', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.to_s},]
+      expect(logs).to eq [{'type' => 'write', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.utc.iso8601},
+                          {'type' => 'write', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.utc.iso8601},]
     end
 
     it 'restarts job when writing to an input port' do
@@ -133,8 +133,8 @@ describe SideJob::Port do
       expect(@port.read).to eq('123')
       logs = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).
           map {|log| JSON.parse(log)}
-      expect(logs).to eq [{'type' => 'read', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.to_s},
-                          {'type' => 'read', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.to_s},]
+      expect(logs).to eq [{'type' => 'read', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.utc.iso8601},
+                          {'type' => 'read', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.utc.iso8601},]
     end
   end
 
@@ -170,8 +170,8 @@ describe SideJob::Port do
       @port.drain
       logs = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).
           map {|log| JSON.parse(log)}
-      expect(logs).to eq [{'type' => 'read', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.to_s},
-                          {'type' => 'read', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.to_s},]
+      expect(logs).to eq [{'type' => 'read', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.utc.iso8601},
+                          {'type' => 'read', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.utc.iso8601},]
     end
   end
 

@@ -1,3 +1,5 @@
+require 'time' # for iso8601 method for log
+
 module SideJob
   # Methods shared between SideJob::Job and SideJob::Worker
   module JobMethods
@@ -43,7 +45,7 @@ module SideJob
     # @param type [String] Log type
     # @param data [Hash] Any extra log data
     def log(type, data)
-      entry = JSON.generate(data.merge(type: type, timestamp: Time.now))
+      entry = JSON.generate(data.merge(type: type, timestamp: Time.now.utc.iso8601))
       SideJob.redis.lpush "#{redis_key}:log", entry
     end
 

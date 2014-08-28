@@ -62,7 +62,7 @@ describe SideJob::Job do
       job = SideJob.queue('testq', 'TestWorker')
       job.log('foo', {abc: 123})
       log = SideJob.redis {|redis| redis.lpop "#{job.redis_key}:log"}
-      expect(JSON.parse(log)).to eq({'type' => 'foo', 'abc' => 123, 'timestamp' => now.to_s})
+      expect(JSON.parse(log)).to eq({'type' => 'foo', 'abc' => 123, 'timestamp' => now.utc.iso8601})
     end
   end
 
@@ -87,7 +87,7 @@ describe SideJob::Job do
       SideJob.redis { |redis| redis.del "#{@job.redis_key}:log" }
       @job.status = 'newstatus'
       log = SideJob.redis {|redis| redis.lpop "#{@job.redis_key}:log"}
-      expect(JSON.parse(log)).to eq({'type' => 'status', 'status' => 'newstatus', 'timestamp' => now.to_s})
+      expect(JSON.parse(log)).to eq({'type' => 'status', 'status' => 'newstatus', 'timestamp' => now.utc.iso8601})
     end
   end
 
