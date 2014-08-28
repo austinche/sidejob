@@ -31,12 +31,12 @@ describe SideJob::ServerMiddleware do
     end }.to raise_error
     expect(@job.status).to be(:failed)
     
-    log = nil
-    while l = @job.log_pop do
-      log = l if l['type'] == 'error'
-    end
-    expect(log['error']).to eq('oops')
-    expect(log['backtrace'].class).to eq(Array)
+    log = SideJob.redis do |redis|
+      redis.lrange "#{@job.redis_key}:log", 0, -1
+    end.map {|log| JSON.parse(log) }.select {|log| log['type'] == 'error'}
+    expect(log.size).to eq(1)
+    expect(log[0]['error']).to eq('oops')
+    expect(log[0]['backtrace'].class).to eq(Array)
   end
 
   it 'restarts the worker if it is restarted while running' do

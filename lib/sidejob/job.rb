@@ -48,22 +48,12 @@ module SideJob
     # Adds a log entry to redis and also broadcasts it via pubsub
     # @param type [String] Log type
     # @param data [Hash] Any extra log data
-    def log_push(type, data)
+    def log(type, data)
       SideJob.redis do |redis|
         entry = JSON.generate(data.merge(type: type, timestamp: Time.now))
         redis.lpush "#{redis_key}:log", entry
         redis.publish redis_key, entry
       end
-    end
-
-    # Pops a log entry
-    # @return [Hash]
-    def log_pop
-      log = SideJob.redis do |redis|
-        redis.rpop "#{redis_key}:log"
-      end
-      log = JSON.parse(log) if log
-      log
     end
 
     # Retrieve the job's status
@@ -78,7 +68,7 @@ module SideJob
     # Set the job's status
     # @param status [String, Symbol] New status
     def status=(status)
-      log_push('status', {status: status})
+      log('status', {status: status})
       SideJob.redis do |redis|
         redis.hset redis_key, 'status', status
       end

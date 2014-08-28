@@ -37,7 +37,7 @@ module SideJob
       data.each do |x|
         log = {data: x}
         log["#{@type}port"] = @name
-        @job.log_push 'write', log
+        @job.log 'write', log
       end
 
       if @type == :in
@@ -68,7 +68,7 @@ module SideJob
       if data
         log = {data: data}
         log["#{@type}port"] = @name
-        @job.log_push 'read', log
+        @job.log 'read', log
       end
 
       data
@@ -88,7 +88,7 @@ module SideJob
     # Drains and returns all data from the port
     # @return [Array<String>] All data from the port. Oldest data is last, most recent is first.
     def drain
-      SideJob.redis do |redis|
+      data = SideJob.redis do |redis|
         redis.watch(redis_key) do
           redis.multi do |multi|
             multi.lrange redis_key, 0, -1
@@ -96,6 +96,14 @@ module SideJob
           end
         end
       end[0]
+
+      data.reverse_each do |x|
+        log = {data: x}
+        log["#{@type}port"] = @name
+        @job.log 'read', log
+      end
+
+      data
     end
 
     # Drains and JSON decodes all data from the port

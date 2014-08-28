@@ -8,7 +8,7 @@ module SideJob
       yield
     rescue => e
       worker.status = :failed
-      worker.log_push 'error', {error: e.message, backtrace: e.backtrace}
+      worker.log 'error', {error: e.message, backtrace: e.backtrace}
       raise e
     ensure
       worker.status = :completed if worker.status == :running

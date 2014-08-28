@@ -63,11 +63,13 @@ describe SideJob::Port do
     it 'logs writes' do
       now = Time.now
       Time.stub(:now).and_return(now)
-      while @job.log_pop; end
+      SideJob.redis { |redis| redis.del "#{@job.redis_key}:log" }
       @port.write('abc', '123')
-      expect(@job.log_pop).to eq({'type' => 'write', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.to_s})
-      expect(@job.log_pop).to eq({'type' => 'write', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.to_s})
-      expect(@job.log_pop).to be nil
+      logs = SideJob.redis do |redis|
+        redis.lrange "#{@job.redis_key}:log", 0, -1
+      end.map {|log| JSON.parse(log)}
+      expect(logs).to eq [{'type' => 'write', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.to_s},
+                          {'type' => 'write', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.to_s},]
     end
 
     it 'restarts job when writing to an input port' do
@@ -113,12 +115,14 @@ describe SideJob::Port do
       now = Time.now
       Time.stub(:now).and_return(now)
       @port.write('abc', '123')
-      while @job.log_pop; end
+      SideJob.redis { |redis| redis.del "#{@job.redis_key}:log" }
       expect(@port.read).to eq('abc')
       expect(@port.read).to eq('123')
-      expect(@job.log_pop).to eq({'type' => 'read', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.to_s})
-      expect(@job.log_pop).to eq({'type' => 'read', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.to_s})
-      expect(@job.log_pop).to be nil
+      logs = SideJob.redis do |redis|
+        redis.lrange "#{@job.redis_key}:log", 0, -1
+      end.map {|log| JSON.parse(log)}
+      expect(logs).to eq [{'type' => 'read', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.to_s},
+                          {'type' => 'read', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.to_s},]
     end
   end
 
@@ -132,6 +136,7 @@ describe SideJob::Port do
       expect(@port.read_json).to eq(data2)
     end
   end
+
   describe '#drain' do
     it 'returns empty array when port is empty' do
       expect(@port.drain).to eq([])
@@ -143,6 +148,19 @@ describe SideJob::Port do
       expect(@port.drain).to eq(['3', '2', '1'])
       expect(@port.drain).to eq([])
       expect(@port.read).to be nil
+    end
+
+    it 'logs drain' do
+      now = Time.now
+      Time.stub(:now).and_return(now)
+      @port.write('abc', '123')
+      SideJob.redis { |redis| redis.del "#{@job.redis_key}:log" }
+      @port.drain
+      logs = SideJob.redis do |redis|
+        redis.lrange "#{@job.redis_key}:log", 0, -1
+      end.map {|log| JSON.parse(log)}
+      expect(logs).to eq [{'type' => 'read', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.to_s},
+                          {'type' => 'read', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.to_s},]
     end
   end
 

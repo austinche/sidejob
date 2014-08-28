@@ -55,14 +55,14 @@ describe SideJob::Job do
     end
   end
 
-  describe '#log_push, #log_pop' do
+  describe '#log' do
     it 'adds a timestamp to log entries' do
       now = Time.now
       Time.stub(:now).and_return(now)
       job = SideJob.queue('testq', 'TestWorker')
-      while job.log_pop; end
-      job.log_push('foo', {abc: 123})
-      expect(job.log_pop).to eq({'type' => 'foo', 'abc' => 123, 'timestamp' => now.to_s})
+      job.log('foo', {abc: 123})
+      log = SideJob.redis {|redis| redis.lpop "#{job.redis_key}:log"}
+      expect(JSON.parse(log)).to eq({'type' => 'foo', 'abc' => 123, 'timestamp' => now.to_s})
     end
   end
 
@@ -84,9 +84,10 @@ describe SideJob::Job do
     it 'logs status changes' do
       now = Time.now
       Time.stub(:now).and_return(now)
-      while @job.log_pop; end
+      SideJob.redis { |redis| redis.del "#{@job.redis_key}:log" }
       @job.status = 'newstatus'
-      expect(@job.log_pop).to eq({'type' => 'status', 'status' => 'newstatus', 'timestamp' => now.to_s})
+      log = SideJob.redis {|redis| redis.lpop "#{@job.redis_key}:log"}
+      expect(JSON.parse(log)).to eq({'type' => 'status', 'status' => 'newstatus', 'timestamp' => now.to_s})
     end
   end
 
