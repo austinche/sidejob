@@ -7,6 +7,10 @@ describe SideJob do
       r2 = Sidekiq.redis {|redis| redis}
       expect(r1).to be(r2)
     end
+
+    it 'returns Redis without block' do
+      expect(SideJob.redis {|redis| redis}).to be(SideJob.redis)
+    end
   end
 
   describe '.queue' do
@@ -30,7 +34,7 @@ describe SideJob do
 
     it 'stores jid in jobs set' do
       job = SideJob.queue('testq', 'TestWorker')
-      expect(SideJob.redis {|redis| redis.sismember('jobs', job.jid)}).to be true
+      expect(SideJob.redis.sismember('jobs', job.jid)).to be true
     end
 
     it 'can specify job parent' do

@@ -56,36 +56,31 @@ describe SideJob::Port do
   describe '#write' do
     it 'can write data to a port' do
       @port.write('abc', 123)
-      data = SideJob.redis { |redis| redis.lrange(@port.redis_key, 0, -1) }
+      data = SideJob.redis.lrange(@port.redis_key, 0, -1)
       expect(data).to eq(['123', 'abc'])
     end
 
     it 'saves port name in redis for input port' do
       @port = SideJob::Port.new(@job, :in, :port1)
-      SideJob.redis do |redis|
-        expect(redis.sismember("#{@job.redis_key}:inports", 'port1')).to be false
-        @port.write('abc', 123)
-        expect(redis.sismember("#{@job.redis_key}:inports", 'port1')).to be true
-      end
+      expect(SideJob.redis.sismember("#{@job.redis_key}:inports", 'port1')).to be false
+      @port.write('abc', 123)
+      expect(SideJob.redis.sismember("#{@job.redis_key}:inports", 'port1')).to be true
     end
 
     it 'saves port name in redis for output port' do
       @port = SideJob::Port.new(@job, :out, :port2)
-      SideJob.redis do |redis|
-        expect(redis.sismember("#{@job.redis_key}:outports", 'port2')).to be false
-        @port.write('abc', 123)
-        expect(redis.sismember("#{@job.redis_key}:outports", 'port2')).to be true
-      end
+      expect(SideJob.redis.sismember("#{@job.redis_key}:outports", 'port2')).to be false
+      @port.write('abc', 123)
+      expect(SideJob.redis.sismember("#{@job.redis_key}:outports", 'port2')).to be true
     end
 
     it 'logs writes' do
       now = Time.now
       Time.stub(:now).and_return(now)
-      SideJob.redis { |redis| redis.del "#{@job.redis_key}:log" }
+      SideJob.redis.del "#{@job.redis_key}:log"
       @port.write('abc', '123')
-      logs = SideJob.redis do |redis|
-        redis.lrange "#{@job.redis_key}:log", 0, -1
-      end.map {|log| JSON.parse(log)}
+      logs = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).
+          map {|log| JSON.parse(log)}
       expect(logs).to eq [{'type' => 'write', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.to_s},
                           {'type' => 'write', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.to_s},]
     end
@@ -133,12 +128,11 @@ describe SideJob::Port do
       now = Time.now
       Time.stub(:now).and_return(now)
       @port.write('abc', '123')
-      SideJob.redis { |redis| redis.del "#{@job.redis_key}:log" }
+      SideJob.redis.del "#{@job.redis_key}:log"
       expect(@port.read).to eq('abc')
       expect(@port.read).to eq('123')
-      logs = SideJob.redis do |redis|
-        redis.lrange "#{@job.redis_key}:log", 0, -1
-      end.map {|log| JSON.parse(log)}
+      logs = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).
+          map {|log| JSON.parse(log)}
       expect(logs).to eq [{'type' => 'read', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.to_s},
                           {'type' => 'read', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.to_s},]
     end
@@ -172,11 +166,10 @@ describe SideJob::Port do
       now = Time.now
       Time.stub(:now).and_return(now)
       @port.write('abc', '123')
-      SideJob.redis { |redis| redis.del "#{@job.redis_key}:log" }
+      SideJob.redis.del "#{@job.redis_key}:log"
       @port.drain
-      logs = SideJob.redis do |redis|
-        redis.lrange "#{@job.redis_key}:log", 0, -1
-      end.map {|log| JSON.parse(log)}
+      logs = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).
+          map {|log| JSON.parse(log)}
       expect(logs).to eq [{'type' => 'read', 'inport' => 'port1', 'data' => '123', 'timestamp' => now.to_s},
                           {'type' => 'read', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => now.to_s},]
     end

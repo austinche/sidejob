@@ -31,11 +31,11 @@ describe SideJob::Worker do
   describe '#mset' do
     it 'stores metadata in redis' do
       @worker.mset({test: 'data'})
-      expect(SideJob.redis {|redis| redis.hget("#{@worker.redis_key}:data", 'test')}).to eq('data')
+      expect(SideJob.redis.hget("#{@worker.redis_key}:data", 'test')).to eq('data')
 
       # test updating
       @worker.mset({test: 'data2'})
-      expect(SideJob.redis {|redis| redis.hget("#{@worker.redis_key}:data", 'test')}).to eq('data2')
+      expect(SideJob.redis.hget("#{@worker.redis_key}:data", 'test')).to eq('data2')
     end
   end
 

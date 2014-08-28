@@ -21,16 +21,12 @@ module SideJob
 
     # @return [Boolean] Returns true if this job exists and has not been deleted
     def exists?
-      SideJob.redis do |redis|
-        redis.exists redis_key
-      end
+      SideJob.redis.exists redis_key
     end
 
     # @return [Hash] Info hash about the job
     def info
-      info = SideJob.redis do |redis|
-        redis.hgetall redis_key
-      end
+      info = SideJob.redis.hgetall(redis_key)
       return {queue: info['queue'], class: info['class'], args: JSON.parse(info['args']),
               parent: info['parent'] ? SideJob::Job.new(info['parent']) : nil, restart: info['restart'],
               status: info['status'].to_sym}
@@ -39,9 +35,7 @@ module SideJob
     # Sets the job arguments and restarts it
     # @param args [Array<String>] New arguments for the job
     def args=(args)
-      SideJob.redis do |redis|
-        redis.hset redis_key, 'args', JSON.generate(args)
-      end
+      SideJob.redis.hset redis_key, 'args', JSON.generate(args)
       restart
     end
 
@@ -49,18 +43,14 @@ module SideJob
     # @param type [String] Log type
     # @param data [Hash] Any extra log data
     def log(type, data)
-      SideJob.redis do |redis|
-        entry = JSON.generate(data.merge(type: type, timestamp: Time.now))
-        redis.lpush "#{redis_key}:log", entry
-      end
+      entry = JSON.generate(data.merge(type: type, timestamp: Time.now))
+      SideJob.redis.lpush "#{redis_key}:log", entry
     end
 
     # Retrieve the job's status
     # @return [Symbol] Job status
     def status
-      st = SideJob.redis do |redis|
-        redis.hget redis_key, 'status'
-      end
+      st = SideJob.redis.hget(redis_key, 'status')
       st ? st.to_sym : nil
     end
 
@@ -68,9 +58,7 @@ module SideJob
     # @param status [String, Symbol] New status
     def status=(status)
       log('status', {status: status})
-      SideJob.redis do |redis|
-        redis.hset redis_key, 'status', status
-      end
+      SideJob.redis.hset redis_key, 'status', status
     end
 
     # Restart the job
@@ -90,9 +78,7 @@ module SideJob
 
         when :running
           # we will requeue the job once the currently running worker completes by SideJob::ServerMiddleware
-          SideJob.redis do |redis|
-            redis.hset redis_key, :restart, time || 0
-          end
+          SideJob.redis.hset redis_key, :restart, time || 0
           return
 
         when :scheduled
@@ -125,25 +111,19 @@ module SideJob
 
     # @return [Boolean] Return true if this job is restarting
     def restarting?
-      SideJob.redis do |redis|
-        redis.hexists(redis_key, :restart)
-      end
+      SideJob.redis.hexists(redis_key, :restart)
     end
 
     # @return [Array<String>] List of children job ids for the given job
     def children
-      SideJob.redis do |redis|
-        redis.smembers("#{redis_key}:children").map {|id| SideJob::Job.new(id)}
-      end
+      SideJob.redis.smembers("#{redis_key}:children").map {|id| SideJob::Job.new(id)}
     end
 
     # @return [SideJob::Job, nil] Parent job or nil if none
     def parent
       return @parent if @parent # parent job will never change
-      SideJob.redis do |redis|
-        @parent = redis.hget(redis_key, 'parent')
-        @parent = SideJob::Job.new(@parent) if @parent
-      end
+      @parent = SideJob.redis.hget(redis_key, 'parent')
+      @parent = SideJob::Job.new(@parent) if @parent
       return @parent
     end
 
@@ -168,14 +148,12 @@ module SideJob
       job.delete if job
 
       # delete all SideJob keys
-      SideJob.redis do |redis|
-        inports = redis.smembers("#{redis_key}:inports").map {|port| "#{redis_key}:in:#{port}"}
-        outports = redis.smembers("#{redis_key}:outports").map {|port| "#{redis_key}:out:#{port}"}
-        redis.multi do |multi|
-          multi.del inports + outports +
-                        [redis_key, "#{redis_key}:inports", "#{redis_key}:outports", "#{redis_key}:children", "#{redis_key}:data", "#{redis_key}:log"]
-          multi.srem 'jobs', @jid
-        end
+      inports = SideJob.redis.smembers("#{redis_key}:inports").map {|port| "#{redis_key}:in:#{port}"}
+      outports = SideJob.redis.smembers("#{redis_key}:outports").map {|port| "#{redis_key}:out:#{port}"}
+      SideJob.redis.multi do |multi|
+        multi.del inports + outports +
+                      [redis_key, "#{redis_key}:inports", "#{redis_key}:outports", "#{redis_key}:children", "#{redis_key}:data", "#{redis_key}:log"]
+        multi.srem 'jobs', @jid
       end
     end
 
@@ -196,24 +174,20 @@ module SideJob
     # Gets all input ports that have data
     # @return [Array<SideJob::Port>] Input ports
     def inports
-      SideJob.redis do |redis|
-        redis.smembers("#{redis_key}:inports").select do |port|
-          redis.exists "#{redis_key}:in:#{port}"
-        end.map do |port|
-          SideJob::Port.new(self, :in, port)
-        end
+      SideJob.redis.smembers("#{redis_key}:inports").select do |port|
+        SideJob.redis.exists "#{redis_key}:in:#{port}"
+      end.map do |port|
+        SideJob::Port.new(self, :in, port)
       end
     end
 
     # Gets all output ports that have data
     # @return [Array<SideJob::Port>] Output ports
     def outports
-      SideJob.redis do |redis|
-        redis.smembers("#{redis_key}:outports").select do |port|
-          redis.exists "#{redis_key}:out:#{port}"
-        end.map do |port|
-          SideJob::Port.new(self, :out, port)
-        end
+      SideJob.redis.smembers("#{redis_key}:outports").select do |port|
+        SideJob.redis.exists "#{redis_key}:out:#{port}"
+      end.map do |port|
+        SideJob::Port.new(self, :out, port)
       end
     end
   end

@@ -25,9 +25,7 @@ module SideJob
     # Merges data into a job's metadata
     # @param data [Hash{String => String}] Data to update
     def mset(data)
-      SideJob.redis do |redis|
-        redis.hmset "#{redis_key}:data", *(data.to_a.flatten(1))
-      end
+      SideJob.redis.hmset "#{redis_key}:data", *(data.to_a.flatten(1))
     end
 
     # Sets a single data in the job's metadata
@@ -49,13 +47,11 @@ module SideJob
     # @param fields [Array<String,Symbol>] Fields to load or all fields if none specified
     # @return [Hash{String,Symbol => String}] Job's metadata with the fields specified
     def mget(*fields)
-      SideJob.redis do |redis|
-        if fields.length > 0
-          values = redis.hmget("#{redis_key}:data", *fields)
-          Hash[fields.zip(values)]
-        else
-          redis.hgetall "#{redis_key}:data"
-        end
+      if fields.length > 0
+        values = SideJob.redis.hmget("#{redis_key}:data", *fields)
+        Hash[fields.zip(values)]
+      else
+        SideJob.redis.hgetall "#{redis_key}:data"
       end
     end
 

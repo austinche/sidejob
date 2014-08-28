@@ -24,9 +24,7 @@ module SideJob
     # Returns the number of items waiting on this port
     # @return [Fixnum]
     def size
-      SideJob.redis do |redis|
-        redis.llen redis_key
-      end
+      SideJob.redis.llen redis_key
     end
 
     # Write some data to the port
@@ -46,11 +44,9 @@ module SideJob
         @job.parent.restart if @job.parent
       end
 
-      SideJob.redis do |redis|
-        redis.multi do |multi|
-          multi.lpush redis_key, data
-          multi.sadd "#{@job.redis_key}:#{@type}ports", @name
-        end
+      SideJob.redis.multi do |multi|
+        multi.lpush redis_key, data
+        multi.sadd "#{@job.redis_key}:#{@type}ports", @name
       end
       self
     end
@@ -64,9 +60,7 @@ module SideJob
     # Reads the oldest data from the port
     # @return [String, nil] First data from port or nil if no data exists
     def read
-      data = SideJob.redis do |redis|
-        redis.rpop redis_key
-      end
+      data = SideJob.redis.rpop redis_key
 
       if data
         log = {data: data}
@@ -91,13 +85,9 @@ module SideJob
     # Drains and returns all data from the port
     # @return [Array<String>] All data from the port. Oldest data is last, most recent is first.
     def drain
-      data = SideJob.redis do |redis|
-        redis.watch(redis_key) do
-          redis.multi do |multi|
-            multi.lrange redis_key, 0, -1
-            multi.del redis_key
-          end
-        end
+      data = SideJob.redis.multi do |multi|
+        multi.lrange redis_key, 0, -1
+        multi.del redis_key
       end[0]
 
       data.reverse_each do |x|

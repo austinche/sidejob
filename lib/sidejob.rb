@@ -13,9 +13,15 @@ end
 
 module SideJob
   # Returns redis connection
-  def self.redis(&block)
+  # If block is given, yields the redis connection
+  # Otherwise, just returns the redis connection
+  def self.redis
     Sidekiq.redis do |redis|
-      yield redis
+      if block_given?
+        yield redis
+      else
+        redis
+      end
     end
   end
 
@@ -35,15 +41,13 @@ module SideJob
     jid = SideJob.redis {|redis| redis.incr :job_id}.to_s
     job = SideJob::Job.new(jid)
 
-    SideJob.redis do |redis|
-      redis.multi do |multi|
-        multi.sadd 'jobs', jid
-        multi.hmset job.redis_key, :status, :starting, :queue, queue, :class, klass, :args, JSON.generate(args)
+    SideJob.redis.multi do |multi|
+      multi.sadd 'jobs', jid
+      multi.hmset job.redis_key, :status, :starting, :queue, queue, :class, klass, :args, JSON.generate(args)
 
-        if options[:parent]
-          multi.hset job.redis_key, 'parent', options[:parent].jid
-          multi.sadd "#{options[:parent].redis_key}:children", jid
-        end
+      if options[:parent]
+        multi.hset job.redis_key, 'parent', options[:parent].jid
+        multi.sadd "#{options[:parent].redis_key}:children", jid
       end
     end
 

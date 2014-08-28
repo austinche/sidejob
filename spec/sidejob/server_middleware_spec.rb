@@ -31,9 +31,8 @@ describe SideJob::ServerMiddleware do
     end }.to raise_error
     expect(@job.status).to be(:failed)
     
-    log = SideJob.redis do |redis|
-      redis.lrange "#{@job.redis_key}:log", 0, -1
-    end.map {|log| JSON.parse(log) }.select {|log| log['type'] == 'error'}
+    log = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).
+        map {|log| JSON.parse(log) }.select {|log| log['type'] == 'error'}
     expect(log.size).to eq(1)
     expect(log[0]['error']).to eq('oops')
     expect(log[0]['backtrace'].class).to eq(Array)
