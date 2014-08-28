@@ -38,15 +38,17 @@ module SideJob
 
     # To prevent race conditions, we generate the jid and set all metadata before queuing the job to sidekiq
     # Otherwise, sidekiq may start the job too quickly
-    jid = SideJob.redis {|redis| redis.incr :job_id}.to_s
+    jid = SideJob.redis.incr(:job_id).to_s
     job = SideJob::Job.new(jid)
+
+    top = options[:parent] ? options[:parent].top.jid : jid
 
     SideJob.redis.multi do |multi|
       multi.sadd 'jobs', jid
-      multi.hmset job.redis_key, :status, :starting, :queue, queue, :class, klass, :args, JSON.generate(args)
+      multi.hmset job.redis_key, :status, :starting, :queue, queue, :class, klass, :args, JSON.generate(args), :top, top
 
       if options[:parent]
-        multi.hset job.redis_key, 'parent', options[:parent].jid
+        multi.hset job.redis_key, :parent, options[:parent].jid
         multi.sadd "#{options[:parent].redis_key}:children", jid
       end
     end

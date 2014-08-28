@@ -75,7 +75,8 @@ Additional keys used by SideJob:
 ** queue - queue name
 ** class - name of class
 ** args - JSON array of arguments
-** parent: parent job id
+** parent - parent job id
+** top - the job id of the top job with no parent in this job's hierarchy
 ** restart - if set, the job will be requeued for the specified time once it completes (0 means queue immediately)
 ** status - job status: starting, queued, scheduled, running, suspended, completed, failed
 *** Allowed status transitions:

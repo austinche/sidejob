@@ -40,7 +40,7 @@ describe SideJob::Job do
   describe '#info' do
     it 'returns all job info' do
       @job = SideJob.queue('testq', 'TestWorker', {args: [1, 2]})
-      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', args: [1, 2], parent: nil, restart: nil, status: :queued })
+      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', args: [1, 2], parent: nil, top: @job, restart: nil, status: :queued })
     end
   end
 
@@ -97,6 +97,21 @@ describe SideJob::Job do
       child = SideJob.queue('q2', 'TestWorker', {parent: parent})
       expect(parent.children).to eq([child])
       expect(child.parent).to eq(parent)
+    end
+  end
+
+  describe '#top' do
+    it 'returns self if no parent' do
+      job = SideJob.queue('testq', 'TestWorker')
+      expect(job.top).to eq(job)
+    end
+
+    it 'traverses up job tree' do
+      j1 = SideJob.queue('testq', 'TestWorker')
+      j2 = SideJob.queue('q2', 'TestWorker', {parent: j1})
+      j3 = SideJob.queue('q2', 'TestWorker', {parent: j2})
+      j4 = SideJob.queue('q2', 'TestWorker', {parent: j3})
+      expect(j4.top).to eq(j1)
     end
   end
 

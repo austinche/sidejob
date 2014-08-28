@@ -30,7 +30,9 @@ module SideJob
     def info
       info = SideJob.redis.hgetall(redis_key)
       return {queue: info['queue'], class: info['class'], args: JSON.parse(info['args']),
-              parent: info['parent'] ? SideJob::Job.new(info['parent']) : nil, restart: info['restart'],
+              parent: info['parent'] ? SideJob::Job.new(info['parent']) : nil,
+              top: info['top'] ? SideJob::Job.new(info['top']) : nil,
+              restart: info['restart'],
               status: info['status'].to_sym}
     end
 
@@ -127,6 +129,12 @@ module SideJob
       @parent = SideJob.redis.hget(redis_key, 'parent')
       @parent = SideJob::Job.new(@parent) if @parent
       return @parent
+    end
+
+    # @return [SideJob::Job] Top job (will be self if no parent)
+    def top
+      return @top if @top # top job will never change
+      @top = SideJob::Job.new(SideJob.redis.hget(redis_key, 'top'))
     end
 
     # Returns the job tree starting from this job
