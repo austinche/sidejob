@@ -2,15 +2,11 @@ module SideJob
   # All workers should include SideJob::Worker and implement the perform method.
   # @see SideJob::JobMethods
   module Worker
-    module ClassMethods
-    end
-
     def self.included(base)
       base.class_eval do
         include Sidekiq::Worker
         include SideJob::JobMethods
       end
-      base.extend(ClassMethods)
     end
 
     # Queues a child job

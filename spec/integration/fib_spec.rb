@@ -41,7 +41,7 @@ describe TestFib do
   it 'calculates fibonnaci correctly' do
     job = SideJob.queue('testq', 'TestFib')
     job.input('N').write 6 # 1, 1, 2, 3, 5, 8
-    Sidekiq::Worker.drain_all
+    SideJob::Worker.drain_queue
 
     expect(job.status).to be(:completed)
     expect(job.output('NUM').read).to eq('8')

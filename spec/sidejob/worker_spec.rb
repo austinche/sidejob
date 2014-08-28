@@ -24,7 +24,7 @@ describe SideJob::Worker do
         child = @worker.queue('q2', 'TestWorker', {args: [1, 2]})
         expect(child.parent).to eq(@job)
         expect(@job.children).to eq([child])
-      }.to change(TestWorker.jobs, :size).by(1)
+      }.to change {Sidekiq::Stats.new.enqueued}.by(1)
     end
   end
 

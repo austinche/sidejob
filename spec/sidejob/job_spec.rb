@@ -95,7 +95,6 @@ describe SideJob::Job do
     it 'can get children and parent jobs' do
       parent = SideJob.queue('testq', 'TestWorker')
       child = SideJob.queue('q2', 'TestWorker', {parent: parent})
-      expect(TestWorker.jobs.size).to eq(2)
       expect(parent.children).to eq([child])
       expect(child.parent).to eq(parent)
     end
@@ -119,54 +118,53 @@ describe SideJob::Job do
 
     it 'does nothing on a queued job' do
       expect(@job.status).to eq(:queued)
-      expect { @job.restart }.to change(TestWorker.jobs, :size).by(0)
+      expect { @job.restart }.to change {Sidekiq::Stats.new.enqueued}.by(0)
       expect(@job.status).to eq(:queued)
     end
 
     it 'restarts a completed job' do
       @job.status = :completed
-      expect { @job.restart }.to change(TestWorker.jobs, :size).by(1)
+      expect { @job.restart }.to change {Sidekiq::Stats.new.enqueued}.by(1)
       expect(@job.status).to eq(:queued)
     end
 
     it 'restarts a suspended job' do
       @job.status = :suspended
-      expect { @job.restart }.to change(TestWorker.jobs, :size).by(1)
+      expect { @job.restart }.to change {Sidekiq::Stats.new.enqueued}.by(1)
       expect(@job.status).to eq(:queued)
     end
 
     it 'schedules a job to run' do
       @job.status = :completed
       time = Time.now.to_f + 10000
-      expect { @job.restart(time) }.to change(TestWorker.jobs, :size).by(1)
-      expect(TestWorker.jobs.last['at']).to eq(time)
+      expect { @job.restart(time) }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
+      expect(Sidekiq::ScheduledSet.new.find_job(@job.jid).at).to eq(Time.at(time))
       expect(@job.status).to eq(:scheduled)
     end
 
     it 'schedules a job to run with a Time object' do
       @job.status = :completed
       time = Time.now + 10000
-      expect { @job.restart(time) }.to change(TestWorker.jobs, :size).by(1)
-      expect(TestWorker.jobs.last['at']).to eq(time.to_f)
+      expect { @job.restart(time) }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
+      expect(Sidekiq::ScheduledSet.new.find_job(@job.jid).at.to_f).to eq(time.to_f)
       expect(@job.status).to eq(:scheduled)
     end
 
     it 'sets future immediate restart for running queued job' do
       @job.status = :running
-      expect { @job.restart }.to change(TestWorker.jobs, :size).by(0)
+      expect { @job.restart }.to change {Sidekiq::Stats.new.enqueued}.by(0)
       expect(@job.status).to eq(:running)
       expect(SideJob.redis {|redis| redis.hget @job.redis_key, :restart}).to eq('0')
     end
 
     it 'sets future scheduled restart for running queued job' do
       @job.status = :running
-      expect { @job.restart(123) }.to change(TestWorker.jobs, :size).by(0)
+      expect { @job.restart(123) }.to change {Sidekiq::Stats.new.scheduled_size}.by(0)
       expect(@job.status).to eq(:running)
       expect(SideJob.redis {|redis| redis.hget @job.redis_key, :restart}).to eq('123')
     end
 
     it 'does nothing if job is already scheduled for sooner than requested' do
-      Sidekiq::Testing.disable!
       stats = Sidekiq::Stats.new
       @job.status = :completed
       time = Time.now.to_f + 10000
@@ -181,7 +179,6 @@ describe SideJob::Job do
     end
 
     it 'deletes old scheduled job if it was scheduled for later than requested' do
-      Sidekiq::Testing.disable!
       stats = Sidekiq::Stats.new
       @job.status = :completed
       time = Time.now.to_f + 10000
@@ -196,7 +193,6 @@ describe SideJob::Job do
     end
 
     it 'immediately queues an already scheduled job' do
-      Sidekiq::Testing.disable!
       time = Time.now.to_f + 10000
       @job.status = :completed
       @job.restart(time)

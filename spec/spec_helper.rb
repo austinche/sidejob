@@ -12,10 +12,8 @@ Dir[File.dirname(__FILE__) + '/workers/*.rb'].each {|file| require file }
 RSpec.configure do |config|
   config.order = 'random'
   config.before(:each) do
-    Sidekiq::Worker.clear_all
     SideJob.redis do |redis|
       redis.flushdb
     end
-    Sidekiq::Testing.fake!
   end
 end

@@ -44,7 +44,7 @@ describe SideJob::ServerMiddleware do
       @chain.invoke(@worker, {}, @queue) do
         @job.restart
       end
-    }.to change(TestWorker.jobs, :size).by(1)
+    }.to change {Sidekiq::Stats.new.enqueued}.by(1)
     expect(@job.status).to be(:queued)
   end
 end

@@ -14,9 +14,11 @@ describe SideJob do
       expect {
         job = SideJob.queue('testq', 'TestWorker')
         expect(job.status).to eq(:queued)
-      }.to change(TestWorker.jobs, :size).by(1)
-      expect(TestWorker.jobs.last['queue']).to eq('testq')
-      expect(TestWorker.jobs.last['class']).to eq('TestWorker')
+        job = Sidekiq::Queue.new('testq').find_job(job.jid)
+        expect(job.queue).to eq('testq')
+        expect(job.klass).to eq('TestWorker')
+        expect(job.args).to eq([])
+      }.to change {Sidekiq::Stats.new.enqueued}.by(1)
     end
 
     it 'generates an incrementing job id from 1' do
@@ -32,15 +34,16 @@ describe SideJob do
         job = SideJob.queue('testq', 'TestWorker', {parent: parent})
         expect(job.status).to eq(:queued)
         expect(job.parent).to eq(parent)
-      }.to change(TestWorker.jobs, :size).by(2)
+      }.to change {Sidekiq::Stats.new.enqueued}.by(2)
     end
 
     it 'can specify job args' do
       expect {
         job = SideJob.queue('testq', 'TestWorker', {args: [1, 2]})
         expect(job.status).to eq(:queued)
-      }.to change(TestWorker.jobs, :size).by(1)
-      expect(TestWorker.jobs.last['args']).to eq([1,2])
+        job = Sidekiq::Queue.new('testq').find_job(job.jid)
+        expect(job.args).to eq([1, 2])
+      }.to change {Sidekiq::Stats.new.enqueued}.by(1)
     end
 
     it 'can specify a job time' do
@@ -48,8 +51,8 @@ describe SideJob do
       expect {
         job = SideJob.queue('testq', 'TestWorker', {at: at})
         expect(job.status).to eq(:scheduled)
-      }.to change(TestWorker.jobs, :size).by(1)
-      expect(TestWorker.jobs.last['at']).to eq(at)
+        expect(Sidekiq::ScheduledSet.new.find_job(job.jid).at).to eq(Time.at(at))
+      }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
     end
   end
 
