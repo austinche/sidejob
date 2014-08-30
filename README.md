@@ -69,6 +69,7 @@ The keys used by Sidekiq:
 * stat:failed:<date> - Number of jobs failed for given date
 
 Additional keys used by SideJob:
+* workers:<queue> - Hash for worker registry
 * job_id - Stores the last job ID (we use incrementing integers from 1)
 * jobs - Set containing all active job IDs
 * job:<jid> - Hash containing SideJob managed job data

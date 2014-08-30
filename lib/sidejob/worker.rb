@@ -2,11 +2,33 @@ module SideJob
   # All workers should include SideJob::Worker and implement the perform method.
   # @see SideJob::JobMethods
   module Worker
+    # have these methods be available both on the module SideJob::Worker and from inside Worker classes
+    module RegistryMethods
+      # Provide a simple way to store worker info
+      # @param queue [String] Name of queue
+      # @param klass [String] Name of worker class
+      # @param spec [Hash] This spec is unused by SideJob so can be in any client format
+      def register(queue, klass, spec)
+        SideJob.redis.hset "workers:#{queue}", klass, JSON.generate(spec)
+      end
+
+      # Returns spec registered with register
+      # @param queue [String] Name of queue
+      # @param klass [String] Name of worker class
+      # @return [Hash, nil]
+      def spec(queue, klass)
+        spec = SideJob.redis.hget "workers:#{queue}", klass
+        spec = JSON.parse(spec) if spec
+      end
+    end
+    SideJob::Worker.extend(RegistryMethods)
+
     def self.included(base)
       base.class_eval do
         include Sidekiq::Worker
         include SideJob::JobMethods
       end
+      base.extend(RegistryMethods)
     end
 
     # Queues a child job

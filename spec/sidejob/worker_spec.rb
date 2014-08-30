@@ -8,6 +8,23 @@ describe SideJob::Worker do
     @worker.jid = @job.jid
   end
 
+  describe '.register' do
+    it 'adds a worker spec' do
+      spec = {abc: [1, 2]}
+      SideJob::Worker.register('testq', 'TestWorker', spec)
+      expect(SideJob.redis.hget('workers:testq', 'TestWorker')).to eq(JSON.generate(spec))
+    end
+  end
+
+  describe '.spec' do
+    it 'returns a worker spec that has been registered' do
+      expect(SideJob::Worker.spec('testq', 'TestWorker')).to be nil
+      spec = {'abc' => [1, 2]}
+      SideJob::Worker.register('testq', 'TestWorker', spec)
+      expect(SideJob::Worker.spec('testq', 'TestWorker')).to eq spec
+    end
+  end
+
   it 'includes SideJob::JobMethods' do
     expect(TestWorker.included_modules).to include(SideJob::JobMethods)
   end
