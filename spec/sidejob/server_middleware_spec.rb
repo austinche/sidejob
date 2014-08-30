@@ -26,16 +26,17 @@ describe SideJob::ServerMiddleware do
   it 'sets status to failed on exception and logs error' do
     now = Time.now
     Time.stub(:now).and_return(now)
-    expect { @chain.invoke(@worker, {}, @queue) do
+    @chain.invoke(@worker, {}, @queue) do
       raise 'oops'
-    end }.to raise_error
+    end
     expect(@job.status).to be(:failed)
     
     log = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).
         map {|log| JSON.parse(log) }.select {|log| log['type'] == 'error'}
     expect(log.size).to eq(1)
     expect(log[0]['error']).to eq('oops')
-    expect(log[0]['backtrace'].class).to eq(Array)
+    # check that we trim down backtrace to remove sidekiq lines
+    expect(log[0]['backtrace']).to_not match(/sidekiq/)
   end
 
   it 'restarts the worker if it is restarted while running' do
