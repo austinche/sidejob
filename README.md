@@ -47,7 +47,7 @@ SideJob should use API functions instead of accessing redis directly,
 but this is a description of the current data storage format.
 
 The easiest way to set the redis location is via the environment
-variable REDIS_URL, e.g. redis://redis.myhost.com:6379/4
+variable SIDEJOB_URL, e.g. redis://redis.myhost.com:6379/4
 
 The keys used by Sidekiq:
 * queues - Set containing all queue names

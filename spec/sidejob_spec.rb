@@ -13,6 +13,18 @@ describe SideJob do
     end
   end
 
+  describe '.redis=' do
+    it 'sets redis url' do
+      original = SideJob.redis.client.options[:url]
+      SideJob.redis = {url: 'redis://myredis:1234/10'}
+      expect(SideJob.redis.client.options[:url]).to eq('redis://myredis:1234/10')
+      expect(SideJob.redis.client.options[:host]).to eq('myredis')
+      expect(SideJob.redis.client.options[:port]).to eq(1234)
+      expect(SideJob.redis.client.options[:db]).to eq(10)
+      SideJob.redis = {url: original}
+    end
+  end
+
   describe '.queue' do
     it 'queues a sidekiq job' do
       expect {

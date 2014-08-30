@@ -26,6 +26,11 @@ module SideJob
     end
   end
 
+  # @param redis [Hash] Options for passing to Redis.new
+  def self.redis=(redis)
+    Sidekiq.redis = redis
+  end
+
   # Main function to queue a job
   # @param queue [String] Name of the queue to put the job in
   # @param klass [String] Name of the class that will handle the job
@@ -68,4 +73,8 @@ module SideJob
     job = SideJob::Job.new(job_id)
     return job.exists? ? job : nil
   end
+end
+
+if ENV['SIDEJOB_URL']
+  SideJob.redis = {url: ENV['SIDEJOB_URL']}
 end
