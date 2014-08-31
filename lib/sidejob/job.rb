@@ -31,6 +31,7 @@ module SideJob
               description: info['description'],
               parent: info['parent'] ? SideJob::Job.new(info['parent']) : nil,
               top: info['top'] ? SideJob::Job.new(info['top']) : nil,
+              children: children,
               created_at: info['created_at'], updated_at: info['updated_at'],
               restart: info['restart'],
               status: info['status'].to_sym}
