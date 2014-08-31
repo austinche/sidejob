@@ -28,6 +28,7 @@ module SideJob
     def info
       info = SideJob.redis.hgetall(redis_key)
       return {queue: info['queue'], class: info['class'], args: JSON.parse(info['args']),
+              description: info['description'],
               parent: info['parent'] ? SideJob::Job.new(info['parent']) : nil,
               top: info['top'] ? SideJob::Job.new(info['top']) : nil,
               created_at: info['created_at'], updated_at: info['updated_at'],
@@ -40,6 +41,13 @@ module SideJob
     def args=(args)
       SideJob.redis.hset redis_key, 'args', JSON.generate(args)
       restart
+    end
+
+    # The job description is not used by SideJob but can be used by clients to
+    # more easily display a human friendly view for jobs
+    # @param desc [String] Human readable job description
+    def description=(desc)
+      SideJob.redis.hset redis_key, 'description', desc
     end
 
     # Adds a log entry to redis

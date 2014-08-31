@@ -42,7 +42,7 @@ describe SideJob::Job do
       now = Time.now
       Time.stub(:now).and_return(now)
       @job = SideJob.queue('testq', 'TestWorker', {args: [1, 2]})
-      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', args: [1, 2], parent: nil, top: @job,
+      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', args: [1, 2], parent: nil, top: @job, description: nil,
                                restart: nil, status: :queued, created_at: now.utc.iso8601, updated_at: now.utc.iso8601 })
     end
   end
@@ -55,6 +55,15 @@ describe SideJob::Job do
       @job.args = [3]
       expect(@job.status).to be :queued
       expect(@job.info[:args]).to eq([3])
+    end
+  end
+
+  describe '#description=' do
+    it 'sets job description' do
+      @job = SideJob.queue('testq', 'TestWorker')
+      expect(@job.info[:description]).to be nil
+      @job.description = 'wonderful job'
+      expect(@job.info[:description]).to eq('wonderful job')
     end
   end
 

@@ -73,6 +73,7 @@ Additional keys used by SideJob:
 * job_id - Stores the last job ID (we use incrementing integers from 1)
 * jobs - Set containing all active job IDs
 * job:<jid> - Hash containing SideJob managed job data
+** description - human readable description of the job
 ** queue - queue name
 ** class - name of class
 ** args - JSON array of arguments
