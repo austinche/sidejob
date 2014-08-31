@@ -65,6 +65,15 @@ describe SideJob::Job do
       @job.description = 'wonderful job'
       expect(@job.info[:description]).to eq('wonderful job')
     end
+
+    it 'updates updated_at' do
+      @job = SideJob.queue('testq', 'TestWorker')
+      now = Time.now + 1000
+      Time.stub(:now).and_return(now)
+      expect(@job.info[:updated_at]).to_not eq(now.utc.iso8601)
+      @job.description = 'wonderful job'
+      expect(@job.info[:updated_at]).to eq(now.utc.iso8601)
+    end
   end
 
   describe '#log' do

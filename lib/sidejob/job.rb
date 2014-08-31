@@ -47,7 +47,7 @@ module SideJob
     # more easily display a human friendly view for jobs
     # @param desc [String] Human readable job description
     def description=(desc)
-      SideJob.redis.hset redis_key, 'description', desc
+      SideJob.redis.hmset redis_key, 'description', desc, 'updated_at', Time.now.utc.iso8601
     end
 
     # Adds a log entry to redis
@@ -72,8 +72,8 @@ module SideJob
     # Set the job's status
     # @param status [String, Symbol] New status
     def status=(status)
-      log('status', {status: status})
       SideJob.redis.hset redis_key, 'status', status
+      log('status', {status: status})
     end
 
     # Restart the job

@@ -32,6 +32,11 @@ module SideJob
     # If the port is an output port, wake up the parent job so it has a chance to process it
     # @param data [Array<String>] List of data to write to the port
     def write(*data)
+      SideJob.redis.multi do |multi|
+        multi.lpush redis_key, data
+        multi.sadd "#{@job.redis_key}:#{@type}ports", @name
+      end
+
       data.each do |x|
         log = {data: x}
         log["#{@type}port"] = @name
@@ -42,11 +47,6 @@ module SideJob
         @job.restart
       else
         @job.parent.restart if @job.parent
-      end
-
-      SideJob.redis.multi do |multi|
-        multi.lpush redis_key, data
-        multi.sadd "#{@job.redis_key}:#{@type}ports", @name
       end
       self
     end
