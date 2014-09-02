@@ -38,9 +38,7 @@ module SideJob
       end
 
       data.each do |x|
-        log = {data: x}
-        log["#{@type}port"] = @name
-        @job.log 'write', log
+        log('write', x)
       end
 
       if @type == :in
@@ -61,13 +59,7 @@ module SideJob
     # @return [String, nil] First data from port or nil if no data exists
     def read
       data = SideJob.redis.rpop redis_key
-
-      if data
-        log = {data: data}
-        log["#{@type}port"] = @name
-        @job.log 'read', log
-      end
-
+      log('read', data) if data
       data
     end
 
@@ -91,9 +83,7 @@ module SideJob
       end[0]
 
       data.reverse_each do |x|
-        log = {data: x}
-        log["#{@type}port"] = @name
-        @job.log 'read', log
+        log('read', x)
       end
 
       data
@@ -117,6 +107,15 @@ module SideJob
 
     def to_s
       redis_key
+    end
+
+    private
+
+    def log(type, data)
+      log = {data: data}
+      log[:by] = Thread.current[:SideJob].jid if Thread.current[:SideJob]
+      log["#{@type}port"] = @name
+      @job.log type, log
     end
   end
 end

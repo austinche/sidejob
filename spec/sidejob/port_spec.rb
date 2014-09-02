@@ -85,6 +85,17 @@ describe SideJob::Port do
                           {'type' => 'write', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp},]
     end
 
+    it 'logs writes by another job' do
+      now = Time.now
+      Time.stub(:now).and_return(now)
+      SideJob.redis.del "#{@job.redis_key}:log"
+      Thread.current[:SideJob] = job = SideJob.queue('queue', 'TestWorker')
+      @port.write('abc')
+      Thread.current[:SideJob] = nil
+      log = SideJob.redis.lpop("#{@job.redis_key}:log")
+      expect(JSON.parse(log)).to eq({'type' => 'write', 'by' => job.jid, 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp})
+    end
+
     it 'restarts job when writing to an input port' do
       @job.status = :running
       inport = SideJob::Port.new(@job, :in, :port1)
@@ -136,6 +147,18 @@ describe SideJob::Port do
       expect(logs).to eq [{'type' => 'read', 'inport' => 'port1', 'data' => '123', 'timestamp' => SideJob.timestamp},
                           {'type' => 'read', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp},]
     end
+
+    it 'logs reads by another job' do
+      now = Time.now
+      Time.stub(:now).and_return(now)
+      @port.write('abc')
+      SideJob.redis.del "#{@job.redis_key}:log"
+      Thread.current[:SideJob] = job = SideJob.queue('queue', 'TestWorker')
+      expect(@port.read).to eq('abc')
+      Thread.current[:SideJob] = nil
+      log = SideJob.redis.lpop("#{@job.redis_key}:log")
+      expect(JSON.parse(log)).to eq({'type' => 'read', 'by' => job.jid, 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp})
+    end
   end
 
   describe '#read_json' do
@@ -172,6 +195,20 @@ describe SideJob::Port do
           map {|log| JSON.parse(log)}
       expect(logs).to eq [{'type' => 'read', 'inport' => 'port1', 'data' => '123', 'timestamp' => SideJob.timestamp},
                           {'type' => 'read', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp},]
+    end
+
+    it 'logs drain by another job' do
+      now = Time.now
+      Time.stub(:now).and_return(now)
+      @port.write('abc', '123')
+      SideJob.redis.del "#{@job.redis_key}:log"
+      Thread.current[:SideJob] = job = SideJob.queue('queue', 'TestWorker')
+      @port.drain
+      Thread.current[:SideJob] = nil
+      logs = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).
+          map {|log| JSON.parse(log)}
+      expect(logs).to eq [{'type' => 'read', 'by' => job.jid, 'inport' => 'port1', 'data' => '123', 'timestamp' => SideJob.timestamp},
+                          {'type' => 'read', 'by' => job.jid, 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp},]
     end
   end
 

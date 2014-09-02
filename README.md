@@ -100,8 +100,8 @@ Additional keys used by SideJob:
 * job:<jid>:children - Set containing all children job IDs
 * job:<jid>:log - List with job changes, new log entries pushed on left. Each log entry is JSON encoded.
 ** {type: 'status', status: <new status>, timestamp: <date>}
-** {type: 'read', <in|out>port: <port name>, data: <data>, timestamp: <date>}
-** {type: 'write', <in|out>port: <port name>, data: <data>, timestamp: <date>}
+** {type: 'read', by: <jid>, <in|out>port: <port name>, data: <data>, timestamp: <date>}
+** {type: 'write', by: <jid>, <in|out>port: <port name>, data: <data>, timestamp: <date>}
 ** {type: 'error', error: <message>, backtrace: <exception backtrace>, timestamp: <date>}
 * rate:<jid>:<timestamp> - Rate limiter used to prevent run away executing of a job
 ** Keys are automatically expired

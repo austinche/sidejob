@@ -19,6 +19,7 @@ module SideJob
           multi.incr key
           multi.expire key, 10
         end
+        Thread.current[:SideJob] = worker
         yield
         worker.status = :completed if worker.status == :running
       end
@@ -28,6 +29,7 @@ module SideJob
       # only store the backtrace until the first sidekiq line
       worker.log 'error', {error: e.message, backtrace: e.backtrace.take_while {|l| l !~ /sidekiq/}.join("\n")}
     ensure
+      Thread.current[:SideJob] = nil
       time = SideJob.redis.hget worker.redis_key, :restart
       worker.restart(time.to_f) if time
 

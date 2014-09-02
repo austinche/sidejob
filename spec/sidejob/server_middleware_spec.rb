@@ -10,6 +10,14 @@ describe SideJob::ServerMiddleware do
     @chain.add SideJob::ServerMiddleware
   end
 
+  it 'sets the current job to the worker' do
+    @chain.invoke(@worker, {}, @queue) do
+      @current = Thread.current[:SideJob]
+    end
+    expect(@current).to eq(@worker)
+    expect(@worker.status).to be(:completed)
+  end
+
   it 'sets status to :running on start' do
     @chain.invoke(@worker, {}, @queue) do
       @status = @job.status
