@@ -52,7 +52,7 @@ module SideJob
     SideJob.redis.multi do |multi|
       multi.sadd 'jobs', jid
       multi.hmset job.redis_key, 'status', :starting, 'queue', queue, 'class', klass,
-                  'args', JSON.generate(args), 'top', top, 'created_at', Time.now.utc.iso8601
+                  'args', JSON.generate(args), 'top', top, 'created_at', SideJob.timestamp
 
       if options[:parent]
         multi.hset job.redis_key, 'parent', options[:parent].jid
@@ -73,6 +73,12 @@ module SideJob
     return nil unless job_id
     job = SideJob::Job.new(job_id)
     return job.exists? ? job : nil
+  end
+
+  # Returns the current timestamp as a iso8601 string
+  # @return [String] Current timestamp
+  def self.timestamp
+    Time.now.utc.iso8601(9)
   end
 end
 

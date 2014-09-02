@@ -48,14 +48,14 @@ module SideJob
     # more easily display a human friendly view for jobs
     # @param desc [String] Human readable job description
     def description=(desc)
-      SideJob.redis.hmset redis_key, 'description', desc, 'updated_at', Time.now.utc.iso8601
+      SideJob.redis.hmset redis_key, 'description', desc, 'updated_at', SideJob.timestamp
     end
 
     # Adds a log entry to redis
     # @param type [String] Log type
     # @param data [Hash] Any extra log data
     def log(type, data)
-      timestamp = Time.now.utc.iso8601
+      timestamp = SideJob.timestamp
       entry = JSON.generate(data.merge(type: type, timestamp: timestamp))
       SideJob.redis.multi do |multi|
         multi.hset redis_key, 'updated_at', timestamp

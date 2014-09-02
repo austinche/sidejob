@@ -48,7 +48,7 @@ describe SideJob do
       now = Time.now
       Time.stub(:now).and_return(now)
       job = SideJob.queue('testq', 'TestWorker')
-      expect(job.info[:created_at]).to eq(now.utc.iso8601)
+      expect(job.info[:created_at]).to eq(SideJob.timestamp)
     end
 
     it 'stores jid in jobs set' do
@@ -92,6 +92,12 @@ describe SideJob do
 
     it 'returns nil if the job does not exist' do
       expect(SideJob.find('job')).to be_nil
+    end
+  end
+
+  describe '.timestamp' do
+    it 'returns subseconds' do
+      expect(SideJob.timestamp).to match /T\d\d:\d\d:\d\d\./
     end
   end
 end

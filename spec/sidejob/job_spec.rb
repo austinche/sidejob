@@ -43,7 +43,7 @@ describe SideJob::Job do
       Time.stub(:now).and_return(now)
       @job = SideJob.queue('testq', 'TestWorker', {args: [1, 2]})
       expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', args: [1, 2], parent: nil, top: @job, children: [], description: nil,
-                               restart: nil, status: :queued, created_at: now.utc.iso8601, updated_at: now.utc.iso8601 })
+                               restart: nil, status: :queued, created_at: SideJob.timestamp, updated_at: SideJob.timestamp })
     end
   end
 
@@ -70,9 +70,9 @@ describe SideJob::Job do
       @job = SideJob.queue('testq', 'TestWorker')
       now = Time.now + 1000
       Time.stub(:now).and_return(now)
-      expect(@job.info[:updated_at]).to_not eq(now.utc.iso8601)
+      expect(@job.info[:updated_at]).to_not eq(SideJob.timestamp)
       @job.description = 'wonderful job'
-      expect(@job.info[:updated_at]).to eq(now.utc.iso8601)
+      expect(@job.info[:updated_at]).to eq(SideJob.timestamp)
     end
   end
 
@@ -83,7 +83,7 @@ describe SideJob::Job do
       job = SideJob.queue('testq', 'TestWorker')
       job.log('foo', {abc: 123})
       log = SideJob.redis {|redis| redis.lpop "#{job.redis_key}:log"}
-      expect(JSON.parse(log)).to eq({'type' => 'foo', 'abc' => 123, 'timestamp' => now.utc.iso8601})
+      expect(JSON.parse(log)).to eq({'type' => 'foo', 'abc' => 123, 'timestamp' => SideJob.timestamp})
     end
 
     it 'updates updated_at timestamp' do
@@ -91,7 +91,7 @@ describe SideJob::Job do
       Time.stub(:now).and_return(now)
       job = SideJob.queue('testq', 'TestWorker')
       job.log('foo', {abc: 123})
-      expect(job.info[:updated_at]).to eq(now.utc.iso8601)
+      expect(job.info[:updated_at]).to eq(SideJob.timestamp)
     end
   end
 
@@ -116,7 +116,7 @@ describe SideJob::Job do
       SideJob.redis { |redis| redis.del "#{@job.redis_key}:log" }
       @job.status = 'newstatus'
       log = SideJob.redis {|redis| redis.lpop "#{@job.redis_key}:log"}
-      expect(JSON.parse(log)).to eq({'type' => 'status', 'status' => 'newstatus', 'timestamp' => now.utc.iso8601})
+      expect(JSON.parse(log)).to eq({'type' => 'status', 'status' => 'newstatus', 'timestamp' => SideJob.timestamp})
     end
   end
 
