@@ -32,6 +32,16 @@ Jobs
 * Jobs on restart are responsible for restoring state properly
 * Jobs are restarted when child jobs complete or suspend
 
+Jobs can have a number of different status. The possible status transitions:
+* queued | scheduled -> running | stopped
+* scheduled -> queued
+* starting | suspended | completed | failed -> queued | scheduled
+* running -> suspended | completed | failed
+
+Note that once a job is stopped, SideJob will no longer run the job.
+Some external user or process must reset the status if the job is to be
+run again.
+
 Ports
 -----
 
@@ -80,14 +90,9 @@ Additional keys used by SideJob:
 ** parent - parent job id
 ** top - the job id of the top job with no parent in this job's hierarchy
 ** restart - if set, the job will be requeued for the specified time once it completes (0 means queue immediately)
-** status - job status: starting, queued, scheduled, running, suspended, completed, failed
+** status - job status: starting, queued, scheduled, running, suspended, completed, failed, stopped
 ** created_at - timestamp that the job was first queued
 ** updated_at - latest timestamp for when something happened (a log entry was generated)
-*** Allowed status transitions:
-**** queued | scheduled -> running
-**** scheduled -> queued
-**** starting | suspended | completed | failed -> queued | scheduled
-**** running -> suspended | completed | failed
 * job:<jid>:data - Hash containing the job's internal data
 * job:<jid>:inports - Set containing input port names
 * job:<jid>:outports - Set containing output port names
@@ -98,3 +103,5 @@ Additional keys used by SideJob:
 ** {type: 'read', <in|out>port: <port name>, data: <data>, timestamp: <date>}
 ** {type: 'write', <in|out>port: <port name>, data: <data>, timestamp: <date>}
 ** {type: 'error', error: <message>, backtrace: <exception backtrace>, timestamp: <date>}
+* rate:<jid>:<timestamp> - Rate limiter used to prevent run away executing of a job
+** Keys are automatically expired

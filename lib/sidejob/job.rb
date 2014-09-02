@@ -29,8 +29,8 @@ module SideJob
       info = SideJob.redis.hgetall(redis_key)
       return {queue: info['queue'], class: info['class'], args: JSON.parse(info['args']),
               description: info['description'],
-              parent: info['parent'] ? SideJob::Job.new(info['parent']) : nil,
-              top: info['top'] ? SideJob::Job.new(info['top']) : nil,
+              parent: SideJob.find(info['parent']),
+              top: SideJob.find(info['top']),
               children: children,
               created_at: info['created_at'], updated_at: info['updated_at'],
               restart: info['restart'],
@@ -78,7 +78,7 @@ module SideJob
     end
 
     # Restart the job
-    # This method ensures that the job runs at least once from the beginning
+    # This method ensures that the job runs at least once from the beginning unless the status is :stopped
     # Therefore, if the job is already running, it will run again
     # If job is already queued or scheduled for an earlier time, this call does nothing
     # @param time [Time, Float, nil] Time to schedule the job if specified
@@ -88,8 +88,8 @@ module SideJob
       info_hash = info
 
       case info_hash[:status]
-        when :queued
-          # don't requeue already queued job
+        when :queued, :stopped
+          # don't requeue already queued job or start a stopped job
           return
 
         when :running

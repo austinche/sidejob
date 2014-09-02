@@ -17,6 +17,42 @@ describe SideJob::ServerMiddleware do
     expect(@status).to be(:running)
   end
 
+  it 'does not run if status is :stopped' do
+    @worker.status = :stopped
+    @run = false
+    @chain.invoke(@worker, {}, @queue) do
+      @run = true
+    end
+    expect(@run).to be false
+    expect(@worker.status).to be(:stopped)
+  end
+
+  it 'does not run if called too many times in a second' do
+    now = Time.now
+    Time.stub(:now).and_return(now)
+    key = "rate:#{@worker.jid}:#{Time.now.to_i}"
+    SideJob.redis.set key, SideJob::ServerMiddleware::MAX_CALLS_PER_SECOND + 1
+    @run = false
+    @chain.invoke(@worker, {}, @queue) do
+      @run = true
+    end
+    expect(@run).to be false
+    expect(@worker.status).to be(:stopped)
+  end
+
+  it 'does run if not called too many times in a second' do
+    now = Time.now
+    Time.stub(:now).and_return(now)
+    key = "rate:#{@worker.jid}:#{Time.now.to_i}"
+    SideJob.redis.set key, SideJob::ServerMiddleware::MAX_CALLS_PER_SECOND
+    @run = false
+    @chain.invoke(@worker, {}, @queue) do
+      @run = true
+    end
+    expect(@run).to be true
+    expect(@worker.status).to be(:completed)
+  end
+
   it 'sets status to completed on completion' do
     expect(@job.status).to be(:queued)
     @chain.invoke(@worker, {}, @queue) {}

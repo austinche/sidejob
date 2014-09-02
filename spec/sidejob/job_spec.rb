@@ -166,6 +166,12 @@ describe SideJob::Job do
       expect(@job.status).to eq(:queued)
     end
 
+    it 'does nothing on a stopped job' do
+      @job.status = :stopped
+      expect { @job.restart }.to change {Sidekiq::Stats.new.enqueued}.by(0)
+      expect(@job.status).to eq(:stopped)
+    end
+
     it 'restarts a completed job' do
       @job.status = :completed
       expect { @job.restart }.to change {Sidekiq::Stats.new.enqueued}.by(1)
