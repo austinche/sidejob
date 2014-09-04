@@ -89,6 +89,7 @@ Additional keys used by SideJob:
 ** args - JSON array of arguments
 ** parent - parent job id
 ** top - the job id of the top job with no parent in this job's hierarchy
+** depth - the number of jobs between this one and the top (used to prevent going too deep and infinite recursion)
 ** restart - if set, the job will be requeued for the specified time once it completes (0 means queue immediately)
 ** status - job status: starting, queued, scheduled, running, suspended, completed, failed, stopped
 ** created_at - timestamp that the job was first queued

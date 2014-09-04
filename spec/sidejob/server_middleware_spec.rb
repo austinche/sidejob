@@ -61,6 +61,32 @@ describe SideJob::ServerMiddleware do
     expect(@worker.status).to be(:completed)
   end
 
+  it 'does not run if job is too deep' do
+    SideJob::ServerMiddleware::MAX_JOB_DEPTH.times do |i|
+      @job = SideJob.queue(@queue, 'TestWorker', {parent: @job})
+    end
+    @worker.jid = @job.jid
+    @run = false
+    @chain.invoke(@worker, {}, @queue) do
+      @run = true
+    end
+    expect(@run).to be false
+    expect(@worker.status).to be(:stopped)
+  end
+
+  it 'does run if job is not too deep' do
+    (SideJob::ServerMiddleware::MAX_JOB_DEPTH-1).times do |i|
+      @job = SideJob.queue(@queue, 'TestWorker', {parent: @job})
+    end
+    @worker.jid = @job.jid
+    @run = false
+    @chain.invoke(@worker, {}, @queue) do
+      @run = true
+    end
+    expect(@run).to be true
+    expect(@worker.status).to be(:completed)
+  end
+
   it 'sets status to completed on completion' do
     expect(@job.status).to be(:queued)
     @chain.invoke(@worker, {}, @queue) {}

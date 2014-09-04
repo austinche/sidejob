@@ -44,6 +44,11 @@ describe SideJob do
       expect(job.jid).to eq('2')
     end
 
+    it 'sets depth to 1 if no parent' do
+      job = SideJob.queue('testq', 'TestWorker')
+      expect(SideJob.redis.hget(job.redis_key, 'depth')).to eq('1')
+    end
+
     it 'stores created at timestamp' do
       now = Time.now
       Time.stub(:now).and_return(now)
@@ -63,6 +68,12 @@ describe SideJob do
         expect(job.status).to eq(:queued)
         expect(job.parent).to eq(parent)
       }.to change {Sidekiq::Stats.new.enqueued}.by(2)
+    end
+
+    it 'sets depth to parent depth + 1' do
+      parent = SideJob.queue('testq', 'TestWorker')
+      job = SideJob.queue('testq', 'TestWorker', {parent: parent})
+      expect(SideJob.redis.hget(job.redis_key, 'depth')).to eq('2')
     end
 
     it 'can specify job args' do

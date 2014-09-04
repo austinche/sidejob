@@ -1,17 +1,22 @@
 module SideJob
   class ServerMiddleware
     MAX_CALLS_PER_SECOND = 10
+    MAX_JOB_DEPTH = 10
 
     def call(worker, msg, queue)
       # limit each job to being called too many times per second
+      # or too deep of a job tree
       # this is to help prevent bad coding that leads to recursive busy loops
+
       # Uses Rate limiter 1 pattern from http://redis.io/commands/INCR
       key = "rate:#{worker.jid}:#{Time.now.to_i}"
-      rate = SideJob.redis.get(key)
       if worker.status == :stopped
-      elsif rate && rate.to_i > MAX_CALLS_PER_SECOND
+      elsif SideJob.redis.get(key).to_i > MAX_CALLS_PER_SECOND
         worker.status = :stopped
         worker.log 'error', {error: "Job was stopped due to being called too rapidly"}
+      elsif SideJob.redis.hget(worker.redis_key, 'depth').to_i > MAX_JOB_DEPTH
+        worker.status = :stopped
+        worker.log 'error', {error: "Job was stopped due to being too deep"}
       else
         worker.status = :running
         SideJob.redis.multi do |multi|

@@ -47,12 +47,18 @@ module SideJob
     jid = SideJob.redis.incr(:job_id).to_s
     job = SideJob::Job.new(jid)
 
-    top = options[:parent] ? options[:parent].top.jid : jid
+    if options[:parent]
+      depth = SideJob.redis.hget(options[:parent].redis_key, 'depth').to_i + 1
+      top = options[:parent].top.jid
+    else
+      depth = 1
+      top = jid
+    end
 
     SideJob.redis.multi do |multi|
       multi.sadd 'jobs', jid
       multi.hmset job.redis_key, 'status', :starting, 'queue', queue, 'class', klass,
-                  'args', JSON.generate(args), 'top', top, 'created_at', SideJob.timestamp
+                  'args', JSON.generate(args), 'top', top, 'depth', depth, 'created_at', SideJob.timestamp
 
       if options[:parent]
         multi.hset job.redis_key, 'parent', options[:parent].jid
