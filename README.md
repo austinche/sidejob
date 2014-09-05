@@ -87,9 +87,6 @@ Additional keys used by SideJob:
 ** queue - queue name
 ** class - name of class
 ** args - JSON array of arguments
-** parent - parent job id
-** top - the job id of the top job with no parent in this job's hierarchy
-** depth - the number of jobs between this one and the top (used to prevent going too deep and infinite recursion)
 ** restart - if set, the job will be requeued for the specified time once it completes (0 means queue immediately)
 ** status - job status: starting, queued, scheduled, running, suspended, completed, failed, stopped
 ** created_at - timestamp that the job was first queued
@@ -98,6 +95,8 @@ Additional keys used by SideJob:
 * job:<jid>:inports - Set containing input port names
 * job:<jid>:outports - Set containing output port names
 * job:<jid>:in:<inport> and job:<jid>:out:<outport> - List with unread port data
+* job:<jid>:ancestors - List with parent job IDs up to the root job that has no parent
+** Newer jobs are pushed on the left so the immediate parent is on the left and the root job is on the right
 * job:<jid>:children - Set containing all children job IDs
 * job:<jid>:log - List with job changes, new log entries pushed on left. Each log entry is JSON encoded.
 ** {type: 'status', status: <new status>, timestamp: <date>}

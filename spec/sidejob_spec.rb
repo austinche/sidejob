@@ -44,11 +44,6 @@ describe SideJob do
       expect(job.jid).to eq('2')
     end
 
-    it 'sets depth to 1 if no parent' do
-      job = SideJob.queue('testq', 'TestWorker')
-      expect(SideJob.redis.hget(job.redis_key, 'depth')).to eq('1')
-    end
-
     it 'stores created at timestamp' do
       now = Time.now
       Time.stub(:now).and_return(now)
@@ -67,13 +62,15 @@ describe SideJob do
         job = SideJob.queue('testq', 'TestWorker', {parent: parent})
         expect(job.status).to eq(:queued)
         expect(job.parent).to eq(parent)
+        expect(SideJob.redis.lrange("#{job.redis_key}:ancestors", 0, -1)).to eq([parent.jid])
       }.to change {Sidekiq::Stats.new.enqueued}.by(2)
     end
 
-    it 'sets depth to parent depth + 1' do
-      parent = SideJob.queue('testq', 'TestWorker')
-      job = SideJob.queue('testq', 'TestWorker', {parent: parent})
-      expect(SideJob.redis.hget(job.redis_key, 'depth')).to eq('2')
+    it 'sets ancestor tree correctly parent' do
+      j1 = SideJob.queue('testq', 'TestWorker')
+      j2 = SideJob.queue('testq', 'TestWorker', {parent: j1})
+      j3 = SideJob.queue('testq', 'TestWorker', {parent: j2})
+      expect(SideJob.redis.lrange("#{j3.redis_key}:ancestors", 0, -1)).to eq([j2.jid, j1.jid])
     end
 
     it 'can specify job args' do

@@ -48,20 +48,16 @@ module SideJob
     job = SideJob::Job.new(jid)
 
     if options[:parent]
-      depth = SideJob.redis.hget(options[:parent].redis_key, 'depth').to_i + 1
-      top = options[:parent].top.jid
-    else
-      depth = 1
-      top = jid
+      ancestry = [options[:parent].jid] + SideJob.redis.lrange("#{options[:parent].redis_key}:ancestors", 0, -1)
     end
 
     SideJob.redis.multi do |multi|
       multi.sadd 'jobs', jid
       multi.hmset job.redis_key, 'status', :starting, 'queue', queue, 'class', klass,
-                  'args', JSON.generate(args), 'top', top, 'depth', depth, 'created_at', SideJob.timestamp
+                  'args', JSON.generate(args), 'created_at', SideJob.timestamp
 
       if options[:parent]
-        multi.hset job.redis_key, 'parent', options[:parent].jid
+        multi.rpush "#{job.redis_key}:ancestors", ancestry # we need to rpush to get the right order
         multi.sadd "#{options[:parent].redis_key}:children", jid
       end
     end

@@ -29,9 +29,6 @@ module SideJob
       info = SideJob.redis.hgetall(redis_key)
       return {queue: info['queue'], class: info['class'], args: JSON.parse(info['args']),
               description: info['description'],
-              parent: SideJob.find(info['parent']),
-              top: SideJob.find(info['top']),
-              children: children,
               created_at: info['created_at'], updated_at: info['updated_at'],
               restart: info['restart'],
               status: info['status'].to_sym}
@@ -130,31 +127,21 @@ module SideJob
       SideJob.redis.hexists(redis_key, :restart)
     end
 
-    # @return [Array<String>] List of children job ids for the given job
+    # @return [Array<SideJob::Job>] Children jobs
     def children
       SideJob.redis.smembers("#{redis_key}:children").map {|id| SideJob::Job.new(id)}
     end
 
+    # @return [Array<SideJob::Job>] Ancestors (parent will be first and root job will be last)
+    def ancestors
+      SideJob.redis.lrange("#{redis_key}:ancestors", 0, -1).map { |jid| SideJob::Job.new(jid) }
+    end
+
     # @return [SideJob::Job, nil] Parent job or nil if none
     def parent
-      return @parent if @parent # parent job will never change
-      @parent = SideJob.redis.hget(redis_key, 'parent')
-      @parent = SideJob::Job.new(@parent) if @parent
-      return @parent
-    end
-
-    # @return [SideJob::Job] Top job (will be self if no parent)
-    def top
-      return @top if @top # top job will never change
-      @top = SideJob::Job.new(SideJob.redis.hget(redis_key, 'top'))
-    end
-
-    # Returns the job tree starting from this job
-    # @return [Array<Hash>]
-    def tree
-      children.map do |child|
-        { job: child, children: child.tree }
-      end
+      parent = SideJob.redis.lindex("#{redis_key}:ancestors", 0)
+      parent = SideJob::Job.new(parent) if parent
+      parent
     end
 
     # Deletes and unschedules the job and all children jobs (recursively)
@@ -174,7 +161,7 @@ module SideJob
       outports = SideJob.redis.smembers("#{redis_key}:outports").map {|port| "#{redis_key}:out:#{port}"}
       SideJob.redis.multi do |multi|
         multi.del inports + outports +
-                      [redis_key, "#{redis_key}:inports", "#{redis_key}:outports", "#{redis_key}:children", "#{redis_key}:data", "#{redis_key}:log"]
+                      [redis_key, "#{redis_key}:inports", "#{redis_key}:outports", "#{redis_key}:children", "#{redis_key}:ancestors", "#{redis_key}:data", "#{redis_key}:log"]
         multi.srem 'jobs', @jid
       end
     end

@@ -14,7 +14,7 @@ module SideJob
       elsif SideJob.redis.get(key).to_i > MAX_CALLS_PER_SECOND
         worker.status = :stopped
         worker.log 'error', {error: "Job was stopped due to being called too rapidly"}
-      elsif SideJob.redis.hget(worker.redis_key, 'depth').to_i > MAX_JOB_DEPTH
+      elsif SideJob.redis.llen("#{worker.redis_key}:ancestors") > MAX_JOB_DEPTH
         worker.status = :stopped
         worker.log 'error', {error: "Job was stopped due to being too deep"}
       else

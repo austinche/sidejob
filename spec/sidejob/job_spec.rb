@@ -42,7 +42,7 @@ describe SideJob::Job do
       now = Time.now
       Time.stub(:now).and_return(now)
       @job = SideJob.queue('testq', 'TestWorker', {args: [1, 2]})
-      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', args: [1, 2], parent: nil, top: @job, children: [], description: nil,
+      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', args: [1, 2], description: nil,
                                restart: nil, status: :queued, created_at: SideJob.timestamp, updated_at: SideJob.timestamp })
     end
   end
@@ -129,29 +129,18 @@ describe SideJob::Job do
     end
   end
 
-  describe '#top' do
-    it 'returns self if no parent' do
+  describe '#ancestors' do
+    it 'returns empty array if no parent' do
       job = SideJob.queue('testq', 'TestWorker')
-      expect(job.top).to eq(job)
+      expect(job.ancestors).to eq([])
     end
 
-    it 'traverses up job tree' do
+    it 'returns entire job tree' do
       j1 = SideJob.queue('testq', 'TestWorker')
       j2 = SideJob.queue('q2', 'TestWorker', {parent: j1})
       j3 = SideJob.queue('q2', 'TestWorker', {parent: j2})
       j4 = SideJob.queue('q2', 'TestWorker', {parent: j3})
-      expect(j4.top).to eq(j1)
-    end
-  end
-
-  describe '#tree' do
-    it 'recursively gets job tree' do
-      job1 = SideJob.queue('q', 'TestWorker')
-      job2 = SideJob.queue('q', 'TestWorker', {parent: job1})
-      job3 = SideJob.queue('q', 'TestWorker', {parent: job1})
-      job4 = SideJob.queue('q', 'TestWorker', {parent: job2})
-      job5 = SideJob.queue('q', 'TestWorker', {parent: job4})
-      expect(job1.tree).to match_array([{job: job2, children: [{job: job4, children: [{job: job5, children: []}]}]}, {job: job3, children: []}])
+      expect(j4.ancestors).to eq([j3, j2, j1])
     end
   end
 

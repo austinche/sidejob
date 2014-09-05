@@ -62,7 +62,7 @@ describe SideJob::ServerMiddleware do
   end
 
   it 'does not run if job is too deep' do
-    SideJob::ServerMiddleware::MAX_JOB_DEPTH.times do |i|
+    (SideJob::ServerMiddleware::MAX_JOB_DEPTH+1).times do |i|
       @job = SideJob.queue(@queue, 'TestWorker', {parent: @job})
     end
     @worker.jid = @job.jid
@@ -75,7 +75,7 @@ describe SideJob::ServerMiddleware do
   end
 
   it 'does run if job is not too deep' do
-    (SideJob::ServerMiddleware::MAX_JOB_DEPTH-1).times do |i|
+    SideJob::ServerMiddleware::MAX_JOB_DEPTH.times do |i|
       @job = SideJob.queue(@queue, 'TestWorker', {parent: @job})
     end
     @worker.jid = @job.jid
