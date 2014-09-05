@@ -42,7 +42,7 @@ describe SideJob::Job do
       now = Time.now
       Time.stub(:now).and_return(now)
       @job = SideJob.queue('testq', 'TestWorker', {args: [1, 2]})
-      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', args: [1, 2], description: nil,
+      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', args: [1, 2],
                                restart: nil, status: :queued, created_at: SideJob.timestamp, updated_at: SideJob.timestamp })
     end
   end
@@ -55,24 +55,6 @@ describe SideJob::Job do
       @job.args = [3]
       expect(@job.status).to be :queued
       expect(@job.info[:args]).to eq([3])
-    end
-  end
-
-  describe '#description=' do
-    it 'sets job description' do
-      @job = SideJob.queue('testq', 'TestWorker')
-      expect(@job.info[:description]).to be nil
-      @job.description = 'wonderful job'
-      expect(@job.info[:description]).to eq('wonderful job')
-    end
-
-    it 'updates updated_at' do
-      @job = SideJob.queue('testq', 'TestWorker')
-      now = Time.now + 1000
-      Time.stub(:now).and_return(now)
-      expect(@job.info[:updated_at]).to_not eq(SideJob.timestamp)
-      @job.description = 'wonderful job'
-      expect(@job.info[:updated_at]).to eq(SideJob.timestamp)
     end
   end
 
@@ -347,6 +329,86 @@ describe SideJob::Job do
       expect(job.outports).to match_array([SideJob::Port.new(job, :out, 'port1'), SideJob::Port.new(job, :out, 'port2')])
       job.output('port1').read
       expect(job.outports).to eq([SideJob::Port.new(job, :out, 'port2')])
+    end
+  end
+
+  describe '#mset' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+    end
+
+    it 'stores metadata in redis' do
+      @job.mset({test: 'data'})
+      expect(SideJob.redis.hget("#{@job.redis_key}:data", 'test')).to eq('data')
+
+      # test updating
+      @job.mset({test: 'data2'})
+      expect(SideJob.redis.hget("#{@job.redis_key}:data", 'test')).to eq('data2')
+    end
+
+    it 'updates updated_at timestamp' do
+      now = Time.now + 1000
+      Time.stub(:now).and_return(now)
+      @job.mset({test: 123})
+      expect(@job.info[:updated_at]).to eq(SideJob.timestamp)
+    end
+  end
+
+  describe '#mget' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+    end
+
+    it 'only loads specified fields' do
+      data = { field1: 'value1', field2: 'value2' }
+      @job.mset data
+      expect(@job.mget(:field1, :field2)).to eq(data)
+    end
+
+    it 'returns String or Symbol depending on passed in field' do
+      data = { field1: 'value1', field2: 'value2' }
+      @job.mset data
+      data = @job.mget(:field1, 'field2')
+      expect(data[:field1]).to eq('value1')
+      expect(data['field2']).to eq('value2')
+    end
+
+    it 'loads all fields if none specified' do
+      data = { field1: 'value1', field2: 'value2' }
+      @job.mset data
+      data = @job.mget
+      expect(data['field1']).to eq('value1')
+      expect(data['field2']).to eq('value2')
+    end
+  end
+
+  describe '#get, #set' do
+    it 'are shorthands for getting/setting single data fields' do
+      @job = SideJob.queue('testq', 'TestWorker')
+      @job.set('field1', 'value1')
+      expect(@job.get('field1')).to eq('value1')
+    end
+  end
+
+  describe '#get_json, #set_json' do
+    it 'can be used to store objects as json' do
+      @job = SideJob.queue('testq', 'TestWorker')
+      data = {'abc' => 123, 'def' => [1, 2]}
+      @job.set_json(:field1, data)
+      expect(@job.get_json(:field1)).to eq(data)
+    end
+  end
+
+  describe '#touch' do
+    it 'updates the updated_at timestamp' do
+      now = Time.now
+      Time.stub(:now).and_return(now)
+      @job = SideJob.queue('testq', 'TestWorker')
+      expect(@job.info[:updated_at]).to eq(SideJob.timestamp)
+      now = Time.now + 1000
+      Time.stub(:now).and_return(now)
+      @job.touch
+      expect(@job.info[:updated_at]).to eq(SideJob.timestamp)
     end
   end
 end

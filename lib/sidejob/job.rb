@@ -28,7 +28,6 @@ module SideJob
     def info
       info = SideJob.redis.hgetall(redis_key)
       return {queue: info['queue'], class: info['class'], args: JSON.parse(info['args']),
-              description: info['description'],
               created_at: info['created_at'], updated_at: info['updated_at'],
               restart: info['restart'],
               status: info['status'].to_sym}
@@ -41,23 +40,12 @@ module SideJob
       restart
     end
 
-    # The job description is not used by SideJob but can be used by clients to
-    # more easily display a human friendly view for jobs
-    # @param desc [String] Human readable job description
-    def description=(desc)
-      SideJob.redis.hmset redis_key, 'description', desc, 'updated_at', SideJob.timestamp
-    end
-
     # Adds a log entry to redis
     # @param type [String] Log type
     # @param data [Hash] Any extra log data
     def log(type, data)
-      timestamp = SideJob.timestamp
-      entry = JSON.generate(data.merge(type: type, timestamp: timestamp))
-      SideJob.redis.multi do |multi|
-        multi.hset redis_key, 'updated_at', timestamp
-        multi.lpush "#{redis_key}:log", entry
-      end
+      SideJob.redis.lpush "#{redis_key}:log", JSON.generate(data.merge(type: type, timestamp: SideJob.timestamp))
+      touch
     end
 
     # Retrieve the job's status
@@ -198,6 +186,65 @@ module SideJob
       end.map do |port|
         SideJob::Port.new(self, :out, port)
       end
+    end
+
+    # Sets multiple values
+    # Merges data into a job's metadata
+    # @param data [Hash{String => String}] Data to update
+    def mset(data)
+      SideJob.redis.hmset "#{redis_key}:data", *(data.to_a.flatten(1))
+      touch
+    end
+
+    # Sets a single data in the job's metadata
+    # @param field [String,Symbol] Field to set
+    # @param value [String]
+    def set(field, value)
+      mset({field => value})
+    end
+
+    # Sets a single JSON encoded data in the job's metadata
+    # @param field [String,Symbol] Field to get
+    # @param value [Object] JSON-serializable object
+    def set_json(field, value)
+      return unless value
+      set(field, JSON.generate(value))
+    end
+
+    # Loads data from the job's metadata
+    # @param fields [Array<String,Symbol>] Fields to load or all fields if none specified
+    # @return [Hash{String,Symbol => String}] Job's metadata with the fields specified
+    def mget(*fields)
+      if fields.length > 0
+        values = SideJob.redis.hmget("#{redis_key}:data", *fields)
+        Hash[fields.zip(values)]
+      else
+        SideJob.redis.hgetall "#{redis_key}:data"
+      end
+    end
+
+    # Gets a single data from the job's metadata
+    # @param field [String,Symbol] Field to get
+    # @return [String, nil] Value of the given data field or nil
+    def get(field)
+      mget(field)[field]
+    end
+
+    # Gets a single JSON encoded data from the job's metadata
+    # @param field [String,Symbol] Field to get
+    # @return [Object, nil] JSON parsed value of the given data field
+    def get_json(field)
+      data = get(field)
+      if data
+        JSON.parse(data)
+      else
+        nil
+      end
+    end
+
+    # Touch the updated_at timestamp
+    def touch
+      SideJob.redis.hset redis_key, 'updated_at', SideJob.timestamp
     end
   end
 

@@ -43,59 +43,6 @@ module SideJob
       self.status = :suspended
     end
 
-    # Sets multiple values
-    # Merges data into a job's metadata
-    # @param data [Hash{String => String}] Data to update
-    def mset(data)
-      SideJob.redis.hmset "#{redis_key}:data", *(data.to_a.flatten(1))
-    end
-
-    # Sets a single data in the job's metadata
-    # @param field [String,Symbol] Field to set
-    # @param value [String]
-    def set(field, value)
-      mset({field => value})
-    end
-
-    # Sets a single JSON encoded data in the job's metadata
-    # @param field [String,Symbol] Field to get
-    # @param value [Object] JSON-serializable object
-    def set_json(field, value)
-      return unless value
-      set(field, JSON.generate(value))
-    end
-
-    # Loads data from the job's metadata
-    # @param fields [Array<String,Symbol>] Fields to load or all fields if none specified
-    # @return [Hash{String,Symbol => String}] Job's metadata with the fields specified
-    def mget(*fields)
-      if fields.length > 0
-        values = SideJob.redis.hmget("#{redis_key}:data", *fields)
-        Hash[fields.zip(values)]
-      else
-        SideJob.redis.hgetall "#{redis_key}:data"
-      end
-    end
-
-    # Gets a single data from the job's metadata
-    # @param field [String,Symbol] Field to get
-    # @return [String, nil] Value of the given data field or nil
-    def get(field)
-      mget(field)[field]
-    end
-
-    # Gets a single JSON encoded data from the job's metadata
-    # @param field [String,Symbol] Field to get
-    # @return [Object, nil] JSON parsed value of the given data field
-    def get_json(field)
-      data = get(field)
-      if data
-        JSON.parse(data)
-      else
-        nil
-      end
-    end
-
     # Helps with getting and storing configuration-like data from a port
     # The assumption is that a configuration port only cares about the last data received on it
     # The last data is also saved in to the state

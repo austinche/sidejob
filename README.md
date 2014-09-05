@@ -90,8 +90,8 @@ Additional keys used by SideJob:
 ** restart - if set, the job will be requeued for the specified time once it completes (0 means queue immediately)
 ** status - job status: starting, queued, scheduled, running, suspended, completed, failed, stopped
 ** created_at - timestamp that the job was first queued
-** updated_at - latest timestamp for when something happened (a log entry was generated)
-* job:<jid>:data - Hash containing the job's internal data
+** updated_at - timestamp of the last update
+* job:<jid>:data - Hash containing job specific metadata
 * job:<jid>:inports - Set containing input port names
 * job:<jid>:outports - Set containing output port names
 * job:<jid>:in:<inport> and job:<jid>:out:<outport> - List with unread port data

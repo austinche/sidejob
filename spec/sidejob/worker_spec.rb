@@ -45,56 +45,6 @@ describe SideJob::Worker do
     end
   end
 
-  describe '#mset' do
-    it 'stores metadata in redis' do
-      @worker.mset({test: 'data'})
-      expect(SideJob.redis.hget("#{@worker.redis_key}:data", 'test')).to eq('data')
-
-      # test updating
-      @worker.mset({test: 'data2'})
-      expect(SideJob.redis.hget("#{@worker.redis_key}:data", 'test')).to eq('data2')
-    end
-  end
-
-  describe '#mget' do
-    it 'only loads specified fields' do
-      data = { field1: 'value1', field2: 'value2' }
-      @worker.mset data
-      expect(@worker.mget(:field1, :field2)).to eq(data)
-    end
-
-    it 'returns String or Symbol depending on passed in field' do
-      data = { field1: 'value1', field2: 'value2' }
-      @worker.mset data
-      data = @worker.mget(:field1, 'field2')
-      expect(data[:field1]).to eq('value1')
-      expect(data['field2']).to eq('value2')
-    end
-
-    it 'loads all fields if none specified' do
-      data = { field1: 'value1', field2: 'value2' }
-      @worker.mset data
-      data = @worker.mget
-      expect(data['field1']).to eq('value1')
-      expect(data['field2']).to eq('value2')
-    end
-  end
-
-  describe '#get, #set' do
-    it 'are shorthands for getting/setting single data fields' do
-      @worker.set('field1', 'value1')
-      expect(@worker.get('field1')).to eq('value1')
-    end
-  end
-
-  describe '#get_json, #set_json' do
-    it 'can be used to store objects as json' do
-      data = {'abc' => 123, 'def' => [1, 2]}
-      @worker.set_json(:field1, data)
-      expect(@worker.get_json(:field1)).to eq(data)
-    end
-  end
-
   describe '#get_config' do
     it 'returns nil if data is not available' do
       expect(@worker.get_config('field1')).to be nil
