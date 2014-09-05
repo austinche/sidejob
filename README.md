@@ -103,5 +103,5 @@ Additional keys used by SideJob:
 ** {type: 'read', by: <jid>, <in|out>port: <port name>, data: <data>, timestamp: <date>}
 ** {type: 'write', by: <jid>, <in|out>port: <port name>, data: <data>, timestamp: <date>}
 ** {type: 'error', error: <message>, backtrace: <exception backtrace>, timestamp: <date>}
-* rate:<jid>:<timestamp> - Rate limiter used to prevent run away executing of a job
+* job:<jid>:rate:<timestamp> - Rate limiter used to prevent run away executing of a job
 ** Keys are automatically expired

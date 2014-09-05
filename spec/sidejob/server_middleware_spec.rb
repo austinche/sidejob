@@ -38,7 +38,7 @@ describe SideJob::ServerMiddleware do
   it 'does not run if called too many times in a second' do
     now = Time.now
     Time.stub(:now).and_return(now)
-    key = "rate:#{@worker.jid}:#{Time.now.to_i}"
+    key = "#{@worker.redis_key}:rate:#{Time.now.to_i}"
     SideJob.redis.set key, SideJob::ServerMiddleware::MAX_CALLS_PER_SECOND + 1
     @run = false
     @chain.invoke(@worker, {}, @queue) do
@@ -51,7 +51,7 @@ describe SideJob::ServerMiddleware do
   it 'does run if not called too many times in a second' do
     now = Time.now
     Time.stub(:now).and_return(now)
-    key = "rate:#{@worker.jid}:#{Time.now.to_i}"
+    key = "#{@worker.redis_key}:rate:#{Time.now.to_i}"
     SideJob.redis.set key, SideJob::ServerMiddleware::MAX_CALLS_PER_SECOND
     @run = false
     @chain.invoke(@worker, {}, @queue) do

@@ -9,9 +9,9 @@ module SideJob
       # this is to help prevent bad coding that leads to recursive busy loops
 
       # Uses Rate limiter 1 pattern from http://redis.io/commands/INCR
-      key = "rate:#{worker.jid}:#{Time.now.to_i}"
+      rate_key = "#{worker.redis_key}:rate:#{Time.now.to_i}"
       if worker.status == :stopped
-      elsif SideJob.redis.get(key).to_i > MAX_CALLS_PER_SECOND
+      elsif SideJob.redis.get(rate_key).to_i > MAX_CALLS_PER_SECOND
         worker.status = :stopped
         worker.log 'error', {error: "Job was stopped due to being called too rapidly"}
       elsif SideJob.redis.llen("#{worker.redis_key}:ancestors") > MAX_JOB_DEPTH
@@ -21,8 +21,8 @@ module SideJob
         worker.status = :running
         SideJob.redis.multi do |multi|
           multi.hdel worker.redis_key, :restart
-          multi.incr key
-          multi.expire key, 10
+          multi.incr rate_key
+          multi.expire rate_key, 10
         end
         Thread.current[:SideJob] = worker
         yield
