@@ -13,7 +13,7 @@ module SideJob
       last_run = SideJob.redis.hget worker.redis_key, 'ran_at'
 
       # we skip the run if we already ran once after the enqueued time
-      return if last_run && msg['enqueued_at'] && last_run.to_f > msg['enqueued_at']
+      return if last_run && msg['enqueued_at'] && Time.parse(last_run) > Time.at(msg['enqueued_at'])
 
       case worker.status
         when 'queued'
@@ -25,7 +25,7 @@ module SideJob
           return
       end
 
-      SideJob.redis.hset worker.redis_key, 'ran_at', Time.now.to_f
+      SideJob.redis.hset worker.redis_key, 'ran_at', SideJob.timestamp
 
       # limit each job to being called too many times per second
       # or too deep of a job tree

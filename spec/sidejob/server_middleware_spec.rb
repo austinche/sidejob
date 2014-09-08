@@ -58,8 +58,8 @@ describe SideJob::ServerMiddleware do
     it 'sets the ran_at time at the beginning of the run' do
       now = Time.now
       Time.stub(:now).and_return(now)
-      process(@job) { @ran_at = SideJob.redis.hget(@job.redis_key, 'ran_at').to_f }
-      expect(@ran_at).to eq now.to_f
+      process(@job) { @ran_at = SideJob.redis.hget(@job.redis_key, 'ran_at') }
+      expect(@ran_at).to eq SideJob.timestamp
       expect(@job.status).to eq 'completed'
     end
   end
@@ -85,7 +85,7 @@ describe SideJob::ServerMiddleware do
 
     it 'does not do anything if the enqueued_at time is before the ran_at' do
       @run = false
-      SideJob.redis.hset @job.redis_key, 'ran_at', (Time.now+100).to_f
+      SideJob.redis.hset @job.redis_key, 'ran_at', SideJob.timestamp
       process(@job) {@run = true}
       expect(@run).to be false
     end
