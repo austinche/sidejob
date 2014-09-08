@@ -29,7 +29,7 @@ describe SideJob do
     it 'queues a sidekiq job' do
       expect {
         job = SideJob.queue('testq', 'TestWorker')
-        expect(job.status).to eq(:queued)
+        expect(job.status).to eq 'queued'
         job = Sidekiq::Queue.new('testq').find_job(job.jid)
         expect(job.queue).to eq('testq')
         expect(job.klass).to eq('TestWorker')
@@ -60,7 +60,7 @@ describe SideJob do
       expect {
         parent = SideJob.queue('testq', 'TestWorker')
         job = SideJob.queue('testq', 'TestWorker', {parent: parent})
-        expect(job.status).to eq(:queued)
+        expect(job.status).to eq 'queued'
         expect(job.parent).to eq(parent)
         expect(SideJob.redis.lrange("#{job.redis_key}:ancestors", 0, -1)).to eq([parent.jid])
       }.to change {Sidekiq::Stats.new.enqueued}.by(2)
@@ -76,7 +76,7 @@ describe SideJob do
     it 'can specify job args' do
       expect {
         job = SideJob.queue('testq', 'TestWorker', {args: [1, 2]})
-        expect(job.status).to eq(:queued)
+        expect(job.status).to eq 'queued'
         job = Sidekiq::Queue.new('testq').find_job(job.jid)
         expect(job.args).to eq([1, 2])
       }.to change {Sidekiq::Stats.new.enqueued}.by(1)
@@ -86,7 +86,7 @@ describe SideJob do
       at = Time.now.to_f + 1000
       expect {
         job = SideJob.queue('testq', 'TestWorker', {at: at})
-        expect(job.status).to eq(:scheduled)
+        expect(job.status).to eq 'queued'
         expect(Sidekiq::ScheduledSet.new.find_job(job.jid).at).to eq(Time.at(at))
       }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
     end

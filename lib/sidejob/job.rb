@@ -27,17 +27,14 @@ module SideJob
     # @return [Hash] Info hash about the job
     def info
       info = SideJob.redis.hgetall(redis_key)
-      return {queue: info['queue'], class: info['class'], args: JSON.parse(info['args']),
-              created_at: info['created_at'], updated_at: info['updated_at'],
-              restart: info['restart'],
-              status: info['status'].to_sym}
+      return {queue: info['queue'], class: info['class'], args: JSON.parse(info['args']), status: info['status'],
+              created_at: info['created_at'], updated_at: info['updated_at'], ran_at: info['ran_at']}
     end
 
-    # Sets the job arguments and restarts it
+    # Sets the job arguments
     # @param args [Array<String>] New arguments for the job
     def args=(args)
       SideJob.redis.hset redis_key, 'args', JSON.generate(args)
-      restart
     end
 
     # Adds a log entry to redis
@@ -49,70 +46,50 @@ module SideJob
     end
 
     # Retrieve the job's status
-    # @return [Symbol] Job status
+    # @return [String] Job status
     def status
-      st = SideJob.redis.hget(redis_key, 'status')
-      st ? st.to_sym : nil
+      SideJob.redis.hget(redis_key, 'status')
     end
 
-    # Set the job's status
-    # @param status [String, Symbol] New status
-    def status=(status)
-      SideJob.redis.hset redis_key, 'status', status
-      log('status', {status: status})
+    # Prepare to terminate the job. Sets status to 'terminating'
+    # Then queues the job so that its shutdown method if it exists can be run
+    # After shutdown, the status will be 'terminated'
+    # If the job is currently running, it will finish running first
+    # To start the job after termination, call #run with force: true
+    # @return [SideJob::Job] self
+    def terminate
+      SideJob.redis.hset redis_key, 'status', 'terminating'
+      sidekiq_queue
+      self
     end
 
-    # Restart the job
-    # This method ensures that the job runs at least once from the beginning unless the status is :stopped
-    # Therefore, if the job is already running, it will run again
-    # If job is already queued or scheduled for an earlier time, this call does nothing
-    # @param time [Time, Float, nil] Time to schedule the job if specified
-    def restart(time=nil)
-      time = time.to_f if time.is_a?(Time)
-
-      info_hash = info
-
-      case info_hash[:status]
-        when :queued, :stopped
-          # don't requeue already queued job or start a stopped job
-          return
-
-        when :running
-          # we will requeue the job once the currently running worker completes by SideJob::ServerMiddleware
-          SideJob.redis.hset redis_key, :restart, time || 0
-          return
-
-        when :scheduled
-          # move from scheduled queue to current queue
-          job = Sidekiq::ScheduledSet.new.find_job(@jid)
-          if job
-            if time && Time.at(time).utc > job.at
-              # scheduled time is further in the future than currently scheduled run so ignore restart request
-              return
-            else
-              job.delete # Will re-add it below
-            end
-          end
+    # Run the job
+    # This method ensures that the job runs at least once from the beginning
+    # If the job is currently running, it will run again
+    # Just like sidekiq, we make no guarantees that the job will not be run more than once
+    # Unless force is set, if the status is terminating or terminated, the job will not be run
+    # @param options [Hash] Additional options, keys should be symbols
+    #   force: [Boolean] Whether to run if job is terminated (default false)
+    #   at: [Time, Float] Time to schedule the job, otherwise queue immediately
+    #   in: [Float] Run in the specified number of seconds
+    # @return [SideJob::Job] self
+    def run(options={})
+      time = nil
+      if options[:at]
+        time = options[:at]
+        time = time.to_f if time.is_a?(Time)
+      elsif options[:in]
+        time = Time.now.to_f + options[:in]
       end
 
-      if time && time > Time.now.to_f
-        self.status = :scheduled
-        Sidekiq::Client.push('jid' => @jid, 'queue' => info_hash[:queue], 'class' => info_hash[:class], 'args' => info_hash[:args], 'retry' => false, 'at' => time)
-      else
-        self.status = :queued
-        Sidekiq::Client.push('jid' => @jid, 'queue' => info_hash[:queue], 'class' => info_hash[:class], 'args' => info_hash[:args], 'retry' => false)
+      case status
+        when 'terminating', 'terminated'
+          return unless options[:force]
       end
-    end
 
-    # Restart the job in a certain amount of time
-    # @param delta_t [Float]
-    def restart_in(delta_t)
-      restart(Time.now.to_f + delta_t)
-    end
-
-    # @return [Boolean] Return true if this job is restarting
-    def restarting?
-      SideJob.redis.hexists(redis_key, :restart)
+      SideJob.redis.hset redis_key, 'status', 'queued'
+      sidekiq_queue(time)
+      self
     end
 
     # @return [Array<SideJob::Job>] Children jobs
@@ -139,10 +116,7 @@ module SideJob
         child.delete
       end
 
-      # remove from sidekiq queue
-      job = Sidekiq::Queue.new(info[:queue]).find_job(@jid)
-      job = Sidekiq::ScheduledSet.new.find_job(@jid) if ! job
-      job.delete if job
+      sidekiq_unqueue
 
       # delete all SideJob keys
       inports = SideJob.redis.smembers("#{redis_key}:inports").map {|port| "#{redis_key}:in:#{port}"}
@@ -245,6 +219,27 @@ module SideJob
     # Touch the updated_at timestamp
     def touch
       SideJob.redis.hset redis_key, 'updated_at', SideJob.timestamp
+    end
+
+    private
+
+    # queue or schedule this job using sidekiq
+    # @param time [Time, Float, nil] Time to schedule the job if specified
+    def sidekiq_queue(time=nil)
+      queue, klass, args = SideJob.redis.hmget(redis_key, 'queue', 'class', 'args')
+      args = args ? JSON.parse(args) : []
+      item = {'jid' => @jid, 'queue' => queue, 'class' => klass, 'args' => args, 'retry' => false}
+      item['at'] = time if time && time > Time.now.to_f
+      Sidekiq::Client.push(item)
+      touch
+    end
+
+    # unqueue/unschedule this job
+    def sidekiq_unqueue
+      queue = SideJob.redis.hget(redis_key, 'queue')
+      job = Sidekiq::Queue.new(queue).find_job(@jid)
+      job = Sidekiq::ScheduledSet.new.find_job(@jid) if ! job
+      job.delete if job
     end
   end
 

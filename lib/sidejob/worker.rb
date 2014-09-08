@@ -23,6 +23,8 @@ module SideJob
     end
     SideJob::Worker.extend(RegistryMethods)
 
+    class Suspended < StandardError; end
+
     def self.included(base)
       base.class_eval do
         include Sidekiq::Worker
@@ -37,10 +39,10 @@ module SideJob
       SideJob.queue(queue, klass, options.merge({parent: self}))
     end
 
-    # Suspend the current worker
-    # Will restart upon call to SideJob::Job#restart
+    # Immediately suspend the current worker
+    # @raise [SideJob::Worker::Suspended]
     def suspend
-      self.status = :suspended
+      raise Suspended
     end
 
     # Helps with getting and storing configuration-like data from a port

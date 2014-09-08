@@ -42,9 +42,9 @@ module SideJob
       end
 
       if @type == :in
-        @job.restart
+        @job.run
       else
-        @job.parent.restart if @job.parent
+        @job.parent.run if @job.parent
       end
       self
     end

@@ -10,37 +10,33 @@ The job should be robust to the crashing or downtime of any portion of the infra
 Requirements
 ------------
 
-Ruby 2.0 or greater and Redis 2.4 or greater is required.
-
-Workers
--------
-
-* A worker is the implementation of a specific class
-* Workers should be idempotent as they may be run more than once for a job
-* Workers pull jobs from queues
+Ruby 2.0 or greater and Redis 2.8 or greater is recommended.
 
 Jobs
 ----
 
-* Jobs have a unique ID
+* Jobs have a unique ID assigned using incrementing numbers
+** This ID is used as Sidekiq's jid
+** Note: a job can be queued multiple times on Sidekiq's queues
+** Therefore, Sidekiq's jids are not unique
 * Jobs have a queue and class name
 * Jobs have any number of input and output ports
 * A job can have any number of child jobs
 * Each job has at most one parent job
-* Jobs can be suspended if there's nothing to do or when waiting for inputs
-* Jobs can store arbitrary state
-* Jobs on restart are responsible for restoring state properly
-* Jobs are restarted when child jobs complete or suspend
+* Arbitrary metadata or state can be stored with each job
 
-Jobs can have a number of different status. The possible status transitions:
-* queued | scheduled -> running | stopped
-* scheduled -> queued
-* starting | suspended | completed | failed -> queued | scheduled
-* running -> suspended | completed | failed
+Jobs can have a number of different status. The statuses and possible status transitions:
+* -> queued
+* queued -> running | terminating
+* running -> queued | suspended | completed | failed | terminating
+* suspended | completed | failed -> queued | terminating
+* terminating -> terminated
+* terminated -> queued
 
-Note that once a job is stopped, SideJob will no longer run the job.
-Some external user or process must reset the status if the job is to be
-run again.
+The difference between suspended, completed, and failed is only in their implications on the
+internal job state. Completed implies that the job has processed all data and can be naturally
+terminated. If additional input arrives, a completed job could continue running. Suspended implies
+that the job is waiting for some input. Failed means that an exception was thrown.
 
 Ports
 -----
@@ -48,6 +44,17 @@ Ports
 * Ports are named (case sensitive)
 * Any string can be written or read from any input or output port
 * JSON is the preferred encoding for complex objects
+
+Workers
+-------
+
+* A worker is the implementation of a specific job class
+* It should have a perform method that is called on each run
+* It may have a shutdown method that is called before the job is terminated
+* Workers should be idempotent as they may be run more than once for the same state
+* SideJob ensures only one worker thread runs for a given job at a time
+* Workers are responsible for managing state across runs
+* Workers can suspend themselves when waiting for inputs
 
 Data Structure
 --------------
@@ -87,10 +94,10 @@ Additional keys used by SideJob:
 ** queue - queue name
 ** class - name of class
 ** args - JSON array of arguments
-** restart - if set, the job will be requeued for the specified time once it completes (0 means queue immediately)
-** status - job status: starting, queued, scheduled, running, suspended, completed, failed, stopped
+** status - job status
 ** created_at - timestamp that the job was first queued
 ** updated_at - timestamp of the last update
+** ran_at - timestamp of the start of the last run
 * job:<jid>:data - Hash containing job specific metadata
 * job:<jid>:inports - Set containing input port names
 * job:<jid>:outports - Set containing output port names
@@ -105,3 +112,5 @@ Additional keys used by SideJob:
 ** {type: 'error', error: <message>, backtrace: <exception backtrace>, timestamp: <date>}
 * job:<jid>:rate:<timestamp> - Rate limiter used to prevent run away executing of a job
 ** Keys are automatically expired
+* job:<jid>:lock - Used to prevent multiple worker threads from running a job
+** Auto expired to prevent stale locks

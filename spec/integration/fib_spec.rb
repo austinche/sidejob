@@ -7,7 +7,7 @@ class TestFib
     n = get(:n)
     if ! n
       n = input('N').read
-      suspend and return unless n
+      suspend unless n
       set(:n, n)
     end
 
@@ -28,7 +28,7 @@ class TestFib
         set(:job2, jobs[:job2].jid)
       end
 
-      if children.length != 2 || children[0].status != :completed || children[1].status != :completed
+      if children.length != 2 || children[0].status != 'completed' || children[1].status != 'completed'
         suspend
       else
         output('NUM').write (children[0].output('NUM').read.to_i + children[1].output('NUM').read.to_i)
@@ -43,7 +43,7 @@ describe TestFib do
     job.input('N').write 6 # 1, 1, 2, 3, 5, 8
     SideJob::Worker.drain_queue
 
-    expect(job.status).to be(:completed)
+    expect(job.status).to eq 'completed'
     expect(job.output('NUM').read).to eq('8')
   end
 end

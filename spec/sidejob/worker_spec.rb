@@ -3,7 +3,7 @@ require 'spec_helper'
 describe SideJob::Worker do
   before do
     @job = SideJob.queue('testq', 'TestWorker')
-    @job.status = :running
+    set_status @job, 'running'
     @worker = TestWorker.new
     @worker.jid = @job.jid
   end
@@ -29,9 +29,8 @@ describe SideJob::Worker do
     expect(TestWorker.included_modules).to include(SideJob::JobMethods)
   end
 
-  it '#suspend sets status to suspended' do
-    @worker.suspend
-    expect(@worker.status).to eq(:suspended)
+  it '#suspend raises exception' do
+    expect { @worker.suspend }.to raise_error(SideJob::Worker::Suspended)
   end
 
   describe '#queue' do

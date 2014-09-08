@@ -8,6 +8,7 @@ require 'time' # for iso8601 method
 
 Sidekiq.configure_server do |config|
   config.server_middleware do |chain|
+    chain.remove Sidekiq::Middleware::Server::RetryJobs # we never want sidekiq to retry jobs
     chain.add SideJob::ServerMiddleware
   end
 end
@@ -37,7 +38,7 @@ module SideJob
   # @param options [Hash] Additional options, keys should be symbols
   #   parent: [SideJob::Job] parent job
   #   args: [Array] additional args to pass to the class (default none)
-  #   at: [Float] Time to schedule the job, otherwise queue immediately
+  #   at: [Time, Float] Time to schedule the job, otherwise queue immediately
   # @return [SideJob::Job] Job
   def self.queue(queue, klass, options={})
     args = options[:args] || []
@@ -53,8 +54,7 @@ module SideJob
 
     SideJob.redis.multi do |multi|
       multi.sadd 'jobs', jid
-      multi.hmset job.redis_key, 'status', :starting, 'queue', queue, 'class', klass,
-                  'args', JSON.generate(args), 'created_at', SideJob.timestamp
+      multi.hmset job.redis_key, 'queue', queue, 'class', klass, 'args', JSON.generate(args), 'created_at', SideJob.timestamp
 
       if options[:parent]
         multi.rpush "#{job.redis_key}:ancestors", ancestry # we need to rpush to get the right order
@@ -62,10 +62,7 @@ module SideJob
       end
     end
 
-    # Now actually queue the job
-    job.restart options[:at]
-
-    job
+    job.run(at: options[:at])
   end
 
   # Finds a job by id

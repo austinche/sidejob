@@ -19,7 +19,7 @@ class TestSumFlow
         children[0].input(:in).write '6'
         children[0].input(:ready).write '1'
         set(:sent, 1)
-        children[0].restart
+        children[0].run
         suspend
       end
     end
@@ -30,7 +30,7 @@ describe TestSumFlow do
   it 'calls child job to sum numbers' do
     job = SideJob.queue('testq', 'TestSumFlow')
     SideJob::Worker.drain_queue
-    expect(job.status).to be(:completed)
+    expect(job.status).to eq 'completed'
     expect(job.output(:out).read).to eq('11')
   end
 end

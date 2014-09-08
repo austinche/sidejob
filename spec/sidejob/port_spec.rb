@@ -96,21 +96,19 @@ describe SideJob::Port do
       expect(JSON.parse(log)).to eq({'type' => 'write', 'by' => job.jid, 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp})
     end
 
-    it 'restarts job when writing to an input port' do
-      @job.status = :running
+    it 'runs job when writing to an input port' do
+      set_status(@job, 'suspended')
       inport = SideJob::Port.new(@job, :in, :port1)
-      expect(@job.restarting?).to be false
       inport.write('abc')
-      expect(@job.restarting?).to be true
+      expect(@job.status).to eq 'queued'
     end
 
-    it 'restarts parent job when writing to an output port' do
+    it 'runs parent job when writing to an output port' do
       child = SideJob.queue('q', 'TestWorker', {parent: @job})
-      @job.status = :running
+      set_status(@job, 'suspended')
       outport = SideJob::Port.new(child, :out, :port1)
-      expect(@job.restarting?).to be false
       outport.write('abc')
-      expect(@job.restarting?).to be true
+      expect(@job.status).to eq 'queued'
     end
   end
 
