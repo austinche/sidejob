@@ -35,7 +35,7 @@ module SideJob
 
     # Queues a child job
     # @see SideJob.queue
-    def queue(queue, klass, options={})
+    def queue(queue, klass, **options)
       SideJob.queue(queue, klass, options.merge({parent: self}))
     end
 

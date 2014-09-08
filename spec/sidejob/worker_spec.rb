@@ -35,9 +35,9 @@ describe SideJob::Worker do
 
   describe '#queue' do
     it 'can queue child jobs' do
-      expect(SideJob).to receive(:queue).with('q2', 'TestWorker', {args: [1,2], parent: @job}).and_call_original
+      expect(SideJob).to receive(:queue).with('q2', 'TestWorker', args: [1,2], parent: @job).and_call_original
       expect {
-        child = @worker.queue('q2', 'TestWorker', {args: [1, 2]})
+        child = @worker.queue('q2', 'TestWorker', args: [1, 2])
         expect(child.parent).to eq(@job)
         expect(@job.children).to eq([child])
       }.to change {Sidekiq::Stats.new.enqueued}.by(1)

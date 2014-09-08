@@ -175,7 +175,7 @@ describe SideJob::Job do
     it 'can schedule a job to run in a specific time' do
       now = Time.now
       Time.stub(:now).and_return(now)
-      expect { @job.run(in: 100) }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
+      expect { @job.run(wait: 100) }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
       expect(Sidekiq::ScheduledSet.new.find_job(@job.jid).at).to eq(Time.at(now.to_f + 100))
       expect(@job.status).to eq 'queued'
     end

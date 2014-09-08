@@ -79,23 +79,22 @@ module SideJob
     # If the job is currently running, it will run again
     # Just like sidekiq, we make no guarantees that the job will not be run more than once
     # Unless force is set, if the status is terminating or terminated, the job will not be run
-    # @param options [Hash] Additional options, keys should be symbols
-    #   force: [Boolean] Whether to run if job is terminated (default false)
-    #   at: [Time, Float] Time to schedule the job, otherwise queue immediately
-    #   in: [Float] Run in the specified number of seconds
+    # @param force [Boolean] Whether to run if job is terminated (default false)
+    # @param at [Time, Float] Time to schedule the job, otherwise queue immediately
+    # @param wait [Float] Run in the specified number of seconds
     # @return [SideJob::Job] self
-    def run(options={})
+    def run(force: false, at: nil, wait: nil)
       time = nil
-      if options[:at]
-        time = options[:at]
+      if at
+        time = at
         time = time.to_f if time.is_a?(Time)
-      elsif options[:in]
-        time = Time.now.to_f + options[:in]
+      elsif wait
+        time = Time.now.to_f + wait
       end
 
       case status
         when 'terminating', 'terminated'
-          return unless options[:force]
+          return unless force
       end
 
       SideJob.redis.hset redis_key, 'status', 'queued'

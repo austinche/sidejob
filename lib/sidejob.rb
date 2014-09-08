@@ -35,34 +35,31 @@ module SideJob
   # Main function to queue a job
   # @param queue [String] Name of the queue to put the job in
   # @param klass [String] Name of the class that will handle the job
-  # @param options [Hash] Additional options, keys should be symbols
-  #   parent: [SideJob::Job] parent job
-  #   args: [Array] additional args to pass to the class (default none)
-  #   at: [Time, Float] Time to schedule the job, otherwise queue immediately
+  # @param parent [SideJob::Job] parent job
+  # @param args [Array] additional args to pass to the class (default none)
+  # @param at [Time, Float] Time to schedule the job, otherwise queue immediately
   # @return [SideJob::Job] Job
-  def self.queue(queue, klass, options={})
-    args = options[:args] || []
-
+  def self.queue(queue, klass, parent: nil, args: [], at: nil)
     # To prevent race conditions, we generate the jid and set all metadata before queuing the job to sidekiq
     # Otherwise, sidekiq may start the job too quickly
     jid = SideJob.redis.incr(:job_id).to_s
     job = SideJob::Job.new(jid)
 
-    if options[:parent]
-      ancestry = [options[:parent].jid] + SideJob.redis.lrange("#{options[:parent].redis_key}:ancestors", 0, -1)
+    if parent
+      ancestry = [parent.jid] + SideJob.redis.lrange("#{parent.redis_key}:ancestors", 0, -1)
     end
 
     SideJob.redis.multi do |multi|
       multi.sadd 'jobs', jid
       multi.hmset job.redis_key, 'queue', queue, 'class', klass, 'args', JSON.generate(args), 'created_at', SideJob.timestamp
 
-      if options[:parent]
+      if parent
         multi.rpush "#{job.redis_key}:ancestors", ancestry # we need to rpush to get the right order
-        multi.sadd "#{options[:parent].redis_key}:children", jid
+        multi.sadd "#{parent.redis_key}:children", jid
       end
     end
 
-    job.run(at: options[:at])
+    job.run(at: at)
   end
 
   # Finds a job by id

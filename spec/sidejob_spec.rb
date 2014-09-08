@@ -59,7 +59,7 @@ describe SideJob do
     it 'can specify job parent' do
       expect {
         parent = SideJob.queue('testq', 'TestWorker')
-        job = SideJob.queue('testq', 'TestWorker', {parent: parent})
+        job = SideJob.queue('testq', 'TestWorker', parent: parent)
         expect(job.status).to eq 'queued'
         expect(job.parent).to eq(parent)
         expect(SideJob.redis.lrange("#{job.redis_key}:ancestors", 0, -1)).to eq([parent.jid])
@@ -68,14 +68,14 @@ describe SideJob do
 
     it 'sets ancestor tree correctly parent' do
       j1 = SideJob.queue('testq', 'TestWorker')
-      j2 = SideJob.queue('testq', 'TestWorker', {parent: j1})
-      j3 = SideJob.queue('testq', 'TestWorker', {parent: j2})
+      j2 = SideJob.queue('testq', 'TestWorker', parent: j1)
+      j3 = SideJob.queue('testq', 'TestWorker', parent: j2)
       expect(SideJob.redis.lrange("#{j3.redis_key}:ancestors", 0, -1)).to eq([j2.jid, j1.jid])
     end
 
     it 'can specify job args' do
       expect {
-        job = SideJob.queue('testq', 'TestWorker', {args: [1, 2]})
+        job = SideJob.queue('testq', 'TestWorker', args: [1, 2])
         expect(job.status).to eq 'queued'
         job = Sidekiq::Queue.new('testq').find_job(job.jid)
         expect(job.args).to eq([1, 2])
@@ -85,7 +85,7 @@ describe SideJob do
     it 'can specify a job time' do
       at = Time.now.to_f + 1000
       expect {
-        job = SideJob.queue('testq', 'TestWorker', {at: at})
+        job = SideJob.queue('testq', 'TestWorker', at: at)
         expect(job.status).to eq 'queued'
         expect(Sidekiq::ScheduledSet.new.find_job(job.jid).at).to eq(Time.at(at))
       }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
