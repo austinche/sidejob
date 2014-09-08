@@ -50,9 +50,9 @@ module SideJob
         begin
           worker.shutdown if worker.respond_to?(:shutdown)
         rescue => e
-          log_exception(worker, e)
+          log_exception worker, e
         ensure
-          SideJob.redis.hset worker.redis_key, 'status', 'terminated'
+          set_status worker, 'terminated'
           worker.parent.run if worker.parent
         end
       else
@@ -72,14 +72,14 @@ module SideJob
         # only run if lock key was not set
         if ! val
           begin
-            SideJob.redis.hset worker.redis_key, 'status', 'running'
+            set_status worker, 'running'
             Thread.current[:SideJob] = worker
             yield
-            SideJob.redis.hset worker.redis_key, 'status', 'completed' if worker.status == 'running'
+            set_status worker, 'completed' if worker.status == 'running'
           rescue SideJob::Worker::Suspended
-            SideJob.redis.hset worker.redis_key, 'status', 'suspended' if worker.status == 'running'
+            set_status worker, 'suspended' if worker.status == 'running'
           rescue => e
-            SideJob.redis.hset worker.redis_key, 'status', 'failed' if worker.status == 'running'
+            set_status worker, 'failed' if worker.status == 'running'
             log_exception(worker, e)
           ensure
             Thread.current[:SideJob] = nil
@@ -96,6 +96,11 @@ module SideJob
     end
 
     private
+
+    def set_status(worker, status)
+      SideJob.redis.hset worker.redis_key, 'status', status
+      worker.log 'status', {status: status}
+    end
 
     def log_exception(worker, exception)
       # only store the backtrace until the first sidekiq line

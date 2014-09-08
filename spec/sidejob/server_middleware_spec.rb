@@ -38,6 +38,13 @@ describe SideJob::ServerMiddleware do
       expect(@job.status).to eq 'completed'
     end
 
+    it 'logs running and completed status' do
+      process(@job) { }
+      logs = @job.logs.select {|log| log['type'] == 'status'}
+      expect(logs[0]['status']).to eq 'completed'
+      expect(logs[1]['status']).to eq 'running'
+    end
+
     it 'runs the parent job' do
       SideJob.redis.hset @job.redis_key, 'status', 'suspended'
       child = SideJob.queue(@queue, 'TestWorker', {parent: @job})
@@ -149,12 +156,17 @@ describe SideJob::ServerMiddleware do
       process(@job) { raise 'oops' }
       expect(@job.status).to eq 'failed'
 
-      log = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).
-          map {|log| JSON.parse(log) }.select {|log| log['type'] == 'error'}
+      log = @job.logs.select {|log| log['type'] == 'error'}
       expect(log.size).to eq(1)
       expect(log[0]['error']).to eq('oops')
       # check that we trim down backtrace to remove sidekiq lines
       expect(log[0]['backtrace']).to_not match(/sidekiq/)
+    end
+
+    it 'logs failed status change' do
+      process(@job) { raise 'oops' }
+      log = @job.logs.detect {|log| log['type'] == 'status'}
+      expect(log['status']).to eq 'failed'
     end
 
     it 'does not set status to failed if status is not running' do
@@ -181,6 +193,12 @@ describe SideJob::ServerMiddleware do
       expect(@job.status).to eq 'suspended'
     end
 
+    it 'logs suspended status change' do
+      process(@job) {|worker| worker.suspend}
+      log = @job.logs.detect {|log| log['type'] == 'status'}
+      expect(log['status']).to eq 'suspended'
+    end
+
     it 'does not set status to suspended if job was requeued' do
       process(@job) do |worker|
         @job.run
@@ -191,11 +209,17 @@ describe SideJob::ServerMiddleware do
   end
 
   describe 'handles job termination' do
-
     it 'sets status to terminated upon run' do
       SideJob.redis.hset @job.redis_key, 'status', 'terminating'
       process(@job) {}
       expect(@job.status).to eq 'terminated'
+    end
+
+    it 'logs terminated status change' do
+      SideJob.redis.hset @job.redis_key, 'status', 'terminating'
+      process(@job) {}
+      log = @job.logs.detect {|log| log['type'] == 'status'}
+      expect(log['status']).to eq 'terminated'
     end
 
     it 'runs parent' do
