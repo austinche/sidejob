@@ -45,6 +45,17 @@ module SideJob
       touch
     end
 
+    # Return all job logs and optionally clears them
+    # @param clear: if true, delete logs after returning them (default false)
+    # @return [Array<Hash>] All logs for the job with the newest first
+    def logs(clear: false)
+      key = "#{redis_key}:log"
+      SideJob.redis.multi do |multi|
+        multi.lrange key, 0, -1
+        multi.del key if clear
+      end[0].map {|x| JSON.parse(x)}
+    end
+
     # Retrieve the job's status
     # @return [String] Job status
     def status

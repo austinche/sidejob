@@ -62,7 +62,7 @@ describe SideJob::Job do
       Time.stub(:now).and_return(now)
       job = SideJob.queue('testq', 'TestWorker')
       job.log('foo', {abc: 123})
-      log = SideJob.redis {|redis| redis.lpop "#{job.redis_key}:log"}
+      log = SideJob.redis.lpop "#{job.redis_key}:log"
       expect(JSON.parse(log)).to eq({'type' => 'foo', 'abc' => 123, 'timestamp' => SideJob.timestamp})
     end
 
@@ -72,6 +72,31 @@ describe SideJob::Job do
       job = SideJob.queue('testq', 'TestWorker')
       job.log('foo', {abc: 123})
       expect(job.info[:updated_at]).to eq(SideJob.timestamp)
+    end
+  end
+
+  describe '#logs' do
+    it 'returns all logs' do
+      now = Time.now
+      Time.stub(:now).and_return(now)
+      job = SideJob.queue('testq', 'TestWorker')
+      SideJob.redis.del "#{job.redis_key}:log"
+      job.log('foo', {abc: 123})
+      expect(job.logs).to eq([{'type' => 'foo', 'abc' => 123, 'timestamp' => SideJob.timestamp}])
+      job.log('bar', {xyz: 456})
+      expect(job.logs).to eq([{'type' => 'bar', 'xyz' => 456, 'timestamp' => SideJob.timestamp},
+                              {'type' => 'foo', 'abc' => 123, 'timestamp' => SideJob.timestamp}])
+    end
+
+    it 'returns and clears all logs' do
+      now = Time.now
+      Time.stub(:now).and_return(now)
+      job = SideJob.queue('testq', 'TestWorker')
+      SideJob.redis.del "#{job.redis_key}:log"
+      job.log('foo', {abc: 123})
+      expect(job.logs(clear: true)).to eq([{'type' => 'foo', 'abc' => 123, 'timestamp' => SideJob.timestamp}])
+      job.log('bar', {xyz: 456})
+      expect(job.logs(clear: true)).to eq([{'type' => 'bar', 'xyz' => 456, 'timestamp' => SideJob.timestamp}])
     end
   end
 
