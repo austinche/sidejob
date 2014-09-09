@@ -31,12 +31,6 @@ module SideJob
               created_at: info['created_at'], updated_at: info['updated_at'], ran_at: info['ran_at']}
     end
 
-    # Sets the job arguments
-    # @param args [Array<String>] New arguments for the job
-    def args=(args)
-      SideJob.redis.hset redis_key, 'args', JSON.generate(args)
-    end
-
     # Adds a log entry to redis
     # @param type [String] Log type
     # @param data [Hash] Any extra log data

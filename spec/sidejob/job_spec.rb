@@ -47,15 +47,6 @@ describe SideJob::Job do
     end
   end
 
-  describe '#args=' do
-    it 'sets job arguments' do
-      @job = SideJob.queue('testq', 'TestWorker', {args: [1, 2]})
-      expect(@job.info[:args]).to eq([1,2])
-      @job.args = [3]
-      expect(@job.info[:args]).to eq([3])
-    end
-  end
-
   describe '#log' do
     it 'adds a timestamp to log entries' do
       now = Time.now
