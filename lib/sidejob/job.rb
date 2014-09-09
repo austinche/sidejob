@@ -2,6 +2,7 @@ module SideJob
   # Methods shared between SideJob::Job and SideJob::Worker
   module JobMethods
     attr_reader :jid
+    attr_reader :by
 
     def ==(other)
       other.respond_to?(:jid) && jid == other.jid
@@ -28,7 +29,7 @@ module SideJob
     def info
       info = SideJob.redis.hgetall(redis_key)
       return {queue: info['queue'], class: info['class'], args: JSON.parse(info['args']), status: info['status'],
-              created_at: info['created_at'], updated_at: info['updated_at'], ran_at: info['ran_at']}
+              created_by: info['created_by'], created_at: info['created_at'], updated_at: info['updated_at'], ran_at: info['ran_at']}
     end
 
     # Adds a log entry to redis
@@ -98,18 +99,18 @@ module SideJob
 
     # @return [Array<SideJob::Job>] Children jobs
     def children
-      SideJob.redis.smembers("#{redis_key}:children").map {|id| SideJob::Job.new(id)}
+      SideJob.redis.smembers("#{redis_key}:children").map {|id| SideJob::Job.new(id, by: @by)}
     end
 
     # @return [Array<SideJob::Job>] Ancestors (parent will be first and root job will be last)
     def ancestors
-      SideJob.redis.lrange("#{redis_key}:ancestors", 0, -1).map { |jid| SideJob::Job.new(jid) }
+      SideJob.redis.lrange("#{redis_key}:ancestors", 0, -1).map { |jid| SideJob::Job.new(jid, by: @by) }
     end
 
     # @return [SideJob::Job, nil] Parent job or nil if none
     def parent
       parent = SideJob.redis.lindex("#{redis_key}:ancestors", 0)
-      parent = SideJob::Job.new(parent) if parent
+      parent = SideJob::Job.new(parent, by: @by) if parent
       parent
     end
 
@@ -253,8 +254,10 @@ module SideJob
     include JobMethods
 
     # @param jid [String] Job id
-    def initialize(jid)
+    # @param by [String] By string to store for associating entities to events
+    def initialize(jid, by: nil)
       @jid = jid
+      @by = by
     end
 
     def to_s

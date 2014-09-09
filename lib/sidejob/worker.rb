@@ -36,7 +36,13 @@ module SideJob
     # Queues a child job
     # @see SideJob.queue
     def queue(queue, klass, **options)
-      SideJob.queue(queue, klass, options.merge({parent: self}))
+      SideJob.queue(queue, klass, options.merge({parent: self, by: by_string}))
+    end
+
+    # Finds a job by id, setting by string to job:<jid>
+    # @see SideJob.find
+    def find(job_id)
+      SideJob.find(job_id, by: by_string)
     end
 
     # Immediately suspend the current worker
@@ -71,6 +77,12 @@ module SideJob
       else
         nil
       end
+    end
+
+    private
+
+    def by_string
+      "job:#{@jid}"
     end
   end
 end

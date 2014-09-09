@@ -3,7 +3,7 @@ require 'spec_helper'
 describe SideJob::Port do
   before do
     @job = SideJob.queue('testq', 'TestWorker')
-    @port = SideJob::Port.new(@job, :in, :port1)
+    @port = @job.input(:port1)
   end
 
   describe '#initialize' do
@@ -89,16 +89,16 @@ describe SideJob::Port do
       now = Time.now
       Time.stub(:now).and_return(now)
       SideJob.redis.del "#{@job.redis_key}:log"
-      Thread.current[:SideJob] = job = SideJob.queue('queue', 'TestWorker')
+      @job = SideJob.find(@job.jid, by: 'test:job')
+      @port = @job.input(:port1)
       @port.write('abc')
-      Thread.current[:SideJob] = nil
       log = SideJob.redis.lpop("#{@job.redis_key}:log")
-      expect(JSON.parse(log)).to eq({'type' => 'write', 'by' => job.jid, 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp})
+      expect(JSON.parse(log)).to eq({'type' => 'write', 'by' => 'test:job', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp})
     end
 
     it 'runs job when writing to an input port' do
       set_status(@job, 'suspended')
-      inport = SideJob::Port.new(@job, :in, :port1)
+      inport = @job.input(:port1)
       inport.write('abc')
       expect(@job.status).to eq 'queued'
     end
@@ -106,7 +106,7 @@ describe SideJob::Port do
     it 'runs parent job when writing to an output port' do
       child = SideJob.queue('q', 'TestWorker', {parent: @job})
       set_status(@job, 'suspended')
-      outport = SideJob::Port.new(child, :out, :port1)
+      outport = child.output(:port1)
       outport.write('abc')
       expect(@job.status).to eq 'queued'
     end
@@ -151,11 +151,11 @@ describe SideJob::Port do
       Time.stub(:now).and_return(now)
       @port.write('abc')
       SideJob.redis.del "#{@job.redis_key}:log"
-      Thread.current[:SideJob] = job = SideJob.queue('queue', 'TestWorker')
+      @job = SideJob.find(@job.jid, by: 'test:job')
+      @port = @job.input(:port1)
       expect(@port.read).to eq('abc')
-      Thread.current[:SideJob] = nil
       log = SideJob.redis.lpop("#{@job.redis_key}:log")
-      expect(JSON.parse(log)).to eq({'type' => 'read', 'by' => job.jid, 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp})
+      expect(JSON.parse(log)).to eq({'type' => 'read', 'by' => 'test:job', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp})
     end
   end
 
@@ -200,13 +200,13 @@ describe SideJob::Port do
       Time.stub(:now).and_return(now)
       @port.write('abc', '123')
       SideJob.redis.del "#{@job.redis_key}:log"
-      Thread.current[:SideJob] = job = SideJob.queue('queue', 'TestWorker')
+      @job = SideJob.find(@job.jid, by: 'test:job')
+      @port = @job.input(:port1)
       @port.drain
-      Thread.current[:SideJob] = nil
       logs = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).
           map {|log| JSON.parse(log)}
-      expect(logs).to eq [{'type' => 'read', 'by' => job.jid, 'inport' => 'port1', 'data' => '123', 'timestamp' => SideJob.timestamp},
-                          {'type' => 'read', 'by' => job.jid, 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp},]
+      expect(logs).to eq [{'type' => 'read', 'by' => 'test:job', 'inport' => 'port1', 'data' => '123', 'timestamp' => SideJob.timestamp},
+                          {'type' => 'read', 'by' => 'test:job', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp},]
     end
   end
 

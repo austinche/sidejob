@@ -113,7 +113,7 @@ module SideJob
 
     def log(type, data)
       log = {data: data}
-      log[:by] = Thread.current[:SideJob].jid if Thread.current[:SideJob]
+      log[:by] = @job.by if @job.by
       log["#{@type}port"] = @name
       @job.log type, log
     end

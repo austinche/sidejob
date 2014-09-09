@@ -73,7 +73,6 @@ module SideJob
         if ! val
           begin
             set_status worker, 'running'
-            Thread.current[:SideJob] = worker
             yield
             set_status worker, 'completed' if worker.status == 'running'
           rescue SideJob::Worker::Suspended
@@ -82,7 +81,6 @@ module SideJob
             set_status worker, 'failed' if worker.status == 'running'
             log_exception(worker, e)
           ensure
-            Thread.current[:SideJob] = nil
             val = SideJob.redis.multi do |multi|
               multi.get lock
               multi.del lock

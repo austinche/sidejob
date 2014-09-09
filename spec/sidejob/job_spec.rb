@@ -42,8 +42,8 @@ describe SideJob::Job do
       now = Time.now
       Time.stub(:now).and_return(now)
       @job = SideJob.queue('testq', 'TestWorker', {args: [1, 2]})
-      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', args: [1, 2],
-                               status: 'queued', created_at: SideJob.timestamp, updated_at: SideJob.timestamp, ran_at: nil })
+      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', args: [1, 2], status: 'queued',
+                               created_by: '', created_at: SideJob.timestamp, updated_at: SideJob.timestamp, ran_at: nil })
     end
   end
 

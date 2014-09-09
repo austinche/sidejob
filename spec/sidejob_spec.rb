@@ -90,6 +90,16 @@ describe SideJob do
         expect(Sidekiq::ScheduledSet.new.find_job(job.jid).at).to eq(Time.at(at))
       }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
     end
+
+    it 'can specify a by string' do
+      job = SideJob.queue('testq', 'TestWorker', by: 'test:sidejob')
+      expect(job.by).to eq 'test:sidejob'
+    end
+
+    it 'defaults to empty by string' do
+      job = SideJob.queue('testq', 'TestWorker')
+      expect(job.by).to be nil
+    end
   end
 
   describe '.find' do
@@ -100,6 +110,12 @@ describe SideJob do
 
     it 'returns nil if the job does not exist' do
       expect(SideJob.find('job')).to be_nil
+    end
+
+    it 'can specify a by string' do
+      job = SideJob.queue('testq', 'TestWorker', by: 'test:orig')
+      job2 = SideJob.find(job.jid, by: 'test:by')
+      expect(job2.by).to eq 'test:by'
     end
   end
 

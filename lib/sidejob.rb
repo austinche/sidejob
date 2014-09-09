@@ -38,12 +38,13 @@ module SideJob
   # @param parent [SideJob::Job] parent job
   # @param args [Array] additional args to pass to the class (default none)
   # @param at [Time, Float] Time to schedule the job, otherwise queue immediately
+  # @param by [String] Who created this job. Recommend <type>:<id> format for non-jobs as SideJob uses job:<jid>
   # @return [SideJob::Job] Job
-  def self.queue(queue, klass, parent: nil, args: [], at: nil)
+  def self.queue(queue, klass, parent: nil, args: [], at: nil, by: nil)
     # To prevent race conditions, we generate the jid and set all metadata before queuing the job to sidekiq
     # Otherwise, sidekiq may start the job too quickly
     jid = SideJob.redis.incr(:job_id).to_s
-    job = SideJob::Job.new(jid)
+    job = SideJob::Job.new(jid, by: by)
 
     if parent
       ancestry = [parent.jid] + SideJob.redis.lrange("#{parent.redis_key}:ancestors", 0, -1)
@@ -51,7 +52,8 @@ module SideJob
 
     SideJob.redis.multi do |multi|
       multi.sadd 'jobs', jid
-      multi.hmset job.redis_key, 'queue', queue, 'class', klass, 'args', JSON.generate(args), 'created_at', SideJob.timestamp
+      multi.hmset job.redis_key, 'queue', queue, 'class', klass, 'args', JSON.generate(args),
+                  'created_by', by, 'created_at', SideJob.timestamp
 
       if parent
         multi.rpush "#{job.redis_key}:ancestors", ancestry # we need to rpush to get the right order
@@ -64,10 +66,11 @@ module SideJob
 
   # Finds a job by id
   # @param job_id [String, nil] Job Id
+  # @param by [String] By string to store for associating entities to events
   # @return [SideJob::Job, nil] Job object or nil if it doesn't exist
-  def self.find(job_id)
+  def self.find(job_id, by: nil)
     return nil unless job_id
-    job = SideJob::Job.new(job_id)
+    job = SideJob::Job.new(job_id, by: by)
     return job.exists? ? job : nil
   end
 

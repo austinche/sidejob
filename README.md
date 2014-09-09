@@ -90,12 +90,12 @@ Additional keys used by SideJob:
 * job_id - Stores the last job ID (we use incrementing integers from 1)
 * jobs - Set containing all active job IDs
 * job:<jid> - Hash containing SideJob managed job data
-** description - human readable description of the job
 ** queue - queue name
 ** class - name of class
 ** args - JSON array of arguments
 ** status - job status
 ** created_at - timestamp that the job was first queued
+** created_by - string indicating the entity that created the job. SideJob uses job:<jid> for jobs created by another job.
 ** updated_at - timestamp of the last update
 ** ran_at - timestamp of the start of the last run
 * job:<jid>:data - Hash containing job specific metadata
@@ -107,8 +107,8 @@ Additional keys used by SideJob:
 * job:<jid>:children - Set containing all children job IDs
 * job:<jid>:log - List with job changes, new log entries pushed on left. Each log entry is JSON encoded.
 ** {type: 'status', status: <new status>, timestamp: <date>}
-** {type: 'read', by: <jid>, <in|out>port: <port name>, data: <data>, timestamp: <date>}
-** {type: 'write', by: <jid>, <in|out>port: <port name>, data: <data>, timestamp: <date>}
+** {type: 'read', by: <by string>, <in|out>port: <port name>, data: <data>, timestamp: <date>}
+** {type: 'write', by: <by string>, <in|out>port: <port name>, data: <data>, timestamp: <date>}
 ** {type: 'error', error: <message>, backtrace: <exception backtrace>, timestamp: <date>}
 * job:<jid>:rate:<timestamp> - Rate limiter used to prevent run away executing of a job
 ** Keys are automatically expired

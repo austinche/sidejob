@@ -35,12 +35,24 @@ describe SideJob::Worker do
 
   describe '#queue' do
     it 'can queue child jobs' do
-      expect(SideJob).to receive(:queue).with('q2', 'TestWorker', args: [1,2], parent: @job).and_call_original
+      expect(SideJob).to receive(:queue).with('q2', 'TestWorker', args: [1,2], parent: @job, by: "job:#{@worker.jid}").and_call_original
       expect {
         child = @worker.queue('q2', 'TestWorker', args: [1, 2])
         expect(child.parent).to eq(@job)
         expect(@job.children).to eq([child])
       }.to change {Sidekiq::Stats.new.enqueued}.by(1)
+    end
+
+    it 'queues with by string set to self' do
+      child = @worker.queue('q2', 'TestWorker')
+      expect(child.by).to eq "job:#{@worker.jid}"
+    end
+  end
+
+  describe '#find' do
+    it 'calls SideJob.find with by string set to self' do
+      job2 = SideJob.queue('testq', 'TestWorker')
+      expect(@worker.find(job2.jid).by).to eq "job:#{@worker.jid}"
     end
   end
 

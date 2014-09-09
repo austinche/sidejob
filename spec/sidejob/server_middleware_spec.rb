@@ -26,12 +26,6 @@ describe SideJob::ServerMiddleware do
   end
 
   describe 'handles a normal run' do
-    it 'sets the current job to the worker and resets at end' do
-      process(@job) { @current = Thread.current[:SideJob] }
-      expect(@current).to eq(@job)
-      expect(Thread.current[:SideJob]).to be nil
-    end
-
     it 'sets status to running on start and completed on completion' do
       process(@job) { @status = @job.status }
       expect(@status).to eq 'running'
