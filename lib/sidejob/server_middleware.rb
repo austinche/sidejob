@@ -1,6 +1,6 @@
 module SideJob
   class ServerMiddleware
-    MAX_CALLS_PER_SECOND = 10
+    MAX_CALLS_PER_MINUTE = 60
     MAX_JOB_DEPTH = 10
     STALE_LOCK_EXPIRE = 86400 # no worker should run longer than this number of seconds
 
@@ -25,18 +25,31 @@ module SideJob
           return
       end
 
+      # if another thread is already running this job, we don't run the job now
+      # this simplifies workers from having to deal with thread safety
+      # we will requeue the job in the other thread
+
+      lock = "#{worker.redis_key}:lock"
+      now = Time.now.to_f
+      val = SideJob.redis.multi do |multi|
+        multi.get(lock)
+        multi.set(lock, now, {ex: STALE_LOCK_EXPIRE}) # add an expiration just in case the lock becomes stale
+      end[0]
+
+      return if val # only run if lock key was not set
+
       SideJob.redis.hset worker.redis_key, 'ran_at', SideJob.timestamp
 
-      # limit each job to being called too many times per second
+      # limit each job to being called too many times per minute
       # or too deep of a job tree
       # this is to help prevent bad coding that leads to recursive busy loops
       # Uses Rate limiter 1 pattern from http://redis.io/commands/INCR
-      rate_key = "#{worker.redis_key}:rate:#{Time.now.to_i}"
+      rate_key = "#{worker.redis_key}:rate:#{Time.now.to_i / 60}"
       rate = SideJob.redis.multi do |multi|
         multi.incr rate_key
-        multi.expire rate_key, 10
+        multi.expire rate_key, 300 # 5 minutes
       end[0]
-      if rate.to_i > MAX_CALLS_PER_SECOND
+      if rate.to_i > MAX_CALLS_PER_MINUTE
         terminate = true
         worker.log 'error', {error: "Job was terminated due to being called too rapidly"}
       elsif SideJob.redis.llen("#{worker.redis_key}:ancestors") > MAX_JOB_DEPTH
@@ -57,38 +70,23 @@ module SideJob
         end
       else
         # normal run
+        begin
+          set_status worker, 'running'
+          yield
+          set_status worker, 'completed' if worker.status == 'running'
+        rescue SideJob::Worker::Suspended
+          set_status worker, 'suspended' if worker.status == 'running'
+        rescue => e
+          set_status worker, 'failed' if worker.status == 'running'
+          log_exception(worker, e)
+        ensure
+          val = SideJob.redis.multi do |multi|
+            multi.get lock
+            multi.del lock
+          end[0]
 
-        # if another thread is already running this job, we don't run the job now
-        # this simplifies workers from having to deal with thread safety
-        # we will requeue the job in the other thread
-
-        lock = "#{worker.redis_key}:lock"
-        now = Time.now.to_f
-        val = SideJob.redis.multi do |multi|
-          multi.get(lock)
-          multi.set(lock, now, {ex: STALE_LOCK_EXPIRE}) # add an expiration just in case the lock becomes stale
-        end[0]
-
-        # only run if lock key was not set
-        if ! val
-          begin
-            set_status worker, 'running'
-            yield
-            set_status worker, 'completed' if worker.status == 'running'
-          rescue SideJob::Worker::Suspended
-            set_status worker, 'suspended' if worker.status == 'running'
-          rescue => e
-            set_status worker, 'failed' if worker.status == 'running'
-            log_exception(worker, e)
-          ensure
-            val = SideJob.redis.multi do |multi|
-              multi.get lock
-              multi.del lock
-            end[0]
-
-            worker.run if val && val.to_f != now # run it again if the lock key changed
-            worker.parent.run if worker.parent
-          end
+          worker.run if val && val.to_f != now # run it again if the lock key changed
+          worker.parent.run if worker.parent
         end
       end
     end

@@ -100,22 +100,22 @@ describe SideJob::ServerMiddleware do
   end
 
   describe 'prevents job loops' do
-    it 'does not run if called too many times in a second' do
+    it 'does not run if called too many times in a minute' do
       now = Time.now
       Time.stub(:now).and_return(now)
-      key = "#{@job.redis_key}:rate:#{Time.now.to_i}"
-      SideJob.redis.set key, SideJob::ServerMiddleware::MAX_CALLS_PER_SECOND
+      key = "#{@job.redis_key}:rate:#{Time.now.to_i/60}"
+      SideJob.redis.set key, SideJob::ServerMiddleware::MAX_CALLS_PER_MINUTE
       @run = false
       process(@job) { @run = true }
       expect(@run).to be false
       expect(@job.status).to eq 'terminated'
     end
 
-    it 'does run if not called too many times in a second' do
+    it 'does run if not called too many times in a minute' do
       now = Time.now
       Time.stub(:now).and_return(now)
-      key = "#{@job.redis_key}:rate:#{Time.now.to_i}"
-      SideJob.redis.set key, SideJob::ServerMiddleware::MAX_CALLS_PER_SECOND-1
+      key = "#{@job.redis_key}:rate:#{Time.now.to_i/60}"
+      SideJob.redis.set key, SideJob::ServerMiddleware::MAX_CALLS_PER_MINUTE-1
       @run = false
       process(@job) { @run = true }
       expect(@run).to be true
