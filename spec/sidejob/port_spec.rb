@@ -57,7 +57,7 @@ describe SideJob::Port do
     it 'can write data to a port' do
       @port.write('abc', 123)
       data = SideJob.redis.lrange(@port.redis_key, 0, -1)
-      expect(data).to eq(['123', 'abc'])
+      expect(data).to eq(['abc', '123'])
     end
 
     it 'saves port name in redis for input port' do
@@ -175,10 +175,10 @@ describe SideJob::Port do
       expect(@port.drain).to eq([])
     end
 
-    it 'returns array with most recent items first' do
+    it 'returns array with oldest items first' do
       @port.write '1'
       @port.write '2', '3'
-      expect(@port.drain).to eq(['3', '2', '1'])
+      expect(@port.drain).to eq(['1', '2', '3'])
       expect(@port.drain).to eq([])
       expect(@port.read).to be nil
     end
@@ -215,7 +215,7 @@ describe SideJob::Port do
       data1 = ['data1', 1, {'key' => 'val'}]
       data2 = {'abc' => 123}
       @port.write_json(data1, data2)
-      expect(@port.drain_json).to eq([data2, data1])
+      expect(@port.drain_json).to eq([data1, data2])
     end
   end
 
