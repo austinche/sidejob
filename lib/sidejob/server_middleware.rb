@@ -1,8 +1,11 @@
 module SideJob
   class ServerMiddleware
-    MAX_CALLS_PER_MINUTE = 60
-    MAX_JOB_DEPTH = 10
-    STALE_LOCK_EXPIRE = 86400 # no worker should run longer than this number of seconds
+    DEFAULT_CONFIGURATION = {
+        log_status: true, # whether to log status changes
+        lock_expiration: 86400, # the worker should not run longer than this number of seconds
+        max_depth: 20, # the job should not be nested more than this number of levels
+        max_calls_per_min: 60, # rate per minute
+    }
 
     # This middleware is primarily responsible for changing job status depending on events
     # SideJob::Job sets status to terminating or queued when a job is queued
@@ -25,6 +28,8 @@ module SideJob
           return
       end
 
+      config = DEFAULT_CONFIGURATION.merge(worker.class.configuration || {})
+
       # if another thread is already running this job, we don't run the job now
       # this simplifies workers from having to deal with thread safety
       # we will requeue the job in the other thread
@@ -33,7 +38,7 @@ module SideJob
       now = Time.now.to_f
       val = SideJob.redis.multi do |multi|
         multi.get(lock)
-        multi.set(lock, now, {ex: STALE_LOCK_EXPIRE}) # add an expiration just in case the lock becomes stale
+        multi.set(lock, now, {ex: config[:lock_expiration]}) # add an expiration just in case the lock becomes stale
       end[0]
 
       return if val # only run if lock key was not set
@@ -49,10 +54,10 @@ module SideJob
         multi.incr rate_key
         multi.expire rate_key, 300 # 5 minutes
       end[0]
-      if rate.to_i > MAX_CALLS_PER_MINUTE
+      if rate.to_i > config[:max_calls_per_min]
         terminate = true
         worker.log 'error', {error: "Job was terminated due to being called too rapidly"}
-      elsif SideJob.redis.llen("#{worker.redis_key}:ancestors") > MAX_JOB_DEPTH
+      elsif SideJob.redis.llen("#{worker.redis_key}:ancestors") > config[:max_depth]
         terminate = true
         worker.log 'error', {error: "Job was terminated due to being too deep"}
       end
@@ -65,19 +70,19 @@ module SideJob
         rescue => e
           log_exception worker, e
         ensure
-          set_status worker, 'terminated'
+          set_status worker, 'terminated', config
           worker.parent.run if worker.parent
         end
       else
         # normal run
         begin
-          set_status worker, 'running'
+          set_status worker, 'running', config
           yield
-          set_status worker, 'completed' if worker.status == 'running'
+          set_status worker, 'completed', config if worker.status == 'running'
         rescue SideJob::Worker::Suspended
-          set_status worker, 'suspended' if worker.status == 'running'
+          set_status worker, 'suspended', config if worker.status == 'running'
         rescue => e
-          set_status worker, 'failed' if worker.status == 'running'
+          set_status worker, 'failed', config if worker.status == 'running'
           log_exception(worker, e)
         ensure
           val = SideJob.redis.multi do |multi|
@@ -93,9 +98,9 @@ module SideJob
 
     private
 
-    def set_status(worker, status)
+    def set_status(worker, status, config)
       SideJob.redis.hset worker.redis_key, 'status', status
-      worker.log 'status', {status: status}
+      worker.log 'status', {status: status} if config[:log_status]
     end
 
     def log_exception(worker, exception)

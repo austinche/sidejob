@@ -23,6 +23,19 @@ module SideJob
     end
     SideJob::Worker.extend(RegistryMethods)
 
+    module ClassMethods
+      CONFIGURATION_KEYS = %i{log_status lock_expiration max_calls_per_min max_depth}
+      attr_reader :configuration
+
+      # Override some runtime parameters for running this worker class
+      # See SideJob::ServerMiddleware
+      def configure(options={})
+        unknown_keys = (options.keys - CONFIGURATION_KEYS)
+        raise "Unknown configuration keys #{unknown_keys.join(',')}" if unknown_keys.any?
+        @configuration = options
+      end
+    end
+
     class Suspended < StandardError; end
 
     def self.included(base)
@@ -31,6 +44,7 @@ module SideJob
         include SideJob::JobMethods
       end
       base.extend(RegistryMethods)
+      base.extend(ClassMethods)
     end
 
     # Queues a child job

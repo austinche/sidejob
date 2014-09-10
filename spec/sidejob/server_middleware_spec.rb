@@ -8,7 +8,7 @@ describe SideJob::ServerMiddleware do
 
   def process(job)
     sjob = Sidekiq::Queue.new(@queue).find_job(job.jid)
-    worker = TestWorker.new
+    worker = sjob.klass.constantize.new
     worker.jid = sjob.jid
     chain = Sidekiq::Middleware::Chain.new
     chain.add SideJob::ServerMiddleware
@@ -37,6 +37,12 @@ describe SideJob::ServerMiddleware do
       logs = @job.logs.select {|log| log['type'] == 'status'}
       expect(logs[0]['status']).to eq 'completed'
       expect(logs[1]['status']).to eq 'running'
+    end
+
+    it 'does not log status if configured to not log' do
+      @job = SideJob.queue(@queue, 'TestWorkerNoLog')
+      process(@job) { }
+      expect(@job.logs.select {|log| log['type'] == 'status'}.size).to be 0
     end
 
     it 'runs the parent job' do
@@ -104,7 +110,7 @@ describe SideJob::ServerMiddleware do
       now = Time.now
       Time.stub(:now).and_return(now)
       key = "#{@job.redis_key}:rate:#{Time.now.to_i/60}"
-      SideJob.redis.set key, SideJob::ServerMiddleware::MAX_CALLS_PER_MINUTE
+      SideJob.redis.set key, SideJob::ServerMiddleware::DEFAULT_CONFIGURATION[:max_calls_per_min]
       @run = false
       process(@job) { @run = true }
       expect(@run).to be false
@@ -115,7 +121,7 @@ describe SideJob::ServerMiddleware do
       now = Time.now
       Time.stub(:now).and_return(now)
       key = "#{@job.redis_key}:rate:#{Time.now.to_i/60}"
-      SideJob.redis.set key, SideJob::ServerMiddleware::MAX_CALLS_PER_MINUTE-1
+      SideJob.redis.set key, SideJob::ServerMiddleware::DEFAULT_CONFIGURATION[:max_calls_per_min]-1
       @run = false
       process(@job) { @run = true }
       expect(@run).to be true
@@ -123,7 +129,7 @@ describe SideJob::ServerMiddleware do
     end
 
     it 'does not run if job is too deep' do
-      (SideJob::ServerMiddleware::MAX_JOB_DEPTH+1).times do |i|
+      (SideJob::ServerMiddleware::DEFAULT_CONFIGURATION[:max_depth]+1).times do |i|
         @job = SideJob.queue(@queue, 'TestWorker', {parent: @job})
       end
       @run = false
@@ -133,7 +139,7 @@ describe SideJob::ServerMiddleware do
     end
 
     it 'does run if job is not too deep' do
-      SideJob::ServerMiddleware::MAX_JOB_DEPTH.times do |i|
+      SideJob::ServerMiddleware::DEFAULT_CONFIGURATION[:max_depth].times do |i|
         @job = SideJob.queue(@queue, 'TestWorker', {parent: @job})
       end
       @run = false
@@ -161,6 +167,12 @@ describe SideJob::ServerMiddleware do
       process(@job) { raise 'oops' }
       log = @job.logs.detect {|log| log['type'] == 'status'}
       expect(log['status']).to eq 'failed'
+    end
+
+    it 'does not log if configured to not log' do
+      @job = SideJob.queue(@queue, 'TestWorkerNoLog')
+      process(@job) { raise 'oops' }
+      expect(@job.logs.select {|log| log['type'] == 'status'}.size).to be 0
     end
 
     it 'does not set status to failed if status is not running' do
@@ -193,6 +205,12 @@ describe SideJob::ServerMiddleware do
       expect(log['status']).to eq 'suspended'
     end
 
+    it 'does not log if configured to not log' do
+      @job = SideJob.queue(@queue, 'TestWorkerNoLog')
+      process(@job) {|worker| worker.suspend}
+      expect(@job.logs.select {|log| log['type'] == 'status'}.size).to be 0
+    end
+
     it 'does not set status to suspended if job was requeued' do
       process(@job) do |worker|
         @job.run
@@ -214,6 +232,13 @@ describe SideJob::ServerMiddleware do
       process(@job) {}
       log = @job.logs.detect {|log| log['type'] == 'status'}
       expect(log['status']).to eq 'terminated'
+    end
+
+    it 'does not log if configured to not log' do
+      @job = SideJob.queue(@queue, 'TestWorkerNoLog')
+      SideJob.redis.hset @job.redis_key, 'status', 'terminating'
+      process(@job) {}
+      expect(@job.logs.select {|log| log['type'] == 'status'}.size).to be 0
     end
 
     it 'runs parent' do

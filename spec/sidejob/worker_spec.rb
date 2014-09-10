@@ -25,6 +25,16 @@ describe SideJob::Worker do
     end
   end
 
+  describe '.configure' do
+    it 'raises error on unknown key' do
+      expect { TestWorker.configure({unknown: 123}) }.to raise_error
+    end
+
+    it 'stores and retrieves alternate configuration' do
+      expect(TestWorkerNoLog.configuration).to eq({log_status: false})
+    end
+  end
+
   it 'includes SideJob::JobMethods' do
     expect(TestWorker.included_modules).to include(SideJob::JobMethods)
   end
