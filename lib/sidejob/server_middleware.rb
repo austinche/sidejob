@@ -13,6 +13,8 @@ module SideJob
     # For simplicity, a job is allowed to be queued multiple times in the Sidekiq queue
     # Only when it gets pulled out to be run, i.e. here, we decide if we want to actually run it
     def call(worker, msg, queue)
+      return unless worker.exists? # make sure the job has not been deleted
+
       last_run = SideJob.redis.hget worker.redis_key, 'ran_at'
 
       # we skip the run if we already ran once after the enqueued time

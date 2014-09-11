@@ -38,6 +38,8 @@ internal job state. Completed implies that the job has processed all data and ca
 terminated. If additional input arrives, a completed job could continue running. Suspended implies
 that the job is waiting for some input. Failed means that an exception was thrown.
 
+Jobs that have been terminated along with all their children can be deleted entirely.
+
 Ports
 -----
 

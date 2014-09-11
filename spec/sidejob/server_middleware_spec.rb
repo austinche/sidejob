@@ -25,6 +25,14 @@ describe SideJob::ServerMiddleware do
     end
   end
 
+  it 'does not run if job has been deleted' do
+    SideJob.redis.hset @job.redis_key, 'status', 'terminated'
+    @job.delete
+    @run = false
+    process(@job) { @run = true}
+    expect(@run).to be false
+  end
+
   describe 'handles a normal run' do
     it 'sets status to running on start and completed on completion' do
       process(@job) { @status = @job.status }

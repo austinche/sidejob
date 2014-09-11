@@ -61,11 +61,20 @@ module SideJob
     # Then queues the job so that its shutdown method if it exists can be run
     # After shutdown, the status will be 'terminated'
     # If the job is currently running, it will finish running first
+    # If the job is already terminated, it does nothing
     # To start the job after termination, call #run with force: true
+    # @param recursive [Boolean] If true, recursively terminate all children (default false)
     # @return [SideJob::Job] self
-    def terminate
-      SideJob.redis.hset redis_key, 'status', 'terminating'
-      sidekiq_queue
+    def terminate(recursive: false)
+      if SideJob.redis.hget(redis_key, 'status') != 'terminated'
+        SideJob.redis.hset redis_key, 'status', 'terminating'
+        sidekiq_queue
+      end
+      if recursive
+        children.each do |child|
+          child.terminate(recursive: true)
+        end
+      end
       self
     end
 
@@ -114,14 +123,24 @@ module SideJob
       parent
     end
 
-    # Deletes and unschedules the job and all children jobs (recursively)
+    # @return [Boolean] True if this job and all children recursively are terminated
+    def terminated?
+      return false if status != 'terminated'
+      children.each do |child|
+        return false unless child.terminated?
+      end
+      return true
+    end
+
+    # Deletes the job and all children jobs (recursively) if all are terminated
+    # @return [Boolean] Whether the job was deleted
     def delete
+      return false unless terminated?
+
       # recursively delete all children first
       children.each do |child|
         child.delete
       end
-
-      sidekiq_unqueue
 
       # delete all SideJob keys
       inports = SideJob.redis.smembers("#{redis_key}:inports").map {|port| "#{redis_key}:in:#{port}"}
@@ -131,6 +150,7 @@ module SideJob
                       [redis_key, "#{redis_key}:inports", "#{redis_key}:outports", "#{redis_key}:children", "#{redis_key}:ancestors", "#{redis_key}:data", "#{redis_key}:log"]
         multi.srem 'jobs', @jid
       end
+      return true
     end
 
     # Returns an input port
@@ -237,14 +257,6 @@ module SideJob
       item['at'] = time if time && time > Time.now.to_f
       Sidekiq::Client.push(item)
       touch
-    end
-
-    # unqueue/unschedule this job
-    def sidekiq_unqueue
-      queue = SideJob.redis.hget(redis_key, 'queue')
-      job = Sidekiq::Queue.new(queue).find_job(@jid)
-      job = Sidekiq::ScheduledSet.new.find_job(@jid) if ! job
-      job.delete if job
     end
   end
 

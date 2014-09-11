@@ -109,10 +109,31 @@ describe SideJob::Job do
       expect(@job.status).to eq 'terminating'
     end
 
+    it 'does nothing if status is terminated' do
+      set_status @job, 'terminated'
+      @job.terminate
+      expect(@job.status).to eq 'terminated'
+    end
+
     it 'queues the job for termination run' do
       expect {
         @job.terminate
       }.to change {Sidekiq::Stats.new.enqueued}.by(1)
+    end
+
+    it 'by default does not terminate children' do
+      child = SideJob.queue('q2', 'TestWorker', parent: @job)
+      expect(child.status).to eq 'queued'
+      @job.terminate
+      expect(child.status).to eq 'queued'
+    end
+
+    it 'can recursively terminate' do
+      5.times { SideJob.queue('q2', 'TestWorker', parent: @job) }
+      @job.terminate(recursive: true)
+      @job.children.each do |child|
+        expect(child.status).to eq 'terminating'
+      end
     end
   end
 
@@ -196,9 +217,48 @@ describe SideJob::Job do
     end
   end
 
+  describe '#terminated?' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+    end
+
+    it 'returns false if job status is not terminated' do
+      expect(@job.terminated?).to be false
+    end
+
+    it 'returns true if job status is terminated' do
+      set_status @job, 'terminated'
+      expect(@job.terminated?).to be true
+    end
+
+    it 'returns false if child job is not terminated' do
+      set_status @job, 'terminated'
+      SideJob.queue('q', 'TestWorker', parent: @job)
+      expect(@job.terminated?).to be false
+    end
+
+    it 'returns true if child job is terminated' do
+      set_status @job, 'terminated'
+      child = SideJob.queue('q', 'TestWorker', parent: @job)
+      set_status child, 'terminated'
+      expect(@job.terminated?).to be true
+    end
+  end
+
   describe '#delete' do
     before do
       @job = SideJob.queue('testq', 'TestWorker')
+    end
+
+    it 'does not delete non-terminated jobs' do
+      expect(@job.delete).to be false
+      expect(@job.exists?).to be true
+    end
+
+    it 'deletes terminated jobs' do
+      set_status @job, 'terminated'
+      expect(@job.delete).to be true
+      expect(@job.exists?).to be false
     end
 
     it 'recursively deletes jobs' do
@@ -206,6 +266,8 @@ describe SideJob::Job do
       expect(@job.status).to eq('queued')
       expect(child.status).to eq('queued')
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be > 0
+      set_status @job, 'terminated'
+      set_status child, 'terminated'
       @job.delete
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be(0)
       expect(@job.status).to be_nil
@@ -217,6 +279,7 @@ describe SideJob::Job do
       @job.output('port2').write 'data'
       expect(@job.inports).to eq([@job.input('port1')])
       expect(@job.outports).to eq([@job.output('port2')])
+      set_status @job, 'terminated'
       @job.delete
       expect(@job.inports).to eq([])
       expect(@job.outports).to eq([])
@@ -227,6 +290,7 @@ describe SideJob::Job do
 
     it 'removes job from jobs set' do
       expect(SideJob.redis {|redis| redis.sismember('jobs', @job.jid)}).to be true
+      set_status @job, 'terminated'
       @job.delete
       expect(SideJob.redis {|redis| redis.sismember('jobs', @job.jid)}).to be false
     end
