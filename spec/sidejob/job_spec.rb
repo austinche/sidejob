@@ -407,6 +407,17 @@ describe SideJob::Job do
     end
   end
 
+  describe '#unset' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+    end
+    it 'unsets fields' do
+      @job.mset(a: 123, b: 456, c: 789)
+      @job.unset('a', :b)
+      expect(@job.mget).to eq({'c' => '789'})
+    end
+  end
+
   describe '#touch' do
     it 'updates the updated_at timestamp' do
       now = Time.now

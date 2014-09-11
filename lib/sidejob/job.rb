@@ -191,6 +191,7 @@ module SideJob
     # Merges data into a job's metadata
     # @param data [Hash{String => String}] Data to update
     def mset(data)
+      return unless data.size > 0
       SideJob.redis.hmset "#{redis_key}:data", *(data.to_a.flatten(1))
       touch
     end
@@ -208,6 +209,14 @@ module SideJob
     def set_json(field, value)
       return unless value
       set(field, JSON.generate(value))
+    end
+
+    # Unsets some number of fields from the job's metadata
+    # @param fields [Array<String,Symbol>] Fields to unset
+    def unset(*fields)
+      return unless fields.length > 0
+      SideJob.redis.hdel "#{redis_key}:data", fields
+      touch
     end
 
     # Loads data from the job's metadata
