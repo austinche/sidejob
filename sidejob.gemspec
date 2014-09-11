@@ -11,8 +11,7 @@ Gem::Specification.new do |s|
 
   s.require_paths = ['lib']
 
-  s.add_dependency 'celluloid', '~>0.15.2' # https://github.com/mperham/sidekiq/issues/1929
-  s.add_dependency 'sidekiq', '~>3.2.0'
+  s.add_dependency 'sidekiq', '~>3.2.5'
 
   # development
   s.add_development_dependency 'pry'
