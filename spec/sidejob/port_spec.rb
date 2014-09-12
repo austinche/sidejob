@@ -54,10 +54,10 @@ describe SideJob::Port do
   end
 
   describe '#write' do
-    it 'can write data to a port' do
-      @port.write('abc', 123)
+    it 'can write different types of data to a port' do
+      @port.write('abc', 123, true, false, nil, {abc: 123}, [1, {foo: true}])
       data = SideJob.redis.lrange(@port.redis_key, 0, -1)
-      expect(data).to eq(['abc', '123'])
+      expect(data).to eq(['"abc"', '123', 'true', 'false', 'null', '{"abc":123}', '[1,{"foo":true}]'])
     end
 
     it 'saves port name in redis for input port' do
@@ -78,10 +78,9 @@ describe SideJob::Port do
       now = Time.now
       Time.stub(:now).and_return(now)
       SideJob.redis.del "#{@job.redis_key}:log"
-      @port.write('abc', '123')
-      logs = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).
-          map {|log| JSON.parse(log)}
-      expect(logs).to eq [{'type' => 'write', 'inport' => 'port1', 'data' => '123', 'timestamp' => SideJob.timestamp},
+      @port.write('abc', 123)
+      logs = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).map {|log| JSON.parse(log)}
+      expect(logs).to eq [{'type' => 'write', 'inport' => 'port1', 'data' => 123, 'timestamp' => SideJob.timestamp},
                           {'type' => 'write', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp},]
     end
 
@@ -112,23 +111,14 @@ describe SideJob::Port do
     end
   end
 
-  describe '#write_json' do
-    it 'JSON encodes data before writing' do
-      data1 = [1, 2]
-      data2 = {abc: 123}
-      expect(@port).to receive(:write).with(JSON.generate(data1), JSON.generate(data2))
-      @port.write_json(data1, data2)
-    end
-  end
-
   describe '#read' do
     it 'can read data from a port' do
       expect(@port.read).to be_nil
-      @port.write('abc', 123, JSON.generate(['data1', 1, {key: 'val'}]))
+      @port.write('abc', 123, ['data1', 1, {key: 'val'}])
       expect(@port.size).to be(3)
       expect(@port.read).to eq('abc')
-      expect(@port.read).to eq('123')
-      expect(JSON.parse(@port.read)).to eq(['data1', 1, {'key' => 'val'}])
+      expect(@port.read).to eq(123)
+      expect(@port.read).to eq(['data1', 1, {'key' => 'val'}])
       expect(@port.read).to be_nil
       expect(@port.size).to be(0)
     end
@@ -136,13 +126,13 @@ describe SideJob::Port do
     it 'logs reads' do
       now = Time.now
       Time.stub(:now).and_return(now)
-      @port.write('abc', '123')
+      @port.write('abc', 123)
       SideJob.redis.del "#{@job.redis_key}:log"
       expect(@port.read).to eq('abc')
-      expect(@port.read).to eq('123')
+      expect(@port.read).to eq(123)
       logs = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).
           map {|log| JSON.parse(log)}
-      expect(logs).to eq [{'type' => 'read', 'inport' => 'port1', 'data' => '123', 'timestamp' => SideJob.timestamp},
+      expect(logs).to eq [{'type' => 'read', 'inport' => 'port1', 'data' => 123, 'timestamp' => SideJob.timestamp},
                           {'type' => 'read', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp},]
     end
 
@@ -159,26 +149,15 @@ describe SideJob::Port do
     end
   end
 
-  describe '#read_json' do
-    it 'JSON decodes read data' do
-      expect(@port.read_json).to be_nil
-      data1 = ['data1', 1, {'key' => 'val'}]
-      data2 = {'abc' => 123}
-      @port.write_json(data1, data2)
-      expect(@port.read_json).to eq(data1)
-      expect(@port.read_json).to eq(data2)
-    end
-  end
-
   describe '#drain' do
     it 'returns empty array when port is empty' do
       expect(@port.drain).to eq([])
     end
 
     it 'returns array with oldest items first' do
-      @port.write '1'
-      @port.write '2', '3'
-      expect(@port.drain).to eq(['1', '2', '3'])
+      @port.write 1
+      @port.write 2, 3
+      expect(@port.drain).to eq([1, 2, 3])
       expect(@port.drain).to eq([])
       expect(@port.read).to be nil
     end
@@ -186,36 +165,52 @@ describe SideJob::Port do
     it 'logs drain' do
       now = Time.now
       Time.stub(:now).and_return(now)
-      @port.write('abc', '123')
+      @port.write('abc', 123)
       SideJob.redis.del "#{@job.redis_key}:log"
       @port.drain
       logs = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).
           map {|log| JSON.parse(log)}
-      expect(logs).to eq [{'type' => 'read', 'inport' => 'port1', 'data' => '123', 'timestamp' => SideJob.timestamp},
+      expect(logs).to eq [{'type' => 'read', 'inport' => 'port1', 'data' => 123, 'timestamp' => SideJob.timestamp},
                           {'type' => 'read', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp},]
     end
 
     it 'logs drain by another job' do
       now = Time.now
       Time.stub(:now).and_return(now)
-      @port.write('abc', '123')
+      @port.write('abc', 123)
       SideJob.redis.del "#{@job.redis_key}:log"
       @job = SideJob.find(@job.jid, by: 'test:job')
       @port = @job.input(:port1)
       @port.drain
       logs = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).
           map {|log| JSON.parse(log)}
-      expect(logs).to eq [{'type' => 'read', 'by' => 'test:job', 'inport' => 'port1', 'data' => '123', 'timestamp' => SideJob.timestamp},
+      expect(logs).to eq [{'type' => 'read', 'by' => 'test:job', 'inport' => 'port1', 'data' => 123, 'timestamp' => SideJob.timestamp},
                           {'type' => 'read', 'by' => 'test:job', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp},]
+    end
+
+    it 'write(*drain) is idempotent' do
+      data = {'test' => [1, 'b']}
+      data2 = [{'foo' => []}]
+      @port.write(data, data2)
+      expect(@port.size).to be 2
+      @port.write(*@port.drain)
+      expect(@port.size).to be 2
+      expect(@port.drain).to eq [data, data2]
     end
   end
 
-  describe '#drain_json' do
-    it 'drains and JSON decodes data on port' do
-      data1 = ['data1', 1, {'key' => 'val'}]
-      data2 = {'abc' => 123}
-      @port.write_json(data1, data2)
-      expect(@port.drain_json).to eq([data1, data2])
+  describe 'is Enumerable' do
+    before do
+      10.times {|i| @port.write i}
+    end
+
+    it 'can iterate over port elements' do
+      num = 0
+      @port.each_with_index do |elem, i|
+        expect(elem).to eq i
+        num += 1
+      end
+      expect(num).to eq 10
     end
   end
 

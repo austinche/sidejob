@@ -71,13 +71,23 @@ describe SideJob::Worker do
       expect(@worker.get_config('field1')).to be nil
     end
 
+    it 'can return false as a config value from port' do
+      @worker.input(:field1).write false
+      expect(@worker.get_config('field1')).to be false
+    end
+
+    it 'can return false as a config value from saved data' do
+      @worker.set(field1: false)
+      expect(@worker.get_config('field1')).to be false
+    end
+
     it 'uses saved data if no data on input port' do
-      @worker.set('field1', 'value1')
-      expect(@worker.get_config('field1')).to eq('value1')
+      @worker.set(field1: {field1: 'value1', field2: 123})
+      expect(@worker.get_config('field1')).to eq({'field1' => 'value1', 'field2' => 123})
     end
 
     it 'uses input data if present' do
-      @worker.set('config:field1', 'value1')
+      @worker.set(field1: 'value1')
       @worker.input(:field1).write('value2')
       expect(@worker.get_config('field1')).to eq('value2')
       expect(@worker.get_config('field1')).to eq('value2')
@@ -85,43 +95,12 @@ describe SideJob::Worker do
     end
 
     it 'uses the latest input data when present' do
-      @worker.set('field1', 'value1')
+      @worker.set(field1: 'value1')
       @worker.input(:field1).write('value2')
       @worker.input(:field1).write('value3')
       expect(@worker.get_config('field1')).to eq('value3')
       expect(@worker.get_config('field1')).to eq('value3')
       expect(@worker.get('field1')).to eq('value3')
-    end
-  end
-
-  describe '#get_config_json' do
-    it 'returns nil if data is not available' do
-      expect(@worker.get_config_json ('field1')).to be nil
-    end
-
-    it 'uses saved data if no data on input port' do
-      val = {'val' => 1}
-      @worker.set_json('field1', val)
-      expect(@worker.get_config_json('field1')).to eq(val)
-    end
-
-    it 'uses input data if present' do
-      val = {'val' => 2}
-      @worker.set_json('field1', {'val' => 1})
-      @worker.input(:field1).write_json(val)
-      expect(@worker.get_config_json('field1')).to eq(val)
-      expect(@worker.get_config_json('field1')).to eq(val)
-      expect(@worker.get_json('field1')).to eq(val)
-    end
-
-    it 'uses the latest input data when present' do
-      val = {'val' => 3}
-      @worker.set_json('field1', {'val' => 1})
-      @worker.input(:field1).write_json({'val' => 2})
-      @worker.input(:field1).write_json(val)
-      expect(@worker.get_config_json('field1')).to eq(val)
-      expect(@worker.get_config_json('field1')).to eq(val)
-      expect(@worker.get_json('field1')).to eq(val)
     end
   end
 end

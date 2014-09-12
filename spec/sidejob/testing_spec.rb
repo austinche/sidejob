@@ -26,8 +26,8 @@ describe 'SideJob testing helpers' do
       expect(job.output(:sum).read).to be nil
       expect(job2.output(:sum).read).to be nil
       SideJob::Worker.drain_queue
-      expect(job.output(:sum).read).to eq '10'
-      expect(job2.output(:sum).read).to eq '15'
+      expect(job.output(:sum).read).to eq 10
+      expect(job2.output(:sum).read).to eq 15
     end
 
     it 'can specify a timeout' do

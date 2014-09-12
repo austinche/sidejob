@@ -187,28 +187,12 @@ module SideJob
       end
     end
 
-    # Sets multiple values
-    # Merges data into a job's metadata
-    # @param data [Hash{String => String}] Data to update
-    def mset(data)
+    # Sets values in the job's metadata
+    # @param data [Hash{String,Symbol => Object}] Data to update: objects should be JSON encodable
+    def set(data)
       return unless data.size > 0
-      SideJob.redis.hmset "#{redis_key}:data", *(data.to_a.flatten(1))
+      SideJob.redis.hmset "#{redis_key}:data", data.map {|key, val| [key, val.to_json]}.flatten(1)
       touch
-    end
-
-    # Sets a single data in the job's metadata
-    # @param field [String,Symbol] Field to set
-    # @param value [String]
-    def set(field, value)
-      mset({field => value})
-    end
-
-    # Sets a single JSON encoded data in the job's metadata
-    # @param field [String,Symbol] Field to get
-    # @param value [Object] JSON-serializable object
-    def set_json(field, value)
-      return unless value
-      set(field, JSON.generate(value))
     end
 
     # Unsets some number of fields from the job's metadata
@@ -220,34 +204,20 @@ module SideJob
     end
 
     # Loads data from the job's metadata
+    # If only a single field is specified, returns just that value
+    # Otherwise returns a hash with all the keys specified
     # @param fields [Array<String,Symbol>] Fields to load or all fields if none specified
-    # @return [Hash{String,Symbol => String}] Job's metadata with the fields specified
-    def mget(*fields)
-      if fields.length > 0
+    # @return [Hash{String,Symbol => Object},Object] Job's metadata with the fields specified
+    def get(*fields)
+      data = if fields.length > 0
         values = SideJob.redis.hmget("#{redis_key}:data", *fields)
         Hash[fields.zip(values)]
       else
         SideJob.redis.hgetall "#{redis_key}:data"
       end
-    end
-
-    # Gets a single data from the job's metadata
-    # @param field [String,Symbol] Field to get
-    # @return [String, nil] Value of the given data field or nil
-    def get(field)
-      mget(field)[field]
-    end
-
-    # Gets a single JSON encoded data from the job's metadata
-    # @param field [String,Symbol] Field to get
-    # @return [Object, nil] JSON parsed value of the given data field
-    def get_json(field)
-      data = get(field)
-      if data
-        JSON.parse(data)
-      else
-        nil
-      end
+      data.merge!(data) {|key, val| val ? JSON.parse("[#{val}]")[0] : val}
+      data = data[fields[0]] if fields.length == 1
+      data
     end
 
     # Touch the updated_at timestamp

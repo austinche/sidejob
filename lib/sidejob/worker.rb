@@ -73,24 +73,12 @@ module SideJob
     # @return [String, nil] Configuration value or nil
     def get_config(field)
       data = input(field).drain.last
-      if data
-        set(field, data)
-      else
+      if data.nil?
         data = get(field)
+      else
+        set({field => data})
       end
       data
-    end
-
-    # @see #get_config
-    # @param field [String,Symbol] Field to get
-    # @return [Object, nil] JSON parsed value of the given configuration value
-    def get_config_json(field)
-      data = get_config(field)
-      if data
-        JSON.parse(data)
-      else
-        nil
-      end
     end
 
     private

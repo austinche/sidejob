@@ -340,70 +340,65 @@ describe SideJob::Job do
     end
   end
 
-  describe '#mset' do
+  describe '#set' do
     before do
       @job = SideJob.queue('testq', 'TestWorker')
     end
 
     it 'stores metadata in redis' do
-      @job.mset({test: 'data'})
-      expect(SideJob.redis.hget("#{@job.redis_key}:data", 'test')).to eq('data')
+      @job.set(test: 'data', test2: 123)
+      expect(SideJob.redis.hget("#{@job.redis_key}:data", 'test')).to eq '"data"'
+      expect(SideJob.redis.hget("#{@job.redis_key}:data", 'test2')).to eq '123'
 
       # test updating
-      @job.mset({test: 'data2'})
-      expect(SideJob.redis.hget("#{@job.redis_key}:data", 'test')).to eq('data2')
+      @job.set(test: 'data2')
+      expect(SideJob.redis.hget("#{@job.redis_key}:data", 'test')).to eq('"data2"')
     end
 
     it 'updates updated_at timestamp' do
       now = Time.now + 1000
       Time.stub(:now).and_return(now)
-      @job.mset({test: 123})
+      @job.set({test: 123})
       expect(@job.info[:updated_at]).to eq(SideJob.timestamp)
     end
   end
 
-  describe '#mget' do
+  describe '#get' do
     before do
       @job = SideJob.queue('testq', 'TestWorker')
+      @data = { field1: 'value1', field2: 'value2', field3: 123 }
+      @job.set @data
+    end
+
+    it 'returns single value if only one field specified' do
+      expect(@job.get(:field3)).to eq 123
+    end
+
+    it 'returns nil for missing value' do
+      expect(@job.get('missing')).to be nil
     end
 
     it 'only loads specified fields' do
-      data = { field1: 'value1', field2: 'value2' }
-      @job.mset data
-      expect(@job.mget(:field1, :field2)).to eq(data)
+      expect(@job.get(:field1, :field3)).to eq({field1: 'value1', field3: 123})
     end
 
     it 'returns String or Symbol depending on passed in field' do
-      data = { field1: 'value1', field2: 'value2' }
-      @job.mset data
-      data = @job.mget(:field1, 'field2')
+      data = @job.get(:field1, 'field2')
       expect(data[:field1]).to eq('value1')
       expect(data['field2']).to eq('value2')
     end
 
     it 'loads all fields if none specified' do
-      data = { field1: 'value1', field2: 'value2' }
-      @job.mset data
-      data = @job.mget
+      data = @job.get
       expect(data['field1']).to eq('value1')
       expect(data['field2']).to eq('value2')
+      expect(data['field3']).to eq(123)
     end
-  end
 
-  describe '#get, #set' do
-    it 'are shorthands for getting/setting single data fields' do
-      @job = SideJob.queue('testq', 'TestWorker')
-      @job.set('field1', 'value1')
-      expect(@job.get('field1')).to eq('value1')
-    end
-  end
-
-  describe '#get_json, #set_json' do
-    it 'can be used to store objects as json' do
-      @job = SideJob.queue('testq', 'TestWorker')
-      data = {'abc' => 123, 'def' => [1, 2]}
-      @job.set_json(:field1, data)
-      expect(@job.get_json(:field1)).to eq(data)
+    it 'can store and retrieve complex objects in metadata' do
+      data = {'nested' => [1, 'b', {'foo' => nil}]}
+      @job.set(test: data)
+      expect(@job.get(:test)).to eq data
     end
   end
 
@@ -412,9 +407,9 @@ describe SideJob::Job do
       @job = SideJob.queue('testq', 'TestWorker')
     end
     it 'unsets fields' do
-      @job.mset(a: 123, b: 456, c: 789)
+      @job.set(a: 123, b: 456, c: 789)
       @job.unset('a', :b)
-      expect(@job.mget).to eq({'c' => '789'})
+      expect(@job.get).to eq({'c' => 789})
     end
   end
 

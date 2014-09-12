@@ -27,15 +27,16 @@ module SideJob
       SideJob.redis.llen redis_key
     end
 
-    # Write some data to the port
+    # Write data to the port
     # If the port is an input port, wakes up the job so it has chance to process the data
     # If the port is an output port, wake up the parent job so it has a chance to process it
-    # @param data [Array<String>] List of data to write to the port
+    # @param data [Array<Object>|Object] Data to write to the port: objects should be JSON encodable
     def write(*data)
+      data = [data] unless data.is_a?(Array)
       return if data.length == 0
 
       SideJob.redis.multi do |multi|
-        multi.rpush redis_key, data
+        multi.rpush redis_key, data.map {|x| x.to_json}
         multi.sadd "#{@job.redis_key}:#{@type}ports", @name
       end
 
@@ -51,50 +52,40 @@ module SideJob
       self
     end
 
-    # JSON encodes all data before writing to the port
-    # @see #write
-    def write_json(*data)
-      write *(data.map {|x| JSON.generate(x)})
-    end
-
     # Reads the oldest data from the port
-    # @return [String, nil] First data from port or nil if no data exists
+    # @return [Object, nil] First data from port or nil if no data exists
     def read
       data = SideJob.redis.lpop redis_key
-      log('read', data) if data
+      if data
+        data = JSON.parse("[#{data}]")[0] # enable parsing primitive types like strings, numbers
+        log('read', data)
+      end
       data
     end
 
-    # JSON decodes data read from the port
-    # @see #read
-    def read_json
-      data = read
-      if data
-        JSON.parse(data)
-      else
-        nil
-      end
-    end
-
     # Drains and returns all data from the port
-    # @return [Array<String>] All data from the port. Oldest data is first, most recent is last
+    # @return [Array<Object>] All data from the port. Oldest data is first, most recent is last
     def drain
       data = SideJob.redis.multi do |multi|
         multi.lrange redis_key, 0, -1
         multi.del redis_key
       end[0]
 
-      data.each do |x|
+      data.map! do |x|
+        x = JSON.parse("[#{x}]")[0] # enable parsing primitive types like strings, numbers
         log('read', x)
+        x
       end
 
       data
     end
 
-    # Drains and JSON decodes all data from the port
-    # @see #drain
-    def drain_json
-      drain.map { |data| JSON.parse(data) }
+    # Iterate over port data
+    include Enumerable
+    def each(&block)
+      drain.each do |data|
+        yield data
+      end
     end
 
     # Returns the redis key used for storing inputs or outputs from a port name

@@ -23,7 +23,7 @@ Jobs
 * Jobs have any number of input and output ports
 * A job can have any number of child jobs
 * Each job has at most one parent job
-* Arbitrary metadata or state can be stored with each job
+* Any object that can be JSON encoded can be stored as metadata
 
 Jobs can have a number of different status. The statuses and possible status transitions:
 * -> queued
@@ -44,8 +44,7 @@ Ports
 -----
 
 * Ports are named (case sensitive)
-* Any string can be written or read from any input or output port
-* JSON is the preferred encoding for complex objects
+* Any object that can be JSON encoded can be written or read from any input or output port
 
 Workers
 -------
