@@ -25,6 +25,16 @@ describe SideJob::Worker do
     end
   end
 
+  describe '.unregister' do
+    it 'unregisters a worker spec' do
+      spec = {abc: [1, 2]}
+      SideJob::Worker.register('testq', 'TestWorker', spec)
+      expect(SideJob.redis.hget('workers:testq', 'TestWorker')).to eq(JSON.generate(spec))
+      SideJob::Worker.unregister('testq', 'TestWorker')
+      expect(SideJob.redis.hget('workers:testq', 'TestWorker')).to be nil
+    end
+  end
+
   describe '.configure' do
     it 'raises error on unknown key' do
       expect { TestWorker.configure({unknown: 123}) }.to raise_error

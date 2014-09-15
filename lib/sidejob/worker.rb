@@ -20,6 +20,13 @@ module SideJob
         spec = SideJob.redis.hget "workers:#{queue}", klass
         spec = JSON.parse(spec) if spec
       end
+
+      # Unregister a worker
+      # @param queue [String] Name of queue
+      # @param klass [String] Name of worker class
+      def unregister(queue, klass)
+        SideJob.redis.hdel "workers:#{queue}", klass
+      end
     end
     SideJob::Worker.extend(RegistryMethods)
 
