@@ -1,0 +1,9 @@
+#!/bin/bash
+
+echo "Building..."
+
+# clean source tree
+git clean -fxd
+
+bundle check --no-color || bundle install --no-color || exit 1
+bundle exec rspec spec || exit 1
