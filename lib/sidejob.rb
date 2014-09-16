@@ -6,13 +6,6 @@ require 'sidejob/worker'
 require 'sidejob/server_middleware'
 require 'time' # for iso8601 method
 
-Sidekiq.configure_server do |config|
-  config.server_middleware do |chain|
-    chain.remove Sidekiq::Middleware::Server::RetryJobs # we never want sidekiq to retry jobs
-    chain.add SideJob::ServerMiddleware
-  end
-end
-
 module SideJob
   # Returns redis connection
   # If block is given, yields the redis connection
@@ -81,6 +74,15 @@ module SideJob
   end
 end
 
+# :nocov:
+Sidekiq.configure_server do |config|
+  config.server_middleware do |chain|
+    chain.remove Sidekiq::Middleware::Server::RetryJobs # we never want sidekiq to retry jobs
+    chain.add SideJob::ServerMiddleware
+  end
+end
+
 if ENV['SIDEJOB_URL']
   SideJob.redis = {url: ENV['SIDEJOB_URL']}
 end
+# :nocov:

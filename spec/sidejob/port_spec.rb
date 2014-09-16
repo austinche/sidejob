@@ -34,6 +34,12 @@ describe SideJob::Port do
     end
   end
 
+  describe '#to_s' do
+    it 'returns the redis key' do
+      expect(SideJob::Port.new(@job, :in, :port1).to_s).to eq "job:#{@job.jid}:in:port1"
+    end
+  end
+
   describe '#size' do
     it 'returns 0 when the port is empty' do
       expect(@port.size).to eq 0

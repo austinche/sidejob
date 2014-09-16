@@ -231,13 +231,15 @@ describe SideJob::ServerMiddleware do
   describe 'handles job termination' do
     it 'sets status to terminated upon run' do
       SideJob.redis.hset @job.redis_key, 'status', 'terminating'
-      process(@job) {}
+      process(@job) { raise 'should not be called' }
       expect(@job.status).to eq 'terminated'
+      errors = @job.logs.select {|log| log['type'] == 'error'}
+      expect(errors.size).to eq 0
     end
 
     it 'logs terminated status change' do
       SideJob.redis.hset @job.redis_key, 'status', 'terminating'
-      process(@job) {}
+      process(@job) { raise 'should not be called' }
       log = @job.logs.detect {|log| log['type'] == 'status'}
       expect(log['status']).to eq 'terminated'
     end
@@ -245,32 +247,51 @@ describe SideJob::ServerMiddleware do
     it 'does not log if configured to not log' do
       @job = SideJob.queue(@queue, 'TestWorkerNoLog')
       SideJob.redis.hset @job.redis_key, 'status', 'terminating'
-      process(@job) {}
+      process(@job) { raise 'should not be called' }
       expect(@job.logs.select {|log| log['type'] == 'status'}.size).to be 0
     end
 
     it 'runs parent' do
       child = SideJob.queue(@queue, 'TestWorker', {parent: @job})
       SideJob.redis.hset child.redis_key, 'status', 'terminating'
-      process(child) {}
+      process(child) { raise 'should not be called' }
       expect(child.status).to eq 'terminated'
       expect(@job.status).to eq 'queued'
     end
 
     it 'calls worker shutdown method' do
+      SideJob.redis.hset @job.redis_key, 'status', 'terminating'
       sjob = Sidekiq::Queue.new(@queue).find_job(@job.jid)
       worker = Class.new do
-        attr_accessor :shutdown
+        attr_accessor :shutdown_called
         include SideJob::Worker
         def shutdown
-          @shutdown = true
+          @shutdown_called = true
         end
       end.new
       worker.jid = sjob.jid
       chain = Sidekiq::Middleware::Chain.new
       chain.add SideJob::ServerMiddleware
-      chain.invoke(worker, sjob.item, @queue) { }
-      expect(worker.shutdown).to be true
+      chain.invoke(worker, sjob.item, @queue) { raise 'should not be called' }
+      expect(worker.shutdown_called).to be true
+    end
+
+    it 'logs but ignores exceptions thrown during shutdown' do
+      SideJob.redis.hset @job.redis_key, 'status', 'terminating'
+      sjob = Sidekiq::Queue.new(@queue).find_job(@job.jid)
+      worker = Class.new do
+        include SideJob::Worker
+        def shutdown
+          raise 'termination error'
+        end
+      end.new
+      worker.jid = sjob.jid
+      chain = Sidekiq::Middleware::Chain.new
+      chain.add SideJob::ServerMiddleware
+      expect { chain.invoke(worker, sjob.item, @queue) { raise 'should not be called' } }.to_not raise_error
+      logs = @job.logs.select {|log| log['type'] == 'error'}
+      expect(logs.size).to eq 1
+      expect(logs[0]['error']).to eq 'termination error'
     end
   end
 end

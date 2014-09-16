@@ -19,6 +19,7 @@ module SideJob
     def redis_key
       "job:#{@jid}"
     end
+    alias :to_s :redis_key
 
     # @return [Boolean] Returns true if this job exists and has not been deleted
     def exists?
@@ -249,10 +250,6 @@ module SideJob
     def initialize(jid, by: nil)
       @jid = jid
       @by = by
-    end
-
-    def to_s
-      @jid
     end
   end
 end

@@ -93,13 +93,10 @@ module SideJob
     def redis_key
       "#{@job.redis_key}:#{@type}:#{@name}"
     end
+    alias :to_s :redis_key
 
     def hash
       redis_key.hash
-    end
-
-    def to_s
-      redis_key
     end
 
     private

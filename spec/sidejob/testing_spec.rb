@@ -40,6 +40,12 @@ describe 'SideJob testing helpers' do
       expect { SideJob::Worker.drain_queue }.to raise_error(RuntimeError, 'bad error')
     end
 
+    it 'raises error if worker mysteriously fails' do
+      job = SideJob.queue('test', 'TestWorker')
+      SideJob.redis.hset job.redis_key, 'status', 'failed'
+      expect { SideJob::Worker.drain_queue }.to raise_error(RuntimeError)
+    end
+
     it 'can disable raising of errors' do
       job = SideJob.queue('test', 'TestFailure')
       expect { SideJob::Worker.drain_queue(raise_on_errors: false) }.not_to raise_error

@@ -28,7 +28,7 @@ module SideJob
                   exception.set_backtrace(error['backtrace'])
                   raise exception
                 else
-                  raise "Job #{job.klass} failed but cannot find error log"
+                  raise "Job #{job.jid} failed but cannot find error log"
                 end
               end
             end

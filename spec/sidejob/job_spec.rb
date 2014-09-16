@@ -27,6 +27,13 @@ describe SideJob::Job do
     end
   end
 
+  describe '#to_s' do
+    it 'returns the redis key' do
+      job = SideJob::Job.new('abc')
+      expect(job.to_s).to eq 'job:abc'
+    end
+  end
+
   describe '#exists?' do
     it 'returns true if job exists' do
       @job = SideJob.queue('testq', 'TestWorker')
