@@ -16,9 +16,9 @@ Jobs
 ----
 
 * Jobs have a unique ID assigned using incrementing numbers
-** This ID is used as Sidekiq's jid
-** Note: a job can be queued multiple times on Sidekiq's queues
-** Therefore, Sidekiq's jids are not unique
+    * This ID is used as Sidekiq's jid
+    * Note: a job can be queued multiple times on Sidekiq's queues
+    * Therefore, Sidekiq's jids are not unique
 * Jobs have a queue and class name
 * Jobs have any number of input and output ports
 * A job can have any number of child jobs
@@ -26,6 +26,7 @@ Jobs
 * Any object that can be JSON encoded can be stored as metadata
 
 Jobs can have a number of different status. The statuses and possible status transitions:
+
 * -> queued
 * queued -> running | terminating
 * running -> queued | suspended | completed | failed | terminating
@@ -68,18 +69,19 @@ The easiest way to set the redis location is via the environment
 variable SIDEJOB_URL, e.g. redis://redis.myhost.com:6379/4
 
 The keys used by Sidekiq:
+
 * queues - Set containing all queue names
 * queue:<queue> - List containing jobs to be run (new jobs pushed on left) on the given queue
-** A sidekiq job is encoded as json and contains at minimum: queue, retry, class, jid, args
+    * A sidekiq job is encoded as json and contains at minimum: queue, retry, class, jid, args
 * schedule - Sorted set by schedule time of jobs to run in the future
 * retry - Sorted set by retry time of jobs to retry
 * dead - Sorted set by addition time of dead jobs
 * processes - Set of sidekiq processes (values are host:pid)
 * <host>:<pid> - Hash representing a connected sidekiq process
-** beat - heartbeat timestamp (every 5 seconds)
-** busy - number of busy workers
-** info - JSON encoded info with keys hostname, started_at, pid, tag, concurrency, queues, labels. Expiry of 60 seconds.
-* <host>:<pid>:workers - Hash containing running workers (thread ID -> {queue: <queue>, payload: <message>, run_at: <timestamp>})
+    * beat - heartbeat timestamp (every 5 seconds)
+    * busy - number of busy workers
+    * info - JSON encoded info with keys hostname, started_at, pid, tag, concurrency, queues, labels. Expiry of 60 seconds.
+* <host>:<pid>:workers - Hash containing running workers (thread ID -> !{queue: <queue>, payload: <message>, run_at: <timestamp>})
 * <host>:<pid>-signals - List for remotely sending signals to a sidekiq process (USR1 and TERM), 60 second expiry.
 * stat:processed - Cumulative number of jobs processed
 * stat:failed - Cumulative number of jobs failed
@@ -87,31 +89,32 @@ The keys used by Sidekiq:
 * stat:failed:<date> - Number of jobs failed for given date
 
 Additional keys used by SideJob:
+
 * workers:<queue> - Hash for worker registry
 * job_id - Stores the last job ID (we use incrementing integers from 1)
 * jobs - Set containing all active job IDs
 * job:<jid> - Hash containing SideJob managed job data
-** queue - queue name
-** class - name of class
-** args - JSON array of arguments
-** status - job status
-** created_at - timestamp that the job was first queued
-** created_by - string indicating the entity that created the job. SideJob uses job:<jid> for jobs created by another job.
-** updated_at - timestamp of the last update
-** ran_at - timestamp of the start of the last run
+    * queue - queue name
+    * class - name of class
+    * args - JSON array of arguments
+    * status - job status
+    * created_at - timestamp that the job was first queued
+    * created_by - string indicating the entity that created the job. SideJob uses job:<jid> for jobs created by another job.
+    * updated_at - timestamp of the last update
+    * ran_at - timestamp of the start of the last run
 * job:<jid>:data - Hash containing job specific metadata
 * job:<jid>:inports - Set containing input port names
 * job:<jid>:outports - Set containing output port names
 * job:<jid>:in:<inport> and job:<jid>:out:<outport> - List with unread port data
-* job:<jid>:ancestors - List with parent job IDs up to the root job that has no parent
-** Newer jobs are pushed on the left so the immediate parent is on the left and the root job is on the right
+* job:<jid>:ancestors - List with parent job IDs up to the root job that has no parent.
+    Newer jobs are pushed on the left so the immediate parent is on the left and the root job is on the right.
 * job:<jid>:children - Set containing all children job IDs
 * job:<jid>:log - List with job changes, new log entries pushed on left. Each log entry is JSON encoded.
-** {type: 'status', status: <new status>, timestamp: <date>}
-** {type: 'read', by: <by string>, <in|out>port: <port name>, data: <data>, timestamp: <date>}
-** {type: 'write', by: <by string>, <in|out>port: <port name>, data: <data>, timestamp: <date>}
-** {type: 'error', error: <message>, backtrace: <exception backtrace>, timestamp: <date>}
-* job:<jid>:rate:<timestamp> - Rate limiter used to prevent run away executing of a job
-** Keys are automatically expired
-* job:<jid>:lock - Used to prevent multiple worker threads from running a job
-** Auto expired to prevent stale locks
+    * !{type: 'status', status: <new status>, timestamp: <date>}
+    * !{type: 'read', by: <by string>, <in|out>port: <port name>, data: <data>, timestamp: <date>}
+    * !{type: 'write', by: <by string>, <in|out>port: <port name>, data: <data>, timestamp: <date>}
+    * !{type: 'error', error: <message>, backtrace: <exception backtrace>, timestamp: <date>}
+* job:<jid>:rate:<timestamp> - Rate limiter used to prevent run away executing of a job.
+    Keys are automatically expired.
+* job:<jid>:lock - Used to prevent multiple worker threads from running a job.
+    Auto expired to prevent stale locks.

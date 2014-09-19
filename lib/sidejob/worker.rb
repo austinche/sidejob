@@ -2,7 +2,7 @@ module SideJob
   # All workers should include SideJob::Worker and implement the perform method.
   # @see SideJob::JobMethods
   module Worker
-    # have these methods be available both on the module SideJob::Worker and from inside Worker classes
+    # Registry methods are available both on the module SideJob::Worker and from inside Worker classes
     module RegistryMethods
       # Provide a simple way to store worker info
       # @param queue [String] Name of queue
@@ -30,12 +30,15 @@ module SideJob
     end
     SideJob::Worker.extend(RegistryMethods)
 
+    # Class methods added to Workers
     module ClassMethods
+      # Worker specific configuration for how it should be run
+      # @see SideJob::ServerMiddleware
       CONFIGURATION_KEYS = %i{log_status lock_expiration max_calls_per_min max_depth}
       attr_reader :configuration
 
       # Override some runtime parameters for running this worker class
-      # See SideJob::ServerMiddleware
+      # @see SideJob::ServerMiddleware
       def configure(options={})
         unknown_keys = (options.keys - CONFIGURATION_KEYS)
         raise "Unknown configuration keys #{unknown_keys.join(',')}" if unknown_keys.any?
@@ -43,8 +46,10 @@ module SideJob
       end
     end
 
+    # Exception raised by {#suspend}
     class Suspended < StandardError; end
 
+    # @see SideJob::Worker
     def self.included(base)
       base.class_eval do
         include Sidekiq::Worker

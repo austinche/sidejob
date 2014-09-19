@@ -44,6 +44,7 @@ GEM
     simplecov-html (0.8.0)
     slop (3.4.7)
     timers (1.1.0)
+    yard (0.8.7.4)
 
 PLATFORMS
   ruby
@@ -53,3 +54,4 @@ DEPENDENCIES
   rspec
   sidejob!
   simplecov
+  yard

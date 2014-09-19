@@ -1,21 +1,25 @@
 module SideJob
-  # Methods shared between SideJob::Job and SideJob::Worker
+  # Methods shared between {SideJob::Job} and {SideJob::Worker}
   module JobMethods
     attr_reader :jid
     attr_reader :by
 
+    # @return [Boolean] True if two jobs or workers have the same jid
     def ==(other)
       other.respond_to?(:jid) && jid == other.jid
     end
 
+    # @see #==
     def eql?(other)
       self == other
     end
 
+    # @return [Fixnum] Hash value based on the jid
     def hash
       jid.hash
     end
 
+    # @return [String] Prefix for all redis keys related to this job
     def redis_key
       "job:#{@jid}"
     end
@@ -42,7 +46,7 @@ module SideJob
     end
 
     # Return all job logs and optionally clears them
-    # @param clear: if true, delete logs after returning them (default false)
+    # @param clear [Boolean] If true, delete logs after returning them (default false)
     # @return [Array<Hash>] All logs for the job with the newest first
     def logs(clear: false)
       key = "#{redis_key}:log"

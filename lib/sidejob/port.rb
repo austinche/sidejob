@@ -13,10 +13,12 @@ module SideJob
       raise "Invalid port name: #{@name}" if @name !~ /^[a-zA-Z0-9_]+$/
     end
 
+    # @return [Boolean] True if two ports are equal
     def ==(other)
       other.is_a?(Port) && job == other.job && type == other.type && name.to_s == other.name.to_s
     end
 
+    # @see #==
     def eql?(other)
       return self == other
     end
@@ -80,8 +82,9 @@ module SideJob
       data
     end
 
-    # Iterate over port data
     include Enumerable
+    # Iterate over port data
+    # @yield [Object] Each data from port
     def each(&block)
       drain.each do |data|
         yield data
@@ -95,6 +98,7 @@ module SideJob
     end
     alias :to_s :redis_key
 
+    # @return [Fixnum] Hash value for port
     def hash
       redis_key.hash
     end

@@ -1,5 +1,12 @@
 module SideJob
+  # This middleware is primarily responsible for changing job status depending on events
+  # {SideJob::Job} sets status to terminating or queued when a job is queued
+  # All other job status changes happen here
+  # For simplicity, a job is allowed to be queued multiple times in the Sidekiq queue
+  # Only when it gets pulled out to be run, i.e. here, we decide if we want to actually run it
   class ServerMiddleware
+    # Default run configuration parameters for workers
+    # @see SideJob::Worker::ClassMethods#configure
     DEFAULT_CONFIGURATION = {
         log_status: true, # whether to log status changes
         lock_expiration: 86400, # the worker should not run longer than this number of seconds
@@ -7,11 +14,10 @@ module SideJob
         max_calls_per_min: 60, # rate per minute
     }
 
-    # This middleware is primarily responsible for changing job status depending on events
-    # SideJob::Job sets status to terminating or queued when a job is queued
-    # All other job status changes happen here
-    # For simplicity, a job is allowed to be queued multiple times in the Sidekiq queue
-    # Only when it gets pulled out to be run, i.e. here, we decide if we want to actually run it
+    # Called by sidekiq as a server middleware to handle running a worker
+    # @param worker [SideJob::Worker]
+    # @param msg [Hash] Sidekiq message format
+    # @param queue [String] Queue the job was pulled from
     def call(worker, msg, queue)
       return unless worker.exists? # make sure the job has not been deleted
 
