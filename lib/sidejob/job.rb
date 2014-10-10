@@ -175,21 +175,13 @@ module SideJob
     # Gets all input ports that have data
     # @return [Array<SideJob::Port>] Input ports
     def inports
-      SideJob.redis.smembers("#{redis_key}:inports").select do |port|
-        SideJob.redis.exists "#{redis_key}:in:#{port}"
-      end.map do |port|
-        SideJob::Port.new(self, :in, port)
-      end
+      SideJob.redis.smembers("#{redis_key}:inports").map { |port| SideJob::Port.new(self, :in, port) }
     end
 
     # Gets all output ports that have data
     # @return [Array<SideJob::Port>] Output ports
     def outports
-      SideJob.redis.smembers("#{redis_key}:outports").select do |port|
-        SideJob.redis.exists "#{redis_key}:out:#{port}"
-      end.map do |port|
-        SideJob::Port.new(self, :out, port)
-      end
+      SideJob.redis.smembers("#{redis_key}:outports").map { |port| SideJob::Port.new(self, :out, port) }
     end
 
     # Sets values in the job's metadata

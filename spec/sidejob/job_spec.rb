@@ -318,7 +318,7 @@ describe SideJob::Job do
   end
 
   describe '#inports' do
-    it 'returns input ports that have data' do
+    it 'returns all input ports that have ever been written to' do
       job = SideJob.queue('testq', 'TestWorker')
       expect(job.inports).to eq([])
       job.input('port1').write 'abc'
@@ -328,12 +328,12 @@ describe SideJob::Job do
       job.input('port2').write 'abc'
       expect(job.inports).to match_array([SideJob::Port.new(job, :in, 'port1'), SideJob::Port.new(job, :in, 'port2')])
       job.input('port1').read
-      expect(job.inports).to eq([SideJob::Port.new(job, :in, 'port2')])
+      expect(job.inports).to match_array([SideJob::Port.new(job, :in, 'port1'), SideJob::Port.new(job, :in, 'port2')])
     end
   end
 
   describe '#outports' do
-    it 'returns output ports that have data' do
+    it 'returns all output ports that have ever been written to' do
       job = SideJob.queue('testq', 'TestWorker')
       expect(job.outports).to eq([])
       job.output('port1').write 'abc'
@@ -343,7 +343,7 @@ describe SideJob::Job do
       job.output('port2').write 'abc'
       expect(job.outports).to match_array([SideJob::Port.new(job, :out, 'port1'), SideJob::Port.new(job, :out, 'port2')])
       job.output('port1').read
-      expect(job.outports).to eq([SideJob::Port.new(job, :out, 'port2')])
+      expect(job.outports).to match_array([SideJob::Port.new(job, :out, 'port1'), SideJob::Port.new(job, :out, 'port2')])
     end
   end
 
