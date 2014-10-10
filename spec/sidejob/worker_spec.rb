@@ -35,6 +35,18 @@ describe SideJob::Worker do
     end
   end
 
+  describe '.unregister_all' do
+    it 'unregisters all worker specs on a queue' do
+      5.times {|i| SideJob::Worker.register('q1', "TestWorker#{i}", {worker: i}) }
+      5.times {|i| SideJob::Worker.register('q2', "TestWorker#{i}", {worker: i}) }
+      expect(SideJob.redis.hlen('workers:q1')).to eq 5
+      expect(SideJob.redis.hlen('workers:q2')).to eq 5
+      SideJob::Worker.unregister_all('q1')
+      expect(SideJob.redis.hlen('workers:q1')).to eq 0
+      expect(SideJob.redis.hlen('workers:q2')).to eq 5
+    end
+  end
+
   describe '.configure' do
     it 'raises error on unknown key' do
       expect { TestWorker.configure({unknown: 123}) }.to raise_error

@@ -27,6 +27,12 @@ module SideJob
       def unregister(queue, klass)
         SideJob.redis.hdel "workers:#{queue}", klass
       end
+
+      # Unregister all workers on a queue
+      # @param queue [String] Name of queue
+      def unregister_all(queue)
+        SideJob.redis.del "workers:#{queue}"
+      end
     end
     SideJob::Worker.extend(RegistryMethods)
 
