@@ -8,52 +8,43 @@ describe SideJob::Worker do
     @worker.jid = @job.jid
   end
 
+  describe '.register_all' do
+    it 'overwrites existing data with current registry' do
+      spec = {abc: [1, 2]}
+      SideJob.redis.hmset 'workers:q1', 'foo', 'bar'
+      SideJob::Worker.register_all('q1')
+      expect(SideJob.redis.hget('workers:q1', 'foo')).to be nil
+    end
+  end
+
+  describe '.config' do
+    it 'returns nil for a non-existing worker' do
+      expect(SideJob::Worker.config('noq', 'NoWorker')).to be nil
+    end
+
+    it 'returns a worker config that has been registered for the current queue' do
+      expect(SideJob::Worker.config('testq', 'TestWorker')).to eq SideJob::Worker.registry['TestWorker']
+    end
+
+    it 'returns a worker config that has been registered elsewhere' do
+      config = {'abc' => [1, 2]}
+      SideJob.redis.hmset 'workers:q1', 'NewWorker', config.to_json
+      expect(SideJob::Worker.config('q1', 'NewWorker')).to eq config
+    end
+  end
+
   describe '.register' do
-    it 'adds a worker spec' do
-      spec = {abc: [1, 2]}
-      SideJob::Worker.register('testq', 'TestWorker', spec)
-      expect(SideJob.redis.hget('workers:testq', 'TestWorker')).to eq(JSON.generate(spec))
-    end
-  end
-
-  describe '.spec' do
-    it 'returns a worker spec that has been registered' do
-      expect(SideJob::Worker.spec('testq', 'TestWorker')).to be nil
-      spec = {'abc' => [1, 2]}
-      SideJob::Worker.register('testq', 'TestWorker', spec)
-      expect(SideJob::Worker.spec('testq', 'TestWorker')).to eq spec
-    end
-  end
-
-  describe '.unregister' do
-    it 'unregisters a worker spec' do
-      spec = {abc: [1, 2]}
-      SideJob::Worker.register('testq', 'TestWorker', spec)
-      expect(SideJob.redis.hget('workers:testq', 'TestWorker')).to eq(JSON.generate(spec))
-      SideJob::Worker.unregister('testq', 'TestWorker')
-      expect(SideJob.redis.hget('workers:testq', 'TestWorker')).to be nil
-    end
-  end
-
-  describe '.unregister_all' do
-    it 'unregisters all worker specs on a queue' do
-      5.times {|i| SideJob::Worker.register('q1', "TestWorker#{i}", {worker: i}) }
-      5.times {|i| SideJob::Worker.register('q2', "TestWorker#{i}", {worker: i}) }
-      expect(SideJob.redis.hlen('workers:q1')).to eq 5
-      expect(SideJob.redis.hlen('workers:q2')).to eq 5
-      SideJob::Worker.unregister_all('q1')
-      expect(SideJob.redis.hlen('workers:q1')).to eq 0
-      expect(SideJob.redis.hlen('workers:q2')).to eq 5
-    end
-  end
-
-  describe '.configure' do
-    it 'raises error on unknown key' do
-      expect { TestWorker.configure({unknown: 123}) }.to raise_error
+    class TestWorkerRegister
+      include SideJob::Worker
+      register(
+          my_register_key: [1, 2, 3]
+      )
+      def perform
+      end
     end
 
-    it 'stores and retrieves alternate configuration' do
-      expect(TestWorkerNoLog.configuration).to eq({log_status: false})
+    it 'registers a worker configuration' do
+      expect(SideJob::Worker.registry['TestWorkerRegister']).to eq({my_register_key: [1,2,3]})
     end
   end
 
@@ -67,16 +58,16 @@ describe SideJob::Worker do
 
   describe '#queue' do
     it 'can queue child jobs' do
-      expect(SideJob).to receive(:queue).with('q2', 'TestWorker', args: [1,2], parent: @job, by: "job:#{@worker.jid}").and_call_original
+      expect(SideJob).to receive(:queue).with('testq', 'TestWorker', config: {'config1' => [1,2]}, parent: @job, by: "job:#{@worker.jid}").and_call_original
       expect {
-        child = @worker.queue('q2', 'TestWorker', args: [1, 2])
+        child = @worker.queue('testq', 'TestWorker', config: {'config1' => [1, 2]})
         expect(child.parent).to eq(@job)
         expect(@job.children).to eq([child])
       }.to change {Sidekiq::Stats.new.enqueued}.by(1)
     end
 
     it 'queues with by string set to self' do
-      child = @worker.queue('q2', 'TestWorker')
+      child = @worker.queue('testq', 'TestWorker')
       expect(child.by).to eq "job:#{@worker.jid}"
     end
   end
@@ -88,41 +79,32 @@ describe SideJob::Worker do
     end
   end
 
-  describe '#get_config' do
-    it 'returns nil if data is not available' do
-      expect(@worker.get_config('field1')).to be nil
+  describe '#for_inputs' do
+    it 'yields data from input ports' do
+      @job.input(:in1).write 1, 'a'
+      @job.input(:in2).write [2, 3], {'foo' => 123}
+      expect {|block| @worker.for_inputs(:in1, :in2, &block)}.to yield_successive_args([1, [2,3]], ['a', {'foo' => 123}])
     end
 
-    it 'can return false as a config value from port' do
-      @worker.input(:field1).write false
-      expect(@worker.get_config('field1')).to be false
+    it 'suspends on partial inputs' do
+      @job.input(:in1).write 1
+      @job.input(:in2).write [2, 3], 3
+      expect {
+        expect {|block| @worker.for_inputs(:in1, :in2, &block)}.to yield_successive_args([1, [2,3]])
+      }.to raise_error(SideJob::Worker::Suspended)
     end
 
-    it 'can return false as a config value from saved data' do
-      @worker.set(field1: false)
-      expect(@worker.get_config('field1')).to be false
+    it 'returns data from memory input ports' do
+      @worker.stub(:config).and_return({'inports' => {'in1' => {'mode' => 'memory'}, 'in2' =>{}}})
+      @job.input(:in1).write 1
+      @job.input(:in2).write [2, 3], 3
+      expect {|block| @worker.for_inputs(:in1, :in2, &block)}.to yield_successive_args([1, [2,3]], [1, 3])
     end
 
-    it 'uses saved data if no data on input port' do
-      @worker.set(field1: {field1: 'value1', field2: 123})
-      expect(@worker.get_config('field1')).to eq({'field1' => 'value1', 'field2' => 123})
-    end
-
-    it 'uses input data if present' do
-      @worker.set(field1: 'value1')
-      @worker.input(:field1).write('value2')
-      expect(@worker.get_config('field1')).to eq('value2')
-      expect(@worker.get_config('field1')).to eq('value2')
-      expect(@worker.get('field1')).to eq('value2')
-    end
-
-    it 'uses the latest input data when present' do
-      @worker.set(field1: 'value1')
-      @worker.input(:field1).write('value2')
-      @worker.input(:field1).write('value3')
-      expect(@worker.get_config('field1')).to eq('value3')
-      expect(@worker.get_config('field1')).to eq('value3')
-      expect(@worker.get('field1')).to eq('value3')
+    it 'does not suspend if there is only data on memory port' do
+      @job.input(:in1).mode = :memory
+      @job.input(:in1).write 1
+      expect {|block| @worker.for_inputs(:in1, :in2, &block)}.not_to yield_control
     end
   end
 end

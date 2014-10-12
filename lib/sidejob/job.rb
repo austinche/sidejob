@@ -33,7 +33,7 @@ module SideJob
     # @return [Hash] Info hash about the job
     def info
       info = SideJob.redis.hgetall(redis_key)
-      return {queue: info['queue'], class: info['class'], args: JSON.parse(info['args']), status: info['status'],
+      return {queue: info['queue'], class: info['class'], config: JSON.parse(info['config']), status: info['status'],
               created_by: info['created_by'], created_at: info['created_at'], updated_at: info['updated_at'], ran_at: info['ran_at']}
     end
 
@@ -41,7 +41,7 @@ module SideJob
     # @param type [String] Log type
     # @param data [Hash] Any extra log data
     def log(type, data)
-      SideJob.redis.lpush "#{redis_key}:log", JSON.generate(data.merge(type: type, timestamp: SideJob.timestamp))
+      SideJob.redis.lpush "#{redis_key}:log", data.merge(type: type, timestamp: SideJob.timestamp).to_json
       touch
     end
 
@@ -148,40 +148,38 @@ module SideJob
       end
 
       # delete all SideJob keys
-      inports = SideJob.redis.smembers("#{redis_key}:inports").map {|port| "#{redis_key}:in:#{port}"}
-      outports = SideJob.redis.smembers("#{redis_key}:outports").map {|port| "#{redis_key}:out:#{port}"}
+      ports = inports.map(&:redis_key) + outports.map(&:redis_key)
       SideJob.redis.multi do |multi|
-        multi.del inports + outports +
-                      [redis_key, "#{redis_key}:inports", "#{redis_key}:outports", "#{redis_key}:children", "#{redis_key}:ancestors", "#{redis_key}:data", "#{redis_key}:log"]
+        multi.del ports + [redis_key, "#{redis_key}:children", "#{redis_key}:ancestors", "#{redis_key}:data", "#{redis_key}:log"]
         multi.srem 'jobs', @jid
       end
       return true
     end
 
     # Returns an input port
-    # @param port [String] Name of the port
+    # @param name [Symbol,String] Name of the port
     # @return [SideJob::Port]
-    def input(port)
-      SideJob::Port.new(self, :in, port)
+    def input(name)
+      get_port :in, name
     end
 
     # Returns an output port
-    # @param port [String] Name of the port
+    # @param name [Symbol,String] Name of the port
     # @return [SideJob::Port]
-    def output(port)
-      SideJob::Port.new(self, :out, port)
+    def output(name)
+      get_port :out, name
     end
 
-    # Gets all input ports that have data
+    # Gets all known input ports
     # @return [Array<SideJob::Port>] Input ports
     def inports
-      SideJob.redis.smembers("#{redis_key}:inports").map { |port| SideJob::Port.new(self, :in, port) }
+      (config['inports'] || {}).keys.map {|port| input(port)}
     end
 
-    # Gets all output ports that have data
+    # Gets all known output ports
     # @return [Array<SideJob::Port>] Output ports
     def outports
-      SideJob.redis.smembers("#{redis_key}:outports").map { |port| SideJob::Port.new(self, :out, port) }
+      (config['outports'] || {}).keys.map {|port| output(port)}
     end
 
     # Sets values in the job's metadata
@@ -217,6 +215,29 @@ module SideJob
       data
     end
 
+    # Returns the job's configuration
+    # @return [Hash{String => Object}] Job's configuration
+    def config
+      return @config if @config
+
+      queue, klass = SideJob.redis.hmget(redis_key, 'queue', 'class')
+      default = SideJob::Worker.config(queue, klass) || {}
+      @config = default.merge(JSON.parse(SideJob.redis.hget(redis_key, 'config') || '{}'))
+    end
+
+    # Set port options in the job's configuration
+    # @param type [:in, :out] Input or output port
+    # @param name [Symbol,String] Name of the port
+    # @param options [Hash] New port options
+    def set_port_options(type, name, options)
+      key = "#{type}ports"
+      current = JSON.parse(SideJob.redis.hget(redis_key, 'config') || '{}')
+      current[key] ||= {}
+      current[key][name] = options
+      SideJob.redis.hset redis_key, 'config', current.to_json
+      @config = nil # clear cache
+    end
+
     # Touch the updated_at timestamp
     def touch
       SideJob.redis.hset redis_key, 'updated_at', SideJob.timestamp
@@ -227,12 +248,29 @@ module SideJob
     # queue or schedule this job using sidekiq
     # @param time [Time, Float, nil] Time to schedule the job if specified
     def sidekiq_queue(time=nil)
-      queue, klass, args = SideJob.redis.hmget(redis_key, 'queue', 'class', 'args')
-      args = args ? JSON.parse(args) : []
-      item = {'jid' => @jid, 'queue' => queue, 'class' => klass, 'args' => args, 'retry' => false}
+      queue, klass = SideJob.redis.hmget(redis_key, 'queue', 'class')
+      if ! SideJob::Worker.config(queue, klass)
+        SideJob.redis.hset redis_key, 'status', 'terminated'
+        raise "Worker no longer registered for #{klass} in queue #{queue}"
+      end
+      item = {'jid' => @jid, 'queue' => queue, 'class' => klass, 'args' => [], 'retry' => false}
       item['at'] = time if time && time > Time.now.to_f
       Sidekiq::Client.push(item)
       touch
+    end
+
+    # Returns an input or output port
+    # @param type [:in, :out] Input or output port
+    # @param name [Symbol,String] Name of the port
+    # @return [SideJob::Port]
+    def get_port(type, name)
+      name = name.to_s
+      key = "#{type}ports"
+      if ! config[key] || ! config[key][name]
+        # new unknown port so add it with default options
+        set_port_options type, name, {}
+      end
+      SideJob::Port.new(self, type, name, config[key][name])
     end
   end
 

@@ -26,6 +26,11 @@ describe SideJob do
   end
 
   describe '.queue' do
+    it 'raises an error if no worker registered for specified queue/class' do
+      expect { SideJob.queue('unknownq', 'TestWorker') }.to raise_error
+      expect { SideJob.queue('testq', 'UnknownWorker') }.to raise_error
+    end
+
     it 'queues a sidekiq job' do
       expect {
         job = SideJob.queue('testq', 'TestWorker')
@@ -73,12 +78,11 @@ describe SideJob do
       expect(SideJob.redis.lrange("#{j3.redis_key}:ancestors", 0, -1)).to eq([j2.jid, j1.jid])
     end
 
-    it 'can specify job args' do
+    it 'can specify job configuration' do
       expect {
-        job = SideJob.queue('testq', 'TestWorker', args: [1, 2])
+        job = SideJob.queue('testq', 'TestWorker', config: {foo: [1, 2]})
         expect(job.status).to eq 'queued'
-        job = Sidekiq::Queue.new('testq').find_job(job.jid)
-        expect(job.args).to eq([1, 2])
+        expect(job.config['foo']).to eq [1, 2]
       }.to change {Sidekiq::Stats.new.enqueued}.by(1)
     end
 

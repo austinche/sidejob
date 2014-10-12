@@ -5,13 +5,12 @@ module SideJob
   # For simplicity, a job is allowed to be queued multiple times in the Sidekiq queue
   # Only when it gets pulled out to be run, i.e. here, we decide if we want to actually run it
   class ServerMiddleware
-    # Default run configuration parameters for workers
-    # @see SideJob::Worker::ClassMethods#configure
+    # Default configuration parameters for workers merged with job's config
     DEFAULT_CONFIGURATION = {
-        log_status: true, # whether to log status changes
-        lock_expiration: 86400, # the worker should not run longer than this number of seconds
-        max_depth: 20, # the job should not be nested more than this number of levels
-        max_calls_per_min: 60, # rate per minute
+        'log_status' => true, # whether to log status changes
+        'lock_expiration' => 86400, # the worker should not run longer than this number of seconds
+        'max_depth' => 20, # the job should not be nested more than this number of levels
+        'max_runs_per_minute' => 60, # generate error if the job is run more often than this
     }
 
     # Called by sidekiq as a server middleware to handle running a worker
@@ -36,7 +35,7 @@ module SideJob
           return
       end
 
-      config = DEFAULT_CONFIGURATION.merge(worker.class.configuration || {})
+      config = DEFAULT_CONFIGURATION.merge(worker.config['run'] || {})
 
       # if another thread is already running this job, we don't run the job now
       # this simplifies workers from having to deal with thread safety
@@ -46,7 +45,7 @@ module SideJob
       now = Time.now.to_f
       val = SideJob.redis.multi do |multi|
         multi.get(lock)
-        multi.set(lock, now, {ex: config[:lock_expiration]}) # add an expiration just in case the lock becomes stale
+        multi.set(lock, now, {ex: config['lock_expiration']}) # add an expiration just in case the lock becomes stale
       end[0]
 
       return if val # only run if lock key was not set
@@ -62,10 +61,10 @@ module SideJob
         multi.incr rate_key
         multi.expire rate_key, 300 # 5 minutes
       end[0]
-      if rate.to_i > config[:max_calls_per_min]
+      if rate.to_i > config['max_runs_per_minute']
         terminate = true
         worker.log 'error', {error: "Job was terminated due to being called too rapidly"}
-      elsif SideJob.redis.llen("#{worker.redis_key}:ancestors") > config[:max_depth]
+      elsif SideJob.redis.llen("#{worker.redis_key}:ancestors") > config['max_depth']
         terminate = true
         worker.log 'error', {error: "Job was terminated due to being too deep"}
       end
@@ -108,7 +107,7 @@ module SideJob
 
     def set_status(worker, status, config)
       SideJob.redis.hset worker.redis_key, 'status', status
-      worker.log 'status', {status: status} if config[:log_status]
+      worker.log 'status', {status: status} if config['log_status']
     end
 
     def log_exception(worker, exception)

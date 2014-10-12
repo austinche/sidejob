@@ -44,19 +44,42 @@ Jobs that have been terminated along with all their children can be deleted enti
 Ports
 -----
 
-* Ports are named (case sensitive)
-* Any object that can be JSON encoded can be written or read from any input or output port
+* Ports are named (case sensitive) and must match /^[a-zA-Z0-9_]+$/.
+* Any object that can be JSON encoded can be written or read from any input or output port.
+
+Port options:
+
+* mode
+    * Queue - This is the default operation mode. All data written is read in a first in first out manner.
+    * Memory - At most a single value can be stored on a port. A more recent value will overwrite an existing value.
+      A read on a memory port does not remove the stored value so the same value can be read many times.
 
 Workers
 -------
 
 * A worker is the implementation of a specific job class
+* Workers are required to register themselves with a default job configuration
+* A Sidekiq process should only handle a single queue so all registered workers in the process are for the same queue
 * It should have a perform method that is called on each run
 * It may have a shutdown method that is called before the job is terminated
 * Workers should be idempotent as they may be run more than once for the same state
 * SideJob ensures only one worker thread runs for a given job at a time
 * Workers are responsible for managing state across runs
 * Workers can suspend themselves when waiting for inputs
+
+Job configuration
+-----------------
+
+Jobs have a configuration hash that can be used to modify the running of a job separate from port data. The job
+configuration is static and is expected to be set when a job is queued and never changed throughout the job's lifetime.
+This configuration is primarily used to modify how SideJob runs the worker and processes data. Although workers can use
+the configuration hash for their own purposes, where possible, workers should be written to be configured by port data.
+
+Configuration keys that have meaning to SideJob:
+
+* inports - Hash mapping input port name to options such as port mode
+* outports - Hash mapping output port name to options such as port mode
+* run - Hash with configuration parameters for {SideJob::ServerMiddleware}
 
 Data Structure
 --------------
@@ -90,22 +113,20 @@ The keys used by Sidekiq:
 
 Additional keys used by SideJob:
 
-* workers:<queue> - Hash for worker registry
+* workers:<queue> - Hash for worker registry with default job configuration
 * job_id - Stores the last job ID (we use incrementing integers from 1)
 * jobs - Set containing all active job IDs
 * job:<jid> - Hash containing SideJob managed job data
     * queue - queue name
     * class - name of class
-    * args - JSON array of arguments
+    * config - JSON object with job configuration
     * status - job status
     * created_at - timestamp that the job was first queued
     * created_by - string indicating the entity that created the job. SideJob uses job:<jid> for jobs created by another job.
     * updated_at - timestamp of the last update
     * ran_at - timestamp of the start of the last run
 * job:<jid>:data - Hash containing job specific metadata
-* job:<jid>:inports - Set containing input port names
-* job:<jid>:outports - Set containing output port names
-* job:<jid>:in:<inport> and job:<jid>:out:<outport> - List with unread port data
+* job:<jid>:in:<inport> and job:<jid>:out:<outport> - List with unread port data. New data is pushed on the right.
 * job:<jid>:ancestors - List with parent job IDs up to the root job that has no parent.
     Newer jobs are pushed on the left so the immediate parent is on the left and the root job is on the right.
 * job:<jid>:children - Set containing all children job IDs

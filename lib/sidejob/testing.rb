@@ -18,7 +18,7 @@ module SideJob
               worker = job.klass.constantize.new
               worker.jid = job.jid
               SideJob::ServerMiddleware.new.call(worker, job, job.queue) do
-                worker.perform(*job.args)
+                worker.perform
               end
 
               if raise_on_errors && worker.status == 'failed'

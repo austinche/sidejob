@@ -16,7 +16,8 @@ Dir[File.dirname(__FILE__) + '/support/*.rb'].each {|file| require file }
 
 RSpec.configure do |config|
   config.order = 'random'
-  config.before(:each) do
+  config.before do
     SideJob.redis.flushdb
+    SideJob::Worker.register_all 'testq'
   end
 end

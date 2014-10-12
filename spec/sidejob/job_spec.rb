@@ -48,8 +48,8 @@ describe SideJob::Job do
     it 'returns all job info' do
       now = Time.now
       Time.stub(:now).and_return(now)
-      @job = SideJob.queue('testq', 'TestWorker', {args: [1, 2]})
-      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', args: [1, 2], status: 'queued',
+      @job = SideJob.queue('testq', 'TestWorker', config: {mykey: [1, 2]})
+      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', config: {'mykey' => [1, 2]}, status: 'queued',
                                created_by: '', created_at: SideJob.timestamp, updated_at: SideJob.timestamp, ran_at: nil })
     end
   end
@@ -122,6 +122,12 @@ describe SideJob::Job do
       expect(@job.status).to eq 'terminated'
     end
 
+    it 'throws error and immediately sets status to terminated if job class is unregistered' do
+      SideJob.redis.hset @job.redis_key, 'queue', 'unknown'
+      expect { @job.terminate }.to raise_error
+      expect(@job.status).to eq 'terminated'
+    end
+
     it 'queues the job for termination run' do
       expect {
         @job.terminate
@@ -129,14 +135,14 @@ describe SideJob::Job do
     end
 
     it 'by default does not terminate children' do
-      child = SideJob.queue('q2', 'TestWorker', parent: @job)
+      child = SideJob.queue('testq', 'TestWorker', parent: @job)
       expect(child.status).to eq 'queued'
       @job.terminate
       expect(child.status).to eq 'queued'
     end
 
     it 'can recursively terminate' do
-      5.times { SideJob.queue('q2', 'TestWorker', parent: @job) }
+      5.times { SideJob.queue('testq', 'TestWorker', parent: @job) }
       @job.terminate(recursive: true)
       @job.children.each do |child|
         expect(child.status).to eq 'terminating'
@@ -177,6 +183,12 @@ describe SideJob::Job do
       end
     end
 
+    it 'throws error and immediately sets status to terminated if job class is unregistered' do
+      SideJob.redis.hset @job.redis_key, 'queue', 'unknown'
+      expect { @job.run }.to raise_error
+      expect(@job.status).to eq 'terminated'
+    end
+
     it 'can schedule a job to run at a specific time using a float' do
       time = Time.now.to_f + 10000
       expect { @job.run(at: time) }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
@@ -203,7 +215,7 @@ describe SideJob::Job do
   describe '#children, #parent' do
     it 'can get children and parent jobs' do
       parent = SideJob.queue('testq', 'TestWorker')
-      child = SideJob.queue('q2', 'TestWorker', {parent: parent})
+      child = SideJob.queue('testq', 'TestWorker', {parent: parent})
       expect(parent.children).to eq([child])
       expect(child.parent).to eq(parent)
     end
@@ -217,9 +229,9 @@ describe SideJob::Job do
 
     it 'returns entire job tree' do
       j1 = SideJob.queue('testq', 'TestWorker')
-      j2 = SideJob.queue('q2', 'TestWorker', {parent: j1})
-      j3 = SideJob.queue('q2', 'TestWorker', {parent: j2})
-      j4 = SideJob.queue('q2', 'TestWorker', {parent: j3})
+      j2 = SideJob.queue('testq', 'TestWorker', {parent: j1})
+      j3 = SideJob.queue('testq', 'TestWorker', {parent: j2})
+      j4 = SideJob.queue('testq', 'TestWorker', {parent: j3})
       expect(j4.ancestors).to eq([j3, j2, j1])
     end
   end
@@ -240,13 +252,13 @@ describe SideJob::Job do
 
     it 'returns false if child job is not terminated' do
       set_status @job, 'terminated'
-      SideJob.queue('q', 'TestWorker', parent: @job)
+      SideJob.queue('testq', 'TestWorker', parent: @job)
       expect(@job.terminated?).to be false
     end
 
     it 'returns true if child job is terminated' do
       set_status @job, 'terminated'
-      child = SideJob.queue('q', 'TestWorker', parent: @job)
+      child = SideJob.queue('testq', 'TestWorker', parent: @job)
       set_status child, 'terminated'
       expect(@job.terminated?).to be true
     end
@@ -269,7 +281,7 @@ describe SideJob::Job do
     end
 
     it 'recursively deletes jobs' do
-      child = SideJob.queue('q2', 'TestWorker', {parent: @job})
+      child = SideJob.queue('testq', 'TestWorker', {parent: @job})
       expect(@job.status).to eq('queued')
       expect(child.status).to eq('queued')
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be > 0
@@ -284,14 +296,12 @@ describe SideJob::Job do
     it 'deletes data on input and output ports' do
       @job.input('port1').write 'data'
       @job.output('port2').write 'data'
-      expect(@job.inports).to eq([@job.input('port1')])
-      expect(@job.outports).to eq([@job.output('port2')])
+      expect(@job.input('port1').size).to be 1
+      expect(@job.output('port2').size).to be 1
       set_status @job, 'terminated'
       @job.delete
-      expect(@job.inports).to eq([])
-      expect(@job.outports).to eq([])
-      expect(@job.input('port1').read).to be_nil
-      expect(@job.output('port2').read).to be_nil
+      expect(@job.input('port1').size).to be 0
+      expect(@job.output('port2').size).to be 0
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be(0)
     end
 
@@ -304,45 +314,61 @@ describe SideJob::Job do
   end
 
   describe '#input' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+    end
+
     it 'returns an input port' do
-      job = SideJob.queue('testq', 'TestWorker')
-      expect(job.input('port')).to eq(SideJob::Port.new(job, :in, 'port'))
+      expect(@job.input('port')).to eq(SideJob::Port.new(@job, :in, 'port'))
+    end
+
+    it 'saves port to inports list' do
+      expect(@job.inports.map(&:name).include?('port')).to be false
+      @job.input('port')
+      expect(@job.inports.map(&:name).include?('port')).to be true
+      expect(SideJob.find(@job.jid).inports.map(&:name).include?('port')).to be true
     end
   end
 
   describe '#output' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+    end
+
     it 'returns an output port' do
-      job = SideJob.queue('testq', 'TestWorker')
-      expect(job.output('port')).to eq(SideJob::Port.new(job, :out, 'port'))
+      expect(@job.output('port')).to eq(SideJob::Port.new(@job, :out, 'port'))
+    end
+
+    it 'saves port to outports list' do
+      expect(@job.outports.map(&:name).include?('port')).to be false
+      @job.output('port')
+      expect(@job.outports.map(&:name).include?('port')).to be true
+      expect(SideJob.find(@job.jid).outports.map(&:name).include?('port')).to be true
     end
   end
 
   describe '#inports' do
-    it 'returns all input ports that have ever been written to' do
+    it 'returns all input ports that have ever been referenced' do
       job = SideJob.queue('testq', 'TestWorker')
       expect(job.inports).to eq([])
-      job.input('port1').write 'abc'
+      job.output('foo')
+      job.input('port1')
       expect(job.inports).to eq([SideJob::Port.new(job, :in, 'port1')])
-      job.input('port2').read
-      expect(job.inports).to eq([SideJob::Port.new(job, :in, 'port1')])
-      job.input('port2').write 'abc'
-      expect(job.inports).to match_array([SideJob::Port.new(job, :in, 'port1'), SideJob::Port.new(job, :in, 'port2')])
-      job.input('port1').read
+      job = SideJob.find(job.jid)
+      job.input('port2')
       expect(job.inports).to match_array([SideJob::Port.new(job, :in, 'port1'), SideJob::Port.new(job, :in, 'port2')])
     end
   end
 
   describe '#outports' do
-    it 'returns all output ports that have ever been written to' do
+    it 'returns all output ports that have ever been referenced' do
       job = SideJob.queue('testq', 'TestWorker')
       expect(job.outports).to eq([])
-      job.output('port1').write 'abc'
+      job.input('foo')
+      job.output('port1')
       expect(job.outports).to eq([SideJob::Port.new(job, :out, 'port1')])
-      job.output('port2').read
-      expect(job.outports).to eq([SideJob::Port.new(job, :out, 'port1')])
-      job.output('port2').write 'abc'
-      expect(job.outports).to match_array([SideJob::Port.new(job, :out, 'port1'), SideJob::Port.new(job, :out, 'port2')])
-      job.output('port1').read
+      job = SideJob.find(job.jid)
+      job.output('port2')
       expect(job.outports).to match_array([SideJob::Port.new(job, :out, 'port1'), SideJob::Port.new(job, :out, 'port2')])
     end
   end
@@ -367,6 +393,17 @@ describe SideJob::Job do
       Time.stub(:now).and_return(now)
       @job.set({test: 123})
       expect(@job.info[:updated_at]).to eq(SideJob.timestamp)
+    end
+  end
+
+  describe '#unset' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+    end
+    it 'unsets fields' do
+      @job.set(a: 123, b: 456, c: 789)
+      @job.unset('a', :b)
+      expect(@job.get).to eq({'c' => 789})
     end
   end
 
@@ -409,14 +446,41 @@ describe SideJob::Job do
     end
   end
 
-  describe '#unset' do
+  describe '#config' do
     before do
       @job = SideJob.queue('testq', 'TestWorker')
     end
-    it 'unsets fields' do
-      @job.set(a: 123, b: 456, c: 789)
-      @job.unset('a', :b)
-      expect(@job.get).to eq({'c' => 789})
+
+    it 'returns an empty configuration' do
+      expect(@job.config).to eq({})
+    end
+
+    it 'returns and caches configuration' do
+      original = @job.config
+      config = {'key' => [1,2]}
+      SideJob.redis.hset @job.redis_key, 'config', config.to_json
+      expect(@job.config).to eq original
+      expect(SideJob.find(@job.jid).config).to eq original.merge(config)
+    end
+
+    it 'merges default configuration from registry and empty inports/outports' do
+      config = {'key' => [1,2]}
+      SideJob.redis.hset 'workers:testq', 'TestWorker', {'key' => true, 'key2' => 1}.to_json
+      SideJob.redis.hset @job.redis_key, 'config', config.to_json
+      expect(@job.config).to eq({'key' => [1,2], 'key2' => 1})
+    end
+  end
+
+  describe '#set_port_options' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+    end
+
+    it 'can change a port to memory mode' do
+      expect(@job.input(:myport).mode).to be :queue
+      @job.set_port_options :in, :myport, {mode: :memory}
+      expect(@job.input(:myport).mode).to be :memory
+      expect(SideJob.find(@job.jid).input(:myport).mode).to be :memory # changes were persisted
     end
   end
 

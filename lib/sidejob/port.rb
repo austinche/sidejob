@@ -1,15 +1,18 @@
 module SideJob
   # Represents an input or output port from a Job
   class Port
-    attr_reader :job, :type, :name
+    attr_reader :job, :type, :name, :mode
 
     # @param job [SideJob::Job, SideJob::Worker]
     # @param type [:in, :out] Specifies whether it is input or output port
-    # @param name [String] Port names should match [a-zA-Z0-9_]+
-    def initialize(job, type, name)
+    # @param name [Symbol,String] Port names should match [a-zA-Z0-9_]+
+    # @param options [Hash] Port options like changing mode to memory
+    def initialize(job, type, name, options={})
       @job = job
       @type = type
       @name = name
+      @options = options
+      load_options
       raise "Invalid port name: #{@name}" if @name !~ /^[a-zA-Z0-9_]+$/
     end
 
@@ -29,6 +32,20 @@ module SideJob
       SideJob.redis.llen redis_key
     end
 
+    # @return [Boolean] True if there is data to read
+    def data?
+      SideJob.redis.exists redis_key
+    end
+
+    # Change the operating mode for the port.
+    # The default operating mode for a port is :queue which means packets are read/written as a FIFO queue.
+    # In :memory mode, only one value is stored on a port with more recent values overwriting older values.
+    # Reads do not clear out the data in :memory mode.
+    # @param mode [:queue, :memory] The new operating mode for the port
+    def mode=(mode)
+      update_options(:mode, mode)
+    end
+
     # Write data to the port
     # If the port is an input port, wakes up the job so it has chance to process the data
     # If the port is an output port, wake up the parent job so it has a chance to process it
@@ -37,9 +54,13 @@ module SideJob
       data = [data] unless data.is_a?(Array)
       return if data.length == 0
 
-      SideJob.redis.multi do |multi|
-        multi.rpush redis_key, data.map {|x| x.to_json}
-        multi.sadd "#{@job.redis_key}:#{@type}ports", @name
+      if mode == :memory
+        SideJob.redis.multi do |multi|
+          multi.del redis_key
+          multi.rpush redis_key, data.last.to_json
+        end
+      else
+        SideJob.redis.rpush redis_key, data.map {|x| x.to_json}
       end
 
       data.each do |x|
@@ -55,40 +76,36 @@ module SideJob
     end
 
     # Reads the oldest data from the port
-    # @return [Object, nil] First data from port or nil if no data exists
+    # @return [Object] First data from port
+    # @raise [EOFError] Error raised if no data to be read
     def read
-      data = SideJob.redis.lpop redis_key
+      if mode == :memory
+        data = SideJob.redis.lrange redis_key, -1, -1
+        data = data[0] if data
+      else
+        data = SideJob.redis.lpop redis_key
+      end
+
       if data
         data = JSON.parse("[#{data}]")[0] # enable parsing primitive types like strings, numbers
         log('read', data)
+      else
+        raise EOFError
       end
-      data
-    end
-
-    # Drains and returns all data from the port
-    # @return [Array<Object>] All data from the port. Oldest data is first, most recent is last
-    def drain
-      data = SideJob.redis.multi do |multi|
-        multi.lrange redis_key, 0, -1
-        multi.del redis_key
-      end[0]
-
-      data.map! do |x|
-        x = JSON.parse("[#{x}]")[0] # enable parsing primitive types like strings, numbers
-        log('read', x)
-        x
-      end
-
       data
     end
 
     include Enumerable
     # Iterate over port data
+    # For memory ports, at most one data is returned
     # @yield [Object] Each data from port
     def each(&block)
-      drain.each do |data|
-        yield data
+      if mode == :memory
+        yield read
+      else
+        loop { yield read }
       end
+    rescue EOFError
     end
 
     # Returns the redis key used for storing inputs or outputs from a port name
@@ -104,6 +121,22 @@ module SideJob
     end
 
     private
+
+    # load port options
+    def load_options
+      if @options['mode']
+        @mode = @options['mode'].to_sym
+      else
+        @mode = :queue
+      end
+      raise "Invalid #{@mode} mode for output port #{@name}" if @mode == :memory && @type == :out
+    end
+
+    def update_options(key, value)
+      @options[key.to_s] = value
+      @job.set_port_options(@type, @name, @options)
+      load_options
+    end
 
     def log(type, data)
       log = {data: data}

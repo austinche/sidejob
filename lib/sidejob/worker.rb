@@ -2,58 +2,43 @@ module SideJob
   # All workers should include SideJob::Worker and implement the perform method.
   # @see SideJob::JobMethods
   module Worker
-    # Registry methods are available both on the module SideJob::Worker and from inside Worker classes
-    module RegistryMethods
-      # Provide a simple way to store worker info
-      # @param queue [String] Name of queue
-      # @param klass [String] Name of worker class
-      # @param spec [Hash] This spec is unused by SideJob so can be in any client format
-      def register(queue, klass, spec)
-        SideJob.redis.hset "workers:#{queue}", klass, JSON.generate(spec)
+    @registry ||= {}
+    class << self
+      # This holds default configuration for all available workers on one queue
+      attr_reader :registry
+
+      # Workers by default add themselves to the registry with an empty specification
+      # but can specify additional information with {ClassMethods#register}.
+      # This method publishes the registry to redis so that other workers can call workers on this queue.
+      # All workers for the queue should be defined as the existing registry is overwritten.
+      # @param queue [String] Queue to register all defined workers
+      def register_all(queue)
+        SideJob.redis.multi do |multi|
+          multi.del "workers:#{queue}"
+          multi.hmset "workers:#{queue}", @registry.map {|key, val| [key, val.to_json]}.flatten(1) if @registry.size > 0
+        end
       end
 
-      # Returns spec registered with register
+      # Returns the default configuration registered for a worker
       # @param queue [String] Name of queue
       # @param klass [String] Name of worker class
-      # @return [Hash, nil]
-      def spec(queue, klass)
-        spec = SideJob.redis.hget "workers:#{queue}", klass
-        spec = JSON.parse(spec) if spec
-      end
-
-      # Unregister a worker
-      # @param queue [String] Name of queue
-      # @param klass [String] Name of worker class
-      def unregister(queue, klass)
-        SideJob.redis.hdel "workers:#{queue}", klass
-      end
-
-      # Unregister all workers on a queue
-      # @param queue [String] Name of queue
-      def unregister_all(queue)
-        SideJob.redis.del "workers:#{queue}"
+      # @return [Hash, nil] Returns nil if the worker is not defined
+      # @see ClassMethods#register
+      def config(queue, klass)
+        config = SideJob.redis.hget "workers:#{queue}", klass
+        config = JSON.parse(config) if config
+        config
       end
     end
-    SideJob::Worker.extend(RegistryMethods)
 
     # Class methods added to Workers
     module ClassMethods
-      # Worker specific configuration for how it should be run
-      # @see SideJob::ServerMiddleware
-      CONFIGURATION_KEYS = %i{log_status lock_expiration max_calls_per_min max_depth}
-      attr_reader :configuration
-
-      # Override some runtime parameters for running this worker class
-      # @see SideJob::ServerMiddleware
-      def configure(options={})
-        unknown_keys = (options.keys - CONFIGURATION_KEYS)
-        raise "Unknown configuration keys #{unknown_keys.join(',')}" if unknown_keys.any?
-        @configuration = options
+      # All workers need to register themselves
+      # @param config [Hash] The default configuration used by any jobs of this class
+      def register(config={})
+        SideJob::Worker.registry[self.name] = config
       end
     end
-
-    # Exception raised by {#suspend}
-    class Suspended < StandardError; end
 
     # @see SideJob::Worker
     def self.included(base)
@@ -61,8 +46,8 @@ module SideJob
         include Sidekiq::Worker
         include SideJob::JobMethods
       end
-      base.extend(RegistryMethods)
       base.extend(ClassMethods)
+      base.send :register # register with an empty spec
     end
 
     # Queues a child job
@@ -77,26 +62,34 @@ module SideJob
       SideJob.find(job_id, by: by_string)
     end
 
+    # Exception raised by {#suspend}
+    class Suspended < StandardError; end
+
     # Immediately suspend the current worker
     # @raise [SideJob::Worker::Suspended]
     def suspend
       raise Suspended
     end
 
-    # Helps with getting and storing configuration-like data from a port
-    # The assumption is that a configuration port only cares about the last data received on it
-    # The last data is also saved in to the state
-    # If no data in on the input port, load from saved state
-    # @param field [String,Symbol] Name of configuration field/port
-    # @return [String, nil] Configuration value or nil
-    def get_config(field)
-      data = input(field).drain.last
-      if data.nil?
-        data = get(field)
-      else
-        set({field => data})
+    # Reads a set of input ports together.
+    # Workers should use this method where possible instead of reading directly from ports due to complexities
+    # of dealing with memory ports. A worker should be idempotent (it can be called multiple times on the same state).
+    # Consider a job with a single memory port. Each time it is run, it could read the same data from the port.
+    # The output of the job then could depend on the number of times it is run. To prevent this, this method
+    # requires that there be at least one non-memory input port.
+    # Yields data from the ports until no non-memory ports have data or is suspended due to missing data.
+    # @param inputs [Array<String>] List of input ports to read
+    # @yield [Array] Splat of input data in same order as inputs
+    # @raise [SideJob::Worker::Suspended] Raised if some non-memory input port has data but not all
+    def for_inputs(*inputs, &block)
+      ports = inputs.map {|name| input(name)}
+      loop do
+        # complete if no non-memory port inputs, suspend if partial inputs
+        return unless ports.any? {|port| port.mode != :memory && port.data?}
+        suspend unless ports.all? {|port| port.data?}
+
+        yield *ports.map(&:read)
       end
-      data
     end
 
     private

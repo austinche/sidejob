@@ -28,12 +28,14 @@ module SideJob
   # Main function to queue a job
   # @param queue [String] Name of the queue to put the job in
   # @param klass [String] Name of the class that will handle the job
+  # @param config [Hash] Static job configuration
   # @param parent [SideJob::Job] parent job
-  # @param args [Array] additional args to pass to the class (default none)
   # @param at [Time, Float] Time to schedule the job, otherwise queue immediately
   # @param by [String] Who created this job. Recommend <type>:<id> format for non-jobs as SideJob uses job:<jid>
   # @return [SideJob::Job] Job
-  def self.queue(queue, klass, parent: nil, args: [], at: nil, by: nil)
+  def self.queue(queue, klass, parent: nil, at: nil, by: nil, config: {})
+    raise "No worker registered for #{klass} in queue #{queue}" unless SideJob::Worker.config(queue, klass)
+
     # To prevent race conditions, we generate the jid and set all metadata before queuing the job to sidekiq
     # Otherwise, sidekiq may start the job too quickly
     jid = SideJob.redis.incr(:job_id).to_s
@@ -45,7 +47,7 @@ module SideJob
 
     SideJob.redis.multi do |multi|
       multi.sadd 'jobs', jid
-      multi.hmset job.redis_key, 'queue', queue, 'class', klass, 'args', JSON.generate(args),
+      multi.hmset job.redis_key, 'queue', queue, 'class', klass, 'config', config.to_json,
                   'created_by', by, 'created_at', SideJob.timestamp
 
       if parent
