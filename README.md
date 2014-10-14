@@ -53,6 +53,7 @@ Port options:
     * Queue - This is the default operation mode. All data written is read in a first in first out manner.
     * Memory - At most a single value can be stored on a port. A more recent value will overwrite an existing value.
       A read on a memory port does not remove the stored value so the same value can be read many times.
+* default - Default value when a read is done on the port with no data
 
 Workers
 -------

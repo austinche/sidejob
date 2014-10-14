@@ -59,6 +59,11 @@ describe SideJob::Port do
         @port.read
       }.to change(@port, :size).by(-1)
     end
+
+    it 'returns 1 if there is default value' do
+      @port.default = [1,2]
+      expect(@port.size).to eq 1
+    end
   end
 
   describe '#data?' do
@@ -75,6 +80,11 @@ describe SideJob::Port do
       expect(@memory.data?).to be false
       @memory.write 1
       expect(@memory.data?).to be true
+    end
+
+    it 'works when there is a default value on the port' do
+      @port.default = [1,2]
+      expect(@port.data?).to be true
     end
   end
 
@@ -95,6 +105,19 @@ describe SideJob::Port do
 
     it 'raises error changing mode to memory for output port' do
       expect { @job.output(:port).mode = :memory }.to raise_error
+    end
+  end
+
+  describe '#default=' do
+    it 'can change default value' do
+      expect(@port.default).to be nil
+      @port.default = [1,2]
+      expect(@port.default).to eq [1,2]
+      expect(SideJob.find(@job.jid).input(@port.name).default).to eq [1,2]
+    end
+
+    it 'raises error changing default value for output port' do
+      expect { @job.output(:port).default = true }.to raise_error
     end
   end
 
@@ -177,6 +200,14 @@ describe SideJob::Port do
       expect(@memory.size).to be(1)
       3.times { expect(@memory.read).to eq(5) }
       expect(@memory.size).to be(1)
+    end
+
+    it 'can use default value' do
+      @port.default = [1,2]
+      3.times { expect(@port.read).to eq([1,2]) }
+      @port.write true
+      expect(@port.read).to be true
+      3.times { expect(@port.read).to eq([1,2]) }
     end
 
     it 'logs reads' do

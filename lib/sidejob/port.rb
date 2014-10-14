@@ -1,7 +1,7 @@
 module SideJob
   # Represents an input or output port from a Job
   class Port
-    attr_reader :job, :type, :name, :mode
+    attr_reader :job, :type, :name, :mode, :default
 
     # @param job [SideJob::Job, SideJob::Worker]
     # @param type [:in, :out] Specifies whether it is input or output port
@@ -29,12 +29,14 @@ module SideJob
     # Returns the number of items waiting on this port
     # @return [Fixnum]
     def size
-      SideJob.redis.llen redis_key
+      length = SideJob.redis.llen(redis_key)
+      return 1 if length == 0 && @default
+      length
     end
 
     # @return [Boolean] True if there is data to read
     def data?
-      SideJob.redis.exists redis_key
+      size > 0
     end
 
     # Change the operating mode for the port.
@@ -44,6 +46,12 @@ module SideJob
     # @param mode [:queue, :memory] The new operating mode for the port
     def mode=(mode)
       update_options(:mode, mode)
+    end
+
+    # Set the default value for a port when it's empty
+    # @param default [Object] JSON encodable object
+    def default=(default)
+      update_options(:default, default)
     end
 
     # Write data to the port
@@ -88,10 +96,13 @@ module SideJob
 
       if data
         data = JSON.parse("[#{data}]")[0] # enable parsing primitive types like strings, numbers
-        log('read', data)
+      elsif @default
+        data = @default
       else
         raise EOFError
       end
+
+      log('read', data)
       data
     end
 
@@ -130,6 +141,11 @@ module SideJob
         @mode = :queue
       end
       raise "Invalid #{@mode} mode for output port #{@name}" if @mode == :memory && @type == :out
+
+      if @options['default']
+        raise "Cannot have a default value for output port #{@name}" if @type == :out
+        @default = @options['default']
+      end
     end
 
     def update_options(key, value)
