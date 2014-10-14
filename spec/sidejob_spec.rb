@@ -53,7 +53,7 @@ describe SideJob do
       now = Time.now
       Time.stub(:now).and_return(now)
       job = SideJob.queue('testq', 'TestWorker')
-      expect(job.info[:created_at]).to eq(SideJob.timestamp)
+      expect(job.get(:created_at)).to eq(SideJob.timestamp)
     end
 
     it 'stores jid in jobs set' do
@@ -82,7 +82,7 @@ describe SideJob do
       expect {
         job = SideJob.queue('testq', 'TestWorker', config: {foo: [1, 2]})
         expect(job.status).to eq 'queued'
-        expect(job.config['foo']).to eq [1, 2]
+        expect(job.get(:foo)).to eq [1, 2]
       }.to change {Sidekiq::Stats.new.enqueued}.by(1)
     end
 

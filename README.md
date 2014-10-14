@@ -23,7 +23,7 @@ Jobs
 * Jobs have any number of input and output ports
 * A job can have any number of child jobs
 * Each job has at most one parent job
-* Any object that can be JSON encoded can be stored as metadata
+* Jobs can store any JSON encoded object in its internal state
 
 Jobs can have a number of different status. The statuses and possible status transitions:
 
@@ -68,20 +68,6 @@ Workers
 * Workers are responsible for managing state across runs
 * Workers can suspend themselves when waiting for inputs
 
-Job configuration
------------------
-
-Jobs have a configuration hash that can be used to modify the running of a job separate from port data. The job
-configuration is static and is expected to be set when a job is queued and never changed throughout the job's lifetime.
-This configuration is primarily used to modify how SideJob runs the worker and processes data. Although workers can use
-the configuration hash for their own purposes, where possible, workers should be written to be configured by port data.
-
-Configuration keys that have meaning to SideJob:
-
-* inports - Hash mapping input port name to options such as port mode
-* outports - Hash mapping output port name to options such as port mode
-* run - Hash with configuration parameters for {SideJob::ServerMiddleware}
-
 Data Structure
 --------------
 
@@ -114,19 +100,20 @@ The keys used by Sidekiq:
 
 Additional keys used by SideJob:
 
-* workers:<queue> - Hash for worker registry with default job configuration
+* workers:<queue> - Hash for worker registry with default initial job state
 * job_id - Stores the last job ID (we use incrementing integers from 1)
 * jobs - Set containing all active job IDs
-* job:<jid> - Hash containing SideJob managed job data
+* job:<jid> - Hash containing job state and configuration. All values are JSON encoded.
     * queue - queue name
     * class - name of class
-    * config - JSON object with job configuration
     * status - job status
     * created_at - timestamp that the job was first queued
     * created_by - string indicating the entity that created the job. SideJob uses job:<jid> for jobs created by another job.
     * updated_at - timestamp of the last update
     * ran_at - timestamp of the start of the last run
-* job:<jid>:data - Hash containing job specific metadata
+    * inports - Hash mapping input port name to options such as port mode
+    * outports - Hash mapping output port name to options such as port mode
+    * worker - Hash with options for {SideJob::ServerMiddleware}
 * job:<jid>:in:<inport> and job:<jid>:out:<outport> - List with unread port data. New data is pushed on the right.
 * job:<jid>:ancestors - List with parent job IDs up to the root job that has no parent.
     Newer jobs are pushed on the left so the immediate parent is on the left and the root job is on the right.

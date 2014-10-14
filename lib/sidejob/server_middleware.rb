@@ -20,7 +20,7 @@ module SideJob
     def call(worker, msg, queue)
       return unless worker.exists? # make sure the job has not been deleted
 
-      last_run = SideJob.redis.hget worker.redis_key, 'ran_at'
+      last_run = worker.get(:ran_at)
 
       # we skip the run if we already ran once after the enqueued time
       return if last_run && msg['enqueued_at'] && Time.parse(last_run) > Time.at(msg['enqueued_at'])
@@ -35,7 +35,7 @@ module SideJob
           return
       end
 
-      config = DEFAULT_CONFIGURATION.merge(worker.config['run'] || {})
+      config = DEFAULT_CONFIGURATION.merge(worker.get(:worker) || {})
 
       # if another thread is already running this job, we don't run the job now
       # this simplifies workers from having to deal with thread safety
@@ -50,7 +50,7 @@ module SideJob
 
       return if val # only run if lock key was not set
 
-      SideJob.redis.hset worker.redis_key, 'ran_at', SideJob.timestamp
+      worker.set ran_at: SideJob.timestamp
 
       # limit each job to being called too many times per minute
       # or too deep of a job tree
@@ -106,7 +106,7 @@ module SideJob
     private
 
     def set_status(worker, status, config)
-      SideJob.redis.hset worker.redis_key, 'status', status
+      worker.set status: status
       worker.log 'status', {status: status} if config['log_status']
     end
 

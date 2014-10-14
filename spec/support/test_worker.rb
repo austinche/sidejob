@@ -7,7 +7,7 @@ end
 class TestWorkerNoLog
   include SideJob::Worker
   register(
-      run: { log_status: false }
+      worker: { log_status: false }
   )
   def perform
   end

@@ -3,7 +3,7 @@ require 'spec_helper'
 describe SideJob::Worker do
   before do
     @job = SideJob.queue('testq', 'TestWorker')
-    set_status @job, 'running'
+    @job.set status: 'running'
     @worker = TestWorker.new
     @worker.jid = @job.jid
   end
@@ -95,7 +95,7 @@ describe SideJob::Worker do
     end
 
     it 'returns data from memory input ports' do
-      @worker.stub(:config).and_return({'inports' => {'in1' => {'mode' => 'memory'}, 'in2' =>{}}})
+      @job.input(:in1).mode = :memory
       @job.input(:in1).write 1
       @job.input(:in2).write [2, 3], 3
       expect {|block| @worker.for_inputs(:in1, :in2, &block)}.to yield_successive_args([1, [2,3]], [1, 3])

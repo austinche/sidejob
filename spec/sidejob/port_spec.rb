@@ -157,7 +157,7 @@ describe SideJob::Port do
     end
 
     it 'runs job when writing to an input port' do
-      set_status(@job, 'suspended')
+      @job.set status: 'suspended'
       inport = @job.input(:port1)
       inport.write('abc')
       expect(@job.status).to eq 'queued'
@@ -165,7 +165,7 @@ describe SideJob::Port do
 
     it 'runs parent job when writing to an output port' do
       child = SideJob.queue('testq', 'TestWorker', {parent: @job})
-      set_status(@job, 'suspended')
+      @job.set status: 'suspended'
       outport = child.output(:port1)
       outport.write('abc')
       expect(@job.status).to eq 'queued'

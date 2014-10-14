@@ -44,16 +44,6 @@ describe SideJob::Job do
     end
   end
 
-  describe '#info' do
-    it 'returns all job info' do
-      now = Time.now
-      Time.stub(:now).and_return(now)
-      @job = SideJob.queue('testq', 'TestWorker', config: {mykey: [1, 2]})
-      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', config: {'mykey' => [1, 2]}, status: 'queued',
-                               created_by: '', created_at: SideJob.timestamp, updated_at: SideJob.timestamp, ran_at: nil })
-    end
-  end
-
   describe '#log' do
     it 'adds a timestamp to log entries' do
       now = Time.now
@@ -69,7 +59,7 @@ describe SideJob::Job do
       Time.stub(:now).and_return(now)
       job = SideJob.queue('testq', 'TestWorker')
       job.log('foo', {abc: 123})
-      expect(job.info[:updated_at]).to eq(SideJob.timestamp)
+      expect(job.get(:updated_at)).to eq(SideJob.timestamp)
     end
   end
 
@@ -101,7 +91,7 @@ describe SideJob::Job do
   describe '#status' do
     it 'retrieves status' do
       @job = SideJob.queue('testq', 'TestWorker')
-      SideJob.redis.hset @job.redis_key, 'status', 'newstatus'
+      @job.set status: 'newstatus'
       expect(@job.status).to eq 'newstatus'
     end
   end
@@ -117,13 +107,13 @@ describe SideJob::Job do
     end
 
     it 'does nothing if status is terminated' do
-      set_status @job, 'terminated'
+      @job.set status: 'terminated'
       @job.terminate
       expect(@job.status).to eq 'terminated'
     end
 
     it 'throws error and immediately sets status to terminated if job class is unregistered' do
-      SideJob.redis.hset @job.redis_key, 'queue', 'unknown'
+      @job.set queue: 'unknown'
       expect { @job.terminate }.to raise_error
       expect(@job.status).to eq 'terminated'
     end
@@ -158,7 +148,7 @@ describe SideJob::Job do
     %w{queued running suspended completed failed}.each do |status|
       it "queues the job if status is #{status}" do
         expect {
-          set_status @job, status
+          @job.set status: status
           @job.run
           expect(@job.status).to eq 'queued'
         }.to change {Sidekiq::Stats.new.enqueued}.by(1)
@@ -168,7 +158,7 @@ describe SideJob::Job do
     %w{terminating terminated}.each do |status|
       it "does not queue the job if status is #{status}" do
         expect {
-          set_status @job, status
+          @job.set status: status
           @job.run
           expect(@job.status).to eq status
         }.to change {Sidekiq::Stats.new.enqueued}.by(0)
@@ -176,7 +166,7 @@ describe SideJob::Job do
 
       it "queues the job if status is #{status} and force=true" do
         expect {
-          set_status @job, status
+          @job.set status: status
           @job.run(force: true)
           expect(@job.status).to eq 'queued'
         }.to change {Sidekiq::Stats.new.enqueued}.by(1)
@@ -184,7 +174,7 @@ describe SideJob::Job do
     end
 
     it 'throws error and immediately sets status to terminated if job class is unregistered' do
-      SideJob.redis.hset @job.redis_key, 'queue', 'unknown'
+      @job.set queue: 'unknown'
       expect { @job.run }.to raise_error
       expect(@job.status).to eq 'terminated'
     end
@@ -246,20 +236,20 @@ describe SideJob::Job do
     end
 
     it 'returns true if job status is terminated' do
-      set_status @job, 'terminated'
+      @job.set status: 'terminated'
       expect(@job.terminated?).to be true
     end
 
     it 'returns false if child job is not terminated' do
-      set_status @job, 'terminated'
+      @job.set status: 'terminated'
       SideJob.queue('testq', 'TestWorker', parent: @job)
       expect(@job.terminated?).to be false
     end
 
     it 'returns true if child job is terminated' do
-      set_status @job, 'terminated'
+      @job.set status: 'terminated'
       child = SideJob.queue('testq', 'TestWorker', parent: @job)
-      set_status child, 'terminated'
+      child.set status: 'terminated'
       expect(@job.terminated?).to be true
     end
   end
@@ -275,7 +265,7 @@ describe SideJob::Job do
     end
 
     it 'deletes terminated jobs' do
-      set_status @job, 'terminated'
+      @job.set status: 'terminated'
       expect(@job.delete).to be true
       expect(@job.exists?).to be false
     end
@@ -285,8 +275,8 @@ describe SideJob::Job do
       expect(@job.status).to eq('queued')
       expect(child.status).to eq('queued')
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be > 0
-      set_status @job, 'terminated'
-      set_status child, 'terminated'
+      @job.set status: 'terminated'
+      child.set status: 'terminated'
       @job.delete
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be(0)
       expect(@job.status).to be_nil
@@ -298,16 +288,14 @@ describe SideJob::Job do
       @job.output('port2').write 'data'
       expect(@job.input('port1').size).to be 1
       expect(@job.output('port2').size).to be 1
-      set_status @job, 'terminated'
+      @job.set status: 'terminated'
       @job.delete
-      expect(@job.input('port1').size).to be 0
-      expect(@job.output('port2').size).to be 0
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be(0)
     end
 
     it 'removes job from jobs set' do
       expect(SideJob.redis {|redis| redis.sismember('jobs', @job.jid)}).to be true
-      set_status @job, 'terminated'
+      @job.set status: 'terminated'
       @job.delete
       expect(SideJob.redis {|redis| redis.sismember('jobs', @job.jid)}).to be false
     end
@@ -378,21 +366,21 @@ describe SideJob::Job do
       @job = SideJob.queue('testq', 'TestWorker')
     end
 
-    it 'stores metadata in redis' do
+    it 'stores state in redis' do
       @job.set(test: 'data', test2: 123)
-      expect(SideJob.redis.hget("#{@job.redis_key}:data", 'test')).to eq '"data"'
-      expect(SideJob.redis.hget("#{@job.redis_key}:data", 'test2')).to eq '123'
+      expect(SideJob.redis.hget("#{@job.redis_key}", 'test')).to eq '"data"'
+      expect(SideJob.redis.hget("#{@job.redis_key}", 'test2')).to eq '123'
 
       # test updating
       @job.set(test: 'data2')
-      expect(SideJob.redis.hget("#{@job.redis_key}:data", 'test')).to eq('"data2"')
+      expect(SideJob.redis.hget("#{@job.redis_key}", 'test')).to eq('"data2"')
     end
 
     it 'updates updated_at timestamp' do
       now = Time.now + 1000
       Time.stub(:now).and_return(now)
       @job.set({test: 123})
-      expect(@job.info[:updated_at]).to eq(SideJob.timestamp)
+      expect(@job.get(:updated_at)).to eq(SideJob.timestamp)
     end
   end
 
@@ -403,7 +391,7 @@ describe SideJob::Job do
     it 'unsets fields' do
       @job.set(a: 123, b: 456, c: 789)
       @job.unset('a', :b)
-      expect(@job.get).to eq({'c' => 789})
+      expect(@job.get(:a, :b, :c)).to eq({a: nil, b: nil, c: 789})
     end
   end
 
@@ -439,35 +427,10 @@ describe SideJob::Job do
       expect(data['field3']).to eq(123)
     end
 
-    it 'can store and retrieve complex objects in metadata' do
+    it 'can store and retrieve complex objects in job state' do
       data = {'nested' => [1, 'b', {'foo' => nil}]}
       @job.set(test: data)
       expect(@job.get(:test)).to eq data
-    end
-  end
-
-  describe '#config' do
-    before do
-      @job = SideJob.queue('testq', 'TestWorker')
-    end
-
-    it 'returns an empty configuration' do
-      expect(@job.config).to eq({})
-    end
-
-    it 'returns and caches configuration' do
-      original = @job.config
-      config = {'key' => [1,2]}
-      SideJob.redis.hset @job.redis_key, 'config', config.to_json
-      expect(@job.config).to eq original
-      expect(SideJob.find(@job.jid).config).to eq original.merge(config)
-    end
-
-    it 'merges default configuration from registry and empty inports/outports' do
-      config = {'key' => [1,2]}
-      SideJob.redis.hset 'workers:testq', 'TestWorker', {'key' => true, 'key2' => 1}.to_json
-      SideJob.redis.hset @job.redis_key, 'config', config.to_json
-      expect(@job.config).to eq({'key' => [1,2], 'key2' => 1})
     end
   end
 
@@ -481,19 +444,6 @@ describe SideJob::Job do
       @job.set_port_options :in, :myport, {mode: :memory}
       expect(@job.input(:myport).mode).to be :memory
       expect(SideJob.find(@job.jid).input(:myport).mode).to be :memory # changes were persisted
-    end
-  end
-
-  describe '#touch' do
-    it 'updates the updated_at timestamp' do
-      now = Time.now
-      Time.stub(:now).and_return(now)
-      @job = SideJob.queue('testq', 'TestWorker')
-      expect(@job.info[:updated_at]).to eq(SideJob.timestamp)
-      now = Time.now + 1000
-      Time.stub(:now).and_return(now)
-      @job.touch
-      expect(@job.info[:updated_at]).to eq(SideJob.timestamp)
     end
   end
 end

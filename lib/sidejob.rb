@@ -28,13 +28,14 @@ module SideJob
   # Main function to queue a job
   # @param queue [String] Name of the queue to put the job in
   # @param klass [String] Name of the class that will handle the job
-  # @param config [Hash] Static job configuration
+  # @param config [Hash] Initial job configuration which is merged with worker defaults
   # @param parent [SideJob::Job] parent job
   # @param at [Time, Float] Time to schedule the job, otherwise queue immediately
   # @param by [String] Who created this job. Recommend <type>:<id> format for non-jobs as SideJob uses job:<jid>
   # @return [SideJob::Job] Job
   def self.queue(queue, klass, parent: nil, at: nil, by: nil, config: {})
-    raise "No worker registered for #{klass} in queue #{queue}" unless SideJob::Worker.config(queue, klass)
+    default = SideJob::Worker.config(queue, klass)
+    raise "No worker registered for #{klass} in queue #{queue}" unless default
 
     # To prevent race conditions, we generate the jid and set all metadata before queuing the job to sidekiq
     # Otherwise, sidekiq may start the job too quickly
@@ -45,10 +46,9 @@ module SideJob
       ancestry = [parent.jid] + SideJob.redis.lrange("#{parent.redis_key}:ancestors", 0, -1)
     end
 
+    job.set({queue: queue, class: klass, created_by: by, created_at: SideJob.timestamp}.merge(default).merge(config))
     SideJob.redis.multi do |multi|
       multi.sadd 'jobs', jid
-      multi.hmset job.redis_key, 'queue', queue, 'class', klass, 'config', config.to_json,
-                  'created_by', by, 'created_at', SideJob.timestamp
 
       if parent
         multi.rpush "#{job.redis_key}:ancestors", ancestry # we need to rpush to get the right order

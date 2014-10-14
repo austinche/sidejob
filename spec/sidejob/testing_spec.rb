@@ -42,7 +42,7 @@ describe 'SideJob testing helpers' do
 
     it 'raises error if worker mysteriously fails' do
       job = SideJob.queue('testq', 'TestWorker')
-      SideJob.redis.hset job.redis_key, 'status', 'failed'
+      job.set status: 'failed'
       expect { SideJob::Worker.drain_queue }.to raise_error(RuntimeError)
     end
 
