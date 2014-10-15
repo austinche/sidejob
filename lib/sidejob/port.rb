@@ -47,9 +47,17 @@ module SideJob
       length
     end
 
+    # Returns whether #{read} will return data.
     # @return [Boolean] True if there is data to read.
     def data?
       size > 0
+    end
+
+    # Returns whether #{read} may never run out of data.
+    # This does not mean that there currently is data, e.g. in memory mode but no data.
+    # @return [Boolean] True if port is in memory mode or has a default value
+    def infinite?
+      mode == :memory || ! default.nil?
     end
 
     # Write data to the port.

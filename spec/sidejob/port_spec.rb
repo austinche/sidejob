@@ -94,6 +94,20 @@ describe SideJob::Port do
     end
   end
 
+  describe '#infinite?' do
+    it 'returns false for normal port' do
+      expect(@port.infinite?).to be false
+    end
+
+    it 'returns true for memory port' do
+      expect(@memory.infinite?).to be true
+    end
+
+    it 'returns true for port with default value' do
+      expect(@default.infinite?).to be true
+    end
+  end
+
   describe '#write' do
     it 'can write different types of data to a port' do
       ['abc', 123, true, false, nil, {abc: 123}, [1, {foo: true}]].each {|x| @port.write x}

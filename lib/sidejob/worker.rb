@@ -85,8 +85,9 @@ module SideJob
       ports = inputs.map {|name| input(name)}
       loop do
         # complete if no non-memory port inputs, suspend if partial inputs
-        return unless ports.any? {|port| port.mode != :memory && port.data?}
-        suspend unless ports.all? {|port| port.data?}
+        data = ports.map {|port| [ port.data?, port.infinite? ] }
+        return unless data.any? {|x| x[0] && ! x[1] }
+        suspend unless data.all? {|x| x[0] }
 
         yield *ports.map(&:read)
       end
