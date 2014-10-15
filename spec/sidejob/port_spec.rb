@@ -160,34 +160,6 @@ describe SideJob::Port do
       log = SideJob.redis.lpop("#{@job.redis_key}:log")
       expect(JSON.parse(log)).to eq({'type' => 'write', 'by' => 'test:job', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp})
     end
-
-    it 'runs job when writing to an input port' do
-      @job.set status: 'suspended'
-      @job.input(:port1).write 'abc'
-      expect(@job.status).to eq 'queued'
-    end
-
-    it 'does not run job when writing to an input port if notify: false' do
-      @job.set status: 'suspended'
-      @job.input(:port1).write 'abc', notify: false
-      expect(@job.status).to eq 'suspended'
-    end
-
-    it 'runs parent job when writing to an output port' do
-      child = SideJob.queue('testq', 'TestWorker', {parent: @job})
-      @job.set status: 'suspended'
-      child.output(:port1).write 'abc'
-      @job.reload!
-      expect(@job.status).to eq 'queued'
-    end
-
-    it 'does not run parent job when writing to an output port if notify: false' do
-      child = SideJob.queue('testq', 'TestWorker', {parent: @job})
-      @job.set status: 'suspended'
-      child.output(:port1).write 'abc', notify: false
-      @job.reload!
-      expect(@job.status).to eq 'suspended'
-    end
   end
 
   describe '#read' do

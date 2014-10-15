@@ -55,25 +55,14 @@ module SideJob
     end
 
     # Write data to the port.
-    # If notify is true (default), if the port is an input port, wakes up the job so it has chance to
-    # process the data and If the port is an output port, wake up the parent job.
     # @param data [Object] JSON encodable data to write to the port
-    # @param notify [Boolean] Whether to notify the job (if input port) or parent (if output port)
-    def write(data, notify: true)
+    def write(data)
       SideJob.redis.multi do |multi|
         multi.del redis_key if mode == :memory
         multi.rpush redis_key, data.to_json
       end
 
       log('write', data)
-
-      if notify
-        if @type == :in
-          @job.run
-        else
-          @job.parent.run if @job.parent
-        end
-      end
       self
     end
 
