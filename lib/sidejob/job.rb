@@ -1,5 +1,5 @@
 module SideJob
-  # Methods shared between {SideJob::Job} and {SideJob::Worker}
+  # Methods shared between {SideJob::Job} and {SideJob::Worker}.
   module JobMethods
     attr_reader :jid
     attr_reader :by
@@ -25,12 +25,13 @@ module SideJob
     end
     alias :to_s :redis_key
 
+    # Returns if the job still exists.
     # @return [Boolean] Returns true if this job exists and has not been deleted
     def exists?
       SideJob.redis.exists redis_key
     end
 
-    # Adds a log entry to redis
+    # Adds a log entry to redis.
     # @param type [String] Log type
     # @param data [Hash] Any extra log data
     # @raise [RuntimeError] Error raised if job no longer exists
@@ -44,7 +45,7 @@ module SideJob
       @state['updated_at'] = now if @state
     end
 
-    # Return all job logs and optionally clears them
+    # Return all job logs and optionally clears them.
     # @param clear [Boolean] If true, delete logs after returning them (default false)
     # @return [Array<Hash>] All logs for the job with the newest first
     def logs(clear: false)
@@ -55,18 +56,18 @@ module SideJob
       end[0].map {|x| JSON.parse(x)}
     end
 
-    # Retrieve the job's status
+    # Retrieve the job's status.
     # @return [String] Job status
     def status
       get(:status)
     end
 
-    # Prepare to terminate the job. Sets status to 'terminating'
-    # Then queues the job so that its shutdown method if it exists can be run
-    # After shutdown, the status will be 'terminated'
-    # If the job is currently running, it will finish running first
-    # If the job is already terminated, it does nothing
-    # To start the job after termination, call #run with force: true
+    # Prepare to terminate the job. Sets status to 'terminating'.
+    # Then queues the job so that its shutdown method if it exists can be run.
+    # After shutdown, the status will be 'terminated'.
+    # If the job is currently running, it will finish running first.
+    # If the job is already terminated, it does nothing.
+    # To start the job after termination, call {#run} with force: true.
     # @param recursive [Boolean] If true, recursively terminate all children (default false)
     # @return [SideJob::Job] self
     def terminate(recursive: false)
@@ -82,11 +83,11 @@ module SideJob
       self
     end
 
-    # Run the job
-    # This method ensures that the job runs at least once from the beginning
-    # If the job is currently running, it will run again
-    # Just like sidekiq, we make no guarantees that the job will not be run more than once
-    # Unless force is set, if the status is terminating or terminated, the job will not be run
+    # Run the job.
+    # This method ensures that the job runs at least once from the beginning.
+    # If the job is currently running, it will run again.
+    # Just like sidekiq, we make no guarantees that the job will not be run more than once.
+    # Unless force is set, if the status is terminating or terminated, the job will not be run.
     # @param force [Boolean] Whether to run if job is terminated (default false)
     # @param at [Time, Float] Time to schedule the job, otherwise queue immediately
     # @param wait [Float] Run in the specified number of seconds
@@ -110,16 +111,19 @@ module SideJob
       self
     end
 
+    # Returns all children jobs (unordered).
     # @return [Array<SideJob::Job>] Children jobs
     def children
       SideJob.redis.smembers("#{redis_key}:children").map {|id| SideJob::Job.new(id, by: @by)}
     end
 
+    # Returns all ancestor jobs.
     # @return [Array<SideJob::Job>] Ancestors (parent will be first and root job will be last)
     def ancestors
       SideJob.redis.lrange("#{redis_key}:ancestors", 0, -1).map { |jid| SideJob::Job.new(jid, by: @by) }
     end
 
+    # Returns the parent job.
     # @return [SideJob::Job, nil] Parent job or nil if none
     def parent
       parent = SideJob.redis.lindex("#{redis_key}:ancestors", 0)
@@ -127,6 +131,7 @@ module SideJob
       parent
     end
 
+    # Returns if job and all children are terminated.
     # @return [Boolean] True if this job and all children recursively are terminated
     def terminated?
       return false if status != 'terminated'
@@ -136,7 +141,7 @@ module SideJob
       return true
     end
 
-    # Deletes the job and all children jobs (recursively) if all are terminated
+    # Deletes the job and all children jobs (recursively) if all are terminated.
     # @return [Boolean] Whether the job was deleted
     def delete
       return false unless terminated?
@@ -155,7 +160,7 @@ module SideJob
       return true
     end
 
-    # Returns an input port
+    # Returns an input port.
     # @param name [Symbol,String] Name of the port
     # @return [SideJob::Port]
     # @raise [RuntimeError] Error raised if port does not exist
@@ -171,19 +176,19 @@ module SideJob
       get_port :out, name
     end
 
-    # Gets all known input ports
+    # Gets all known input ports.
     # @return [Array<SideJob::Port>] Input ports
     def inports
       (get(:inports) || {}).keys.reject {|x| x == '*'}.map {|port| input(port)}
     end
 
-    # Gets all known output ports
+    # Gets all known output ports.
     # @return [Array<SideJob::Port>] Output ports
     def outports
       (get(:outports) || {}).keys.reject {|x| x == '*'}.map {|port| output(port)}
     end
 
-    # Sets values in the job's state
+    # Sets values in the job's state.
     # @param data [Hash{String,Symbol => Object}] Data to update: objects should be JSON encodable
     # @raise [RuntimeError] Error raised if job no longer exists
     def set(data)
@@ -215,7 +220,7 @@ module SideJob
     end
 
     # Returns some data from the job's state.
-    # The job state is cached for the lifetime of the job object. Call {#reload} if the state may have changed.
+    # The job state is cached for the lifetime of the job object. Call {#reload!} if the state may have changed.
     # @param key [Symbol,String] Retrieve value for the given key
     # @return [Object,nil] Value from the job state or nil if key does not exist
     # @raise [RuntimeError] Error raised if job no longer exists
@@ -233,7 +238,7 @@ module SideJob
       @state = nil
     end
 
-    # Set port options in the job's state
+    # Set port options in the job's state.
     # @param type [:in, :out] Input or output port
     # @param name [Symbol,String] Name of the port
     # @param options [Hash] New port options
@@ -246,7 +251,7 @@ module SideJob
 
     private
 
-    # queue or schedule this job using sidekiq
+    # Queue or schedule this job using sidekiq.
     # @param time [Time, Float, nil] Time to schedule the job if specified
     def sidekiq_queue(time=nil)
       queue = get(:queue)
@@ -261,7 +266,7 @@ module SideJob
       Sidekiq::Client.push(item)
     end
 
-    # Returns an input or output port
+    # Returns an input or output port.
     # @param type [:in, :out] Input or output port
     # @param name [Symbol,String] Name of the port
     # @return [SideJob::Port]
@@ -285,7 +290,7 @@ module SideJob
     end
   end
 
-  # Wrapper for a job which may not be in progress unlike SideJob::Worker
+  # Wrapper for a job which may not be in progress unlike SideJob::Worker.
   # @see SideJob::JobMethods
   class Job
     include JobMethods

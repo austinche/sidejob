@@ -26,7 +26,7 @@ module SideJob
       return self == other
     end
 
-    # Returns the number of items waiting on this port
+    # Returns the number of items waiting on this port.
     # @return [Fixnum]
     def size
       length = SideJob.redis.llen(redis_key)
@@ -34,7 +34,7 @@ module SideJob
       length
     end
 
-    # @return [Boolean] True if there is data to read
+    # @return [Boolean] True if there is data to read.
     def data?
       size > 0
     end
