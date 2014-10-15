@@ -46,9 +46,11 @@ module SideJob
       ancestry = [parent.jid] + SideJob.redis.lrange("#{parent.redis_key}:ancestors", 0, -1)
     end
 
-    job.set({queue: queue, class: klass, created_by: by, created_at: SideJob.timestamp}.merge(default).merge(config))
+    now = SideJob.timestamp
+    state = {queue: queue, class: klass, created_by: by, created_at: now, updated_at: now}.merge(default).merge(config)
     SideJob.redis.multi do |multi|
       multi.sadd 'jobs', jid
+      multi.hmset job.redis_key, state.map {|key, val| [key, val.to_json]}.flatten(1)
 
       if parent
         multi.rpush "#{job.redis_key}:ancestors", ancestry # we need to rpush to get the right order

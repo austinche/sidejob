@@ -15,17 +15,18 @@ class TestFib
     if n <= 2
       output(:num).write 1
     else
-      jobs = get(:job1, :job2)
-      if ! jobs[:job1]
-        jobs[:job1] = queue('testq', 'TestFib')
-        jobs[:job1].input(:n).write n-1
-        set(job1: jobs[:job1].jid)
+      job1 = get(:job1)
+      if ! job1
+        job1 = queue('testq', 'TestFib')
+        job1.input(:n).write n-1
+        set(job1: job1.jid)
       end
 
-      if ! jobs[:job2]
-        jobs[:job2] = queue('testq', 'TestFib')
-        jobs[:job2].input(:n).write n-2
-        set(job2: jobs[:job2].jid)
+      job2 = get(:job2)
+      if ! job2
+        job2 = queue('testq', 'TestFib')
+        job2.input(:n).write n-2
+        set(job2: job2.jid)
       end
 
       if children.length != 2 || children[0].status != 'completed' || children[1].status != 'completed'
@@ -42,7 +43,7 @@ describe TestFib do
     job = SideJob.queue('testq', 'TestFib')
     job.input(:n).write 6 # 1, 1, 2, 3, 5, 8
     SideJob::Worker.drain_queue
-
+    job.reload!
     expect(job.status).to eq 'completed'
     expect(job.output(:num).read).to eq(8)
   end

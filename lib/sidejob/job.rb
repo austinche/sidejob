@@ -33,11 +33,15 @@ module SideJob
     # Adds a log entry to redis
     # @param type [String] Log type
     # @param data [Hash] Any extra log data
+    # @raise [RuntimeError] Error raised if job no longer exists
     def log(type, data)
+      check_exists
+      now = SideJob.timestamp
       SideJob.redis.multi do |multi|
-        multi.lpush "#{redis_key}:log", data.merge(type: type, timestamp: SideJob.timestamp).to_json
-        multi.hset redis_key, :updated_at, SideJob.timestamp.to_json
+        multi.lpush "#{redis_key}:log", data.merge(type: type, timestamp: now).to_json
+        multi.hset redis_key, :updated_at, now.to_json
       end
+      @state['updated_at'] = now if @state
     end
 
     # Return all job logs and optionally clears them
@@ -179,36 +183,52 @@ module SideJob
 
     # Sets values in the job's state
     # @param data [Hash{String,Symbol => Object}] Data to update: objects should be JSON encodable
+    # @raise [RuntimeError] Error raised if job no longer exists
     def set(data)
+      check_exists
       return unless data.size > 0
-      SideJob.redis.hmset redis_key, :updated_at, SideJob.timestamp.to_json, data.map {|key, val| [key, val.to_json]}.flatten(1)
+      now = SideJob.timestamp
+      SideJob.redis.hmset redis_key, :updated_at, now.to_json, data.map {|key, val| [key, val.to_json]}.flatten(1)
+      if @state
+        data.each_pair { |key, val| @state[key.to_s] = val }
+        @state['updated_at'] = now
+      end
     end
 
     # Unsets some fields in the job's state
     # @param fields [Array<String,Symbol>] Fields to unset
+    # @raise [RuntimeError] Error raised if job no longer exists
     def unset(*fields)
+      check_exists
       return unless fields.length > 0
+      now = SideJob.timestamp
       SideJob.redis.multi do |multi|
         multi.hdel redis_key, fields
-        multi.hset redis_key, :updated_at, SideJob.timestamp.to_json
+        multi.hset redis_key, :updated_at, now.to_json
+      end
+      if @state
+        fields.each { |field| @state.delete(field.to_s) }
+        @state['updated_at'] = now
       end
     end
 
-    # Loads data from the job's state
-    # If only a single field is specified, returns just that value
-    # Otherwise returns a hash with all the keys specified
-    # @param fields [Array<String,Symbol>] Fields to load or all fields if none specified
-    # @return [Hash{String,Symbol => Object},Object] Job state with the fields specified
-    def get(*fields)
-      data = if fields.length > 0
-        values = SideJob.redis.hmget(redis_key, *fields)
-        Hash[fields.zip(values)]
-      else
-        SideJob.redis.hgetall redis_key
+    # Returns some data from the job's state.
+    # The job state is cached for the lifetime of the job object. Call {#reload} if the state may have changed.
+    # @param key [Symbol,String] Retrieve value for the given key
+    # @return [Object,nil] Value from the job state or nil if key does not exist
+    # @raise [RuntimeError] Error raised if job no longer exists
+    def get(key)
+      if ! @state
+        check_exists
+        @state = SideJob.redis.hgetall(redis_key)
+        @state.merge!(@state) {|key, val| JSON.parse("[#{val}]")[0]}
       end
-      data.merge!(data) {|key, val| val ? JSON.parse("[#{val}]")[0] : val}
-      data = data[fields[0]] if fields.length == 1
-      data
+      @state[key.to_s]
+    end
+
+    # Clears the state cache.
+    def reload!
+      @state = nil
     end
 
     # Set port options in the job's state
@@ -218,7 +238,7 @@ module SideJob
     def set_port_options(type, name, options)
       key = "#{type}ports"
       ports = get(key) || {}
-      ports[name] = options
+      ports[name.to_s] = options
       set key => ports
     end
 
@@ -227,12 +247,11 @@ module SideJob
     # queue or schedule this job using sidekiq
     # @param time [Time, Float, nil] Time to schedule the job if specified
     def sidekiq_queue(time=nil)
-      x = get(:queue, :class)
-      queue = x[:queue]
-      klass = x[:class]
+      queue = get(:queue)
+      klass = get(:class)
 
       if ! SideJob::Worker.config(queue, klass)
-        set status: :terminated
+        set status: 'terminated'
         raise "Worker no longer registered for #{klass} in queue #{queue}"
       end
       item = {'jid' => @jid, 'queue' => queue, 'class' => klass, 'args' => [], 'retry' => false}
@@ -254,6 +273,11 @@ module SideJob
         set_port_options type, name, {}
         SideJob::Port.new(self, type, name)
       end
+    end
+
+    # @raise [RuntimeError] Error raised if job no longer exists
+    def check_exists
+      raise "Job #{@jid} no longer exists!" unless exists?
     end
   end
 

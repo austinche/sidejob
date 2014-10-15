@@ -93,14 +93,16 @@ describe SideJob::Port do
       expect(@port.mode).to eq :queue
       @port.mode = :memory
       expect(@port.mode).to eq :memory
-      expect(SideJob.find(@job.jid).input(@port.name).mode).to eq :memory
+      @job.reload!
+      expect(@job.input(@port.name).mode).to eq :memory
     end
 
     it 'can change mode to queue' do
       expect(@memory.mode).to eq :memory
       @memory.mode = :queue
       expect(@memory.mode).to eq :queue
-      expect(SideJob.find(@job.jid).input(@memory.name).mode).to eq :queue
+      @job.reload!
+      expect(@job.input(@memory.name).mode).to eq :queue
     end
 
     it 'raises error changing mode to memory for output port' do
@@ -113,7 +115,8 @@ describe SideJob::Port do
       expect(@port.default).to be nil
       @port.default = [1,2]
       expect(@port.default).to eq [1,2]
-      expect(SideJob.find(@job.jid).input(@port.name).default).to eq [1,2]
+      @job.reload!
+      expect(@job.input(@port.name).default).to eq [1,2]
     end
 
     it 'raises error changing default value for output port' do
@@ -168,6 +171,7 @@ describe SideJob::Port do
       @job.set status: 'suspended'
       outport = child.output(:port1)
       outport.write('abc')
+      @job.reload!
       expect(@job.status).to eq 'queued'
     end
   end

@@ -45,21 +45,30 @@ describe SideJob::Job do
   end
 
   describe '#log' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+    end
+
     it 'adds a timestamp to log entries' do
       now = Time.now
       Time.stub(:now).and_return(now)
-      job = SideJob.queue('testq', 'TestWorker')
-      job.log('foo', {abc: 123})
-      log = SideJob.redis.lpop "#{job.redis_key}:log"
+      @job.log('foo', {abc: 123})
+      log = SideJob.redis.lpop "#{@job.redis_key}:log"
       expect(JSON.parse(log)).to eq({'type' => 'foo', 'abc' => 123, 'timestamp' => SideJob.timestamp})
     end
 
     it 'updates updated_at timestamp' do
       now = Time.now
       Time.stub(:now).and_return(now)
-      job = SideJob.queue('testq', 'TestWorker')
-      job.log('foo', {abc: 123})
-      expect(job.get(:updated_at)).to eq(SideJob.timestamp)
+      @job.log('foo', {abc: 123})
+      expect(@job.get(:updated_at)).to eq(SideJob.timestamp)
+    end
+
+    it 'raises error if job no longer exists' do
+      job2 = SideJob.find(@job.jid)
+      job2.set status: 'terminated'
+      job2.delete
+      expect { @job.log('foo', {abc: 123}) }.to raise_error
     end
   end
 
@@ -200,6 +209,13 @@ describe SideJob::Job do
       expect(Sidekiq::ScheduledSet.new.find_job(@job.jid).at).to eq(Time.at(now.to_f + 100))
       expect(@job.status).to eq 'queued'
     end
+
+    it 'raises error if job no longer exists' do
+      job2 = SideJob.find(@job.jid)
+      job2.set status: 'terminated'
+      job2.delete
+      expect { @job.run }.to raise_error
+    end
   end
 
   describe '#children, #parent' do
@@ -279,8 +295,8 @@ describe SideJob::Job do
       child.set status: 'terminated'
       @job.delete
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be(0)
-      expect(@job.status).to be_nil
-      expect(child.status).to be_nil
+      expect(@job.exists?).to be false
+      expect(child.exists?).to be false
     end
 
     it 'deletes data on input and output ports' do
@@ -314,7 +330,8 @@ describe SideJob::Job do
       expect(@job.inports.map(&:name).include?('port')).to be false
       @job.input('port')
       expect(@job.inports.map(&:name).include?('port')).to be true
-      expect(SideJob.find(@job.jid).inports.map(&:name).include?('port')).to be true
+      @job.reload!
+      expect(@job.inports.map(&:name).include?('port')).to be true
     end
   end
 
@@ -331,7 +348,8 @@ describe SideJob::Job do
       expect(@job.outports.map(&:name).include?('port')).to be false
       @job.output('port')
       expect(@job.outports.map(&:name).include?('port')).to be true
-      expect(SideJob.find(@job.jid).outports.map(&:name).include?('port')).to be true
+      @job.reload!
+      expect(@job.outports.map(&:name).include?('port')).to be true
     end
   end
 
@@ -342,7 +360,7 @@ describe SideJob::Job do
       job.output('foo')
       job.input('port1')
       expect(job.inports).to eq([SideJob::Port.new(job, :in, 'port1')])
-      job = SideJob.find(job.jid)
+      job.reload!
       job.input('port2')
       expect(job.inports).to match_array([SideJob::Port.new(job, :in, 'port1'), SideJob::Port.new(job, :in, 'port2')])
     end
@@ -355,7 +373,7 @@ describe SideJob::Job do
       job.input('foo')
       job.output('port1')
       expect(job.outports).to eq([SideJob::Port.new(job, :out, 'port1')])
-      job = SideJob.find(job.jid)
+      job.reload!
       job.output('port2')
       expect(job.outports).to match_array([SideJob::Port.new(job, :out, 'port1'), SideJob::Port.new(job, :out, 'port2')])
     end
@@ -366,21 +384,41 @@ describe SideJob::Job do
       @job = SideJob.queue('testq', 'TestWorker')
     end
 
-    it 'stores state in redis' do
+    it 'can save state in redis' do
       @job.set(test: 'data', test2: 123)
-      expect(SideJob.redis.hget("#{@job.redis_key}", 'test')).to eq '"data"'
-      expect(SideJob.redis.hget("#{@job.redis_key}", 'test2')).to eq '123'
+      expect(SideJob.redis.hget(@job.redis_key, 'test')).to eq '"data"'
+      expect(SideJob.redis.hget(@job.redis_key, 'test2')).to eq '123'
 
       # test updating
       @job.set(test: 'data2')
-      expect(SideJob.redis.hget("#{@job.redis_key}", 'test')).to eq('"data2"')
+      expect(SideJob.redis.hget(@job.redis_key, 'test')).to eq('"data2"')
+    end
+
+    it 'can update values' do
+      3.times do |i|
+        @job.set key: i
+        expect(@job.get(:key)).to eq i
+        expect(SideJob.redis.hget(@job.redis_key, :key)).to eq i.to_json
+      end
     end
 
     it 'updates updated_at timestamp' do
       now = Time.now + 1000
       Time.stub(:now).and_return(now)
-      @job.set({test: 123})
+      @job.set test: 123
       expect(@job.get(:updated_at)).to eq(SideJob.timestamp)
+      now = Time.now + 2000
+      Time.stub(:now).and_return(now)
+      @job.set test2: 456
+      expect(@job.get(:updated_at)).to eq(SideJob.timestamp)
+      @job.reload!
+      expect(@job.get(:updated_at)).to eq(SideJob.timestamp)
+    end
+
+    it 'raises error if job no longer exists' do
+      @job.set status: 'terminated'
+      SideJob.find(@job.jid).delete
+      expect { @job.set key: 123 }.to raise_error
     end
   end
 
@@ -388,49 +426,79 @@ describe SideJob::Job do
     before do
       @job = SideJob.queue('testq', 'TestWorker')
     end
+
     it 'unsets fields' do
       @job.set(a: 123, b: 456, c: 789)
       @job.unset('a', :b)
-      expect(@job.get(:a, :b, :c)).to eq({a: nil, b: nil, c: 789})
+      expect(@job.get(:a)).to eq nil
+      expect(@job.get(:b)).to eq nil
+      expect(@job.get(:c)).to eq 789
+    end
+
+    it 'raises error if job no longer exists' do
+      @job.set status: 'terminated', a: 123
+      SideJob.find(@job.jid).delete
+      expect { @job.unset(:a) }.to raise_error
     end
   end
 
   describe '#get' do
     before do
       @job = SideJob.queue('testq', 'TestWorker')
-      @data = { field1: 'value1', field2: 'value2', field3: 123 }
+      @data = { field1: 'value1', field2: [1,2], field3: 123 }
       @job.set @data
     end
 
-    it 'returns single value if only one field specified' do
+    it 'returns a value from job state using symbol key' do
       expect(@job.get(:field3)).to eq 123
     end
 
+    it 'returns a value from job state using string key' do
+      expect(@job.get('field1')).to eq 'value1'
+    end
+
     it 'returns nil for missing value' do
-      expect(@job.get('missing')).to be nil
+      expect(@job.get(:missing)).to be nil
     end
 
-    it 'only loads specified fields' do
-      expect(@job.get(:field1, :field3)).to eq({field1: 'value1', field3: 123})
+    it 'can retrieve complex objects in job state' do
+      expect(@job.get(:field2)).to eq [1, 2]
     end
 
-    it 'returns String or Symbol depending on passed in field' do
-      data = @job.get(:field1, 'field2')
-      expect(data[:field1]).to eq('value1')
-      expect(data['field2']).to eq('value2')
+    it 'caches the state' do
+      expect(@job.get(:field3)).to eq 123
+      SideJob.redis.hmset @job.redis_key, :field3, '789'
+      expect(@job.get(:field3)).to eq 123
     end
 
-    it 'loads all fields if none specified' do
-      data = @job.get
-      expect(data['field1']).to eq('value1')
-      expect(data['field2']).to eq('value2')
-      expect(data['field3']).to eq(123)
+    it 'raises error if job no longer exists and state is not cached' do
+      @job.reload!
+      job2 = SideJob.find(@job.jid)
+      job2.set status: 'terminated'
+      job2.delete
+      expect { @job.get(:key) }.to raise_error
     end
 
-    it 'can store and retrieve complex objects in job state' do
-      data = {'nested' => [1, 'b', {'foo' => nil}]}
-      @job.set(test: data)
-      expect(@job.get(:test)).to eq data
+    it 'does not raise error if job no longer exists but state is cached' do
+      @job.get(:foo)
+      job2 = SideJob.find(@job.jid)
+      job2.set status: 'terminated'
+      job2.delete
+      expect { @job.get(:key) }.not_to raise_error
+    end
+  end
+
+  describe '#reload!' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+      @job.set field1: 123
+    end
+
+    it 'clears the job state cache' do
+      expect(@job.get(:field1)).to eq 123
+      SideJob.redis.hmset @job.redis_key, :field1, '789'
+      @job.reload!
+      expect(@job.get(:field1)).to eq 789
     end
   end
 
@@ -441,9 +509,10 @@ describe SideJob::Job do
 
     it 'can change a port to memory mode' do
       expect(@job.input(:myport).mode).to be :queue
-      @job.set_port_options :in, :myport, {mode: :memory}
+      @job.set_port_options :in, :myport, {'mode' => 'memory'}
       expect(@job.input(:myport).mode).to be :memory
-      expect(SideJob.find(@job.jid).input(:myport).mode).to be :memory # changes were persisted
+      @job.reload!
+      expect(@job.input(:myport).mode).to be :memory
     end
   end
 end
