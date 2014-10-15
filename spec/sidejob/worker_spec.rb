@@ -81,14 +81,17 @@ describe SideJob::Worker do
 
   describe '#for_inputs' do
     it 'yields data from input ports' do
-      @job.input(:in1).write 1, 'a'
-      @job.input(:in2).write [2, 3], {'foo' => 123}
+      @job.input(:in1).write 1
+      @job.input(:in1).write 'a'
+      @job.input(:in2).write [2, 3]
+      @job.input(:in2).write foo: 123
       expect {|block| @worker.for_inputs(:in1, :in2, &block)}.to yield_successive_args([1, [2,3]], ['a', {'foo' => 123}])
     end
 
     it 'suspends on partial inputs' do
       @job.input(:in1).write 1
-      @job.input(:in2).write [2, 3], 3
+      @job.input(:in2).write [2, 3]
+      @job.input(:in2).write 3
       expect {
         expect {|block| @worker.for_inputs(:in1, :in2, &block)}.to yield_successive_args([1, [2,3]])
       }.to raise_error(SideJob::Worker::Suspended)
@@ -97,7 +100,8 @@ describe SideJob::Worker do
     it 'returns data from memory input ports' do
       @job.input(:in1).mode = :memory
       @job.input(:in1).write 1
-      @job.input(:in2).write [2, 3], 3
+      @job.input(:in2).write [2, 3]
+      @job.input(:in2).write 3
       expect {|block| @worker.for_inputs(:in1, :in2, &block)}.to yield_successive_args([1, [2,3]], [1, 3])
     end
 

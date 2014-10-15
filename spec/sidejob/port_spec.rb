@@ -126,23 +126,25 @@ describe SideJob::Port do
 
   describe '#write' do
     it 'can write different types of data to a port' do
-      @port.write('abc', 123, true, false, nil, {abc: 123}, [1, {foo: true}])
+      ['abc', 123, true, false, nil, {abc: 123}, [1, {foo: true}]].each {|x| @port.write x}
       data = SideJob.redis.lrange(@port.redis_key, 0, -1)
       expect(data).to eq(['"abc"', '123', 'true', 'false', 'null', '{"abc":123}', '[1,{"foo":true}]'])
     end
 
     it 'writing to a memory port should only store most recent value' do
-      @memory.write(1, 2, 3)
-      @memory.write('abc', 123, true, false, nil, {abc: 123}, [1, {foo: true}])
+      @memory.write 'abc'
+      @memory.write [1, {foo: true}]
+      @memory.write 1
       data = SideJob.redis.lrange(@memory.redis_key, 0, -1)
-      expect(data).to eq(['[1,{"foo":true}]'])
+      expect(data).to eq ["1"]
     end
 
     it 'logs writes' do
       now = Time.now
       Time.stub(:now).and_return(now)
       SideJob.redis.del "#{@job.redis_key}:log"
-      @port.write('abc', 123)
+      @port.write 'abc'
+      @port.write 123
       logs = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).map {|log| JSON.parse(log)}
       expect(logs).to eq [{'type' => 'write', 'inport' => 'port1', 'data' => 123, 'timestamp' => SideJob.timestamp},
                           {'type' => 'write', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp},]
@@ -161,18 +163,30 @@ describe SideJob::Port do
 
     it 'runs job when writing to an input port' do
       @job.set status: 'suspended'
-      inport = @job.input(:port1)
-      inport.write('abc')
+      @job.input(:port1).write 'abc'
       expect(@job.status).to eq 'queued'
+    end
+
+    it 'does not run job when writing to an input port if notify: false' do
+      @job.set status: 'suspended'
+      @job.input(:port1).write 'abc', notify: false
+      expect(@job.status).to eq 'suspended'
     end
 
     it 'runs parent job when writing to an output port' do
       child = SideJob.queue('testq', 'TestWorker', {parent: @job})
       @job.set status: 'suspended'
-      outport = child.output(:port1)
-      outport.write('abc')
+      child.output(:port1).write 'abc'
       @job.reload!
       expect(@job.status).to eq 'queued'
+    end
+
+    it 'does not run parent job when writing to an output port if notify: false' do
+      child = SideJob.queue('testq', 'TestWorker', {parent: @job})
+      @job.set status: 'suspended'
+      child.output(:port1).write 'abc', notify: false
+      @job.reload!
+      expect(@job.status).to eq 'suspended'
     end
   end
 
@@ -185,7 +199,7 @@ describe SideJob::Port do
 
     it 'can read data from a queue port' do
       expect { @port.read }.to raise_error(EOFError)
-      @port.write('abc', 123, true, false, nil, {}, ['data1', 1, {key: 'val'}])
+      ['abc', 123, true, false, nil, {}, ['data1', 1, {key: 'val'}]].each {|x| @port.write x}
       expect(@port.size).to be(7)
       expect(@port.read).to eq('abc')
       expect(@port.read).to eq(123)
@@ -200,9 +214,9 @@ describe SideJob::Port do
 
     it 'can read data from a memory port' do
       expect { @memory.read }.to raise_error(EOFError)
-      @memory.write 1, 2, 3, 4, 5
+      5.times {|i| @memory.write i }
       expect(@memory.size).to be(1)
-      3.times { expect(@memory.read).to eq(5) }
+      3.times { expect(@memory.read).to eq(4) }
       expect(@memory.size).to be(1)
     end
 
@@ -217,7 +231,7 @@ describe SideJob::Port do
     it 'logs reads' do
       now = Time.now
       Time.stub(:now).and_return(now)
-      @port.write('abc', 123)
+      ['abc', 123].each {|x| @port.write x}
       SideJob.redis.del "#{@job.redis_key}:log"
       expect(@port.read).to eq('abc')
       expect(@port.read).to eq(123)

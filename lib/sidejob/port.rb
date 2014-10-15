@@ -54,31 +54,25 @@ module SideJob
       update_options(:default, default)
     end
 
-    # Write data to the port
-    # If the port is an input port, wakes up the job so it has chance to process the data
-    # If the port is an output port, wake up the parent job so it has a chance to process it
-    # @param data [Array<Object>|Object] Data to write to the port: objects should be JSON encodable
-    def write(*data)
-      data = [data] unless data.is_a?(Array)
-      return if data.length == 0
+    # Write data to the port.
+    # If notify is true (default), if the port is an input port, wakes up the job so it has chance to
+    # process the data and If the port is an output port, wake up the parent job.
+    # @param data [Object] JSON encodable data to write to the port
+    # @param notify [Boolean] Whether to notify the job (if input port) or parent (if output port)
+    def write(data, notify: true)
+      SideJob.redis.multi do |multi|
+        multi.del redis_key if mode == :memory
+        multi.rpush redis_key, data.to_json
+      end
 
-      if mode == :memory
-        SideJob.redis.multi do |multi|
-          multi.del redis_key
-          multi.rpush redis_key, data.last.to_json
+      log('write', data)
+
+      if notify
+        if @type == :in
+          @job.run
+        else
+          @job.parent.run if @job.parent
         end
-      else
-        SideJob.redis.rpush redis_key, data.map {|x| x.to_json}
-      end
-
-      data.each do |x|
-        log('write', x)
-      end
-
-      if @type == :in
-        @job.run
-      else
-        @job.parent.run if @job.parent
       end
       self
     end
