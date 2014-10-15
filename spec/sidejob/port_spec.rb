@@ -4,8 +4,8 @@ describe SideJob::Port do
   before do
     @job = SideJob.queue('testq', 'TestWorker')
     @port = @job.input(:port1)
-    @memory_job = SideJob.queue('testq', 'TestWorkerMemory')
-    @memory = @memory_job.input(:memory)
+    @memory = @job.input(:memory)
+    @default = @job.input(:default)
   end
 
   describe '#initialize' do
@@ -15,6 +15,14 @@ describe SideJob::Port do
 
     it 'raises error if name is empty' do
       expect { SideJob::Port.new(@job, :in, '')}.to raise_error
+    end
+
+    it 'raises error with output memory port' do
+      expect { SideJob::Port.new(@job, :out, 'port', {'mode' => 'memory'})}.to raise_error
+    end
+
+    it 'raises error with default value for output port' do
+      expect { SideJob::Port.new(@job, :out, 'port', {'default' => {}})}.to raise_error
     end
   end
 
@@ -61,8 +69,7 @@ describe SideJob::Port do
     end
 
     it 'returns 1 if there is default value' do
-      @port.default = [1,2]
-      expect(@port.size).to eq 1
+      expect(@default.size).to eq 1
     end
   end
 
@@ -83,44 +90,7 @@ describe SideJob::Port do
     end
 
     it 'works when there is a default value on the port' do
-      @port.default = [1,2]
-      expect(@port.data?).to be true
-    end
-  end
-
-  describe '#mode=' do
-    it 'can change mode to memory' do
-      expect(@port.mode).to eq :queue
-      @port.mode = :memory
-      expect(@port.mode).to eq :memory
-      @job.reload!
-      expect(@job.input(@port.name).mode).to eq :memory
-    end
-
-    it 'can change mode to queue' do
-      expect(@memory.mode).to eq :memory
-      @memory.mode = :queue
-      expect(@memory.mode).to eq :queue
-      @job.reload!
-      expect(@job.input(@memory.name).mode).to eq :queue
-    end
-
-    it 'raises error changing mode to memory for output port' do
-      expect { @job.output(:port).mode = :memory }.to raise_error
-    end
-  end
-
-  describe '#default=' do
-    it 'can change default value' do
-      expect(@port.default).to be nil
-      @port.default = [1,2]
-      expect(@port.default).to eq [1,2]
-      @job.reload!
-      expect(@job.input(@port.name).default).to eq [1,2]
-    end
-
-    it 'raises error changing default value for output port' do
-      expect { @job.output(:port).default = true }.to raise_error
+      expect(@default.data?).to be true
     end
   end
 
@@ -193,11 +163,10 @@ describe SideJob::Port do
     end
 
     it 'can use default value' do
-      @port.default = [1,2]
-      3.times { expect(@port.read).to eq([1,2]) }
-      @port.write true
-      expect(@port.read).to be true
-      3.times { expect(@port.read).to eq([1,2]) }
+      3.times { expect(@default.read).to eq 'default' }
+      @default.write true
+      expect(@default.read).to be true
+      3.times { expect(@default.read).to eq 'default' }
     end
 
     it 'logs reads' do

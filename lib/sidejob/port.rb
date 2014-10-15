@@ -9,11 +9,24 @@ module SideJob
     # @param options [Hash] Port options like changing mode to memory
     def initialize(job, type, name, options={})
       @job = job
-      @type = type
-      @name = name
-      @options = options
-      load_options
+      @type = type.to_sym
+      @name = name.to_sym
       raise "Invalid port name: #{@name}" if @name !~ /^[a-zA-Z0-9_]+$/
+
+      # The default operating mode for a port is :queue which means packets are read/written as a FIFO queue.
+      # In :memory mode, only one value is stored on a port with more recent values overwriting older values.
+      # Reads do not clear out the data in :memory mode.
+      if options['mode']
+        @mode = options['mode'].to_sym
+      else
+        @mode = :queue
+      end
+      # Disallow setting output port to memory mode as it doesn't make sense
+      raise "Invalid #{@mode} mode for output port #{@name}" if @mode == :memory && @type == :out
+
+      # An input port can have a default value to return from {#read} when it's empty
+      @default = options['default'] if options['default']
+      raise "Cannot have a default value for output port #{@name}" if @default && @type == :out
     end
 
     # @return [Boolean] True if two ports are equal
@@ -30,28 +43,13 @@ module SideJob
     # @return [Fixnum]
     def size
       length = SideJob.redis.llen(redis_key)
-      return 1 if length == 0 && @default
+      return 1 if length == 0 && ! default.nil?
       length
     end
 
     # @return [Boolean] True if there is data to read.
     def data?
       size > 0
-    end
-
-    # Change the operating mode for the port.
-    # The default operating mode for a port is :queue which means packets are read/written as a FIFO queue.
-    # In :memory mode, only one value is stored on a port with more recent values overwriting older values.
-    # Reads do not clear out the data in :memory mode.
-    # @param mode [:queue, :memory] The new operating mode for the port
-    def mode=(mode)
-      update_options(:mode, mode)
-    end
-
-    # Set the default value for a port when it's empty
-    # @param default [Object] JSON encodable object
-    def default=(default)
-      update_options(:default, default)
     end
 
     # Write data to the port.
@@ -79,10 +77,9 @@ module SideJob
 
       if data
         data = JSON.parse("[#{data}]")[0] # enable parsing primitive types like strings, numbers
-      elsif @default
-        data = @default
       else
-        raise EOFError
+        data = default
+        raise EOFError unless data
       end
 
       log('read', data)
@@ -116,27 +113,7 @@ module SideJob
 
     private
 
-    # load port options
-    def load_options
-      if @options['mode']
-        @mode = @options['mode'].to_sym
-      else
-        @mode = :queue
-      end
-      raise "Invalid #{@mode} mode for output port #{@name}" if @mode == :memory && @type == :out
-
-      if @options['default']
-        raise "Cannot have a default value for output port #{@name}" if @type == :out
-        @default = @options['default']
-      end
-    end
-
-    def update_options(key, value)
-      @options[key.to_s] = value
-      @job.set_port_options(@type, @name, @options)
-      load_options
-    end
-
+    # Log a read or write on the port.
     def log(type, data)
       log = {data: data}
       log[:by] = @job.by if @job.by

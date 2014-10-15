@@ -326,16 +326,20 @@ describe SideJob::Job do
       expect(@job.input('port')).to eq(SideJob::Port.new(@job, :in, 'port'))
     end
 
+    it 'caches ports' do
+      expect(@job.input('port')).to be @job.input('port')
+    end
+
     it 'saves port to inports list' do
-      expect(@job.inports.map(&:name).include?('port')).to be false
+      expect(@job.inports.map(&:name).include?(:port)).to be false
       @job.input('port')
-      expect(@job.inports.map(&:name).include?('port')).to be true
+      expect(@job.inports.map(&:name).include?(:port)).to be true
       @job.reload!
-      expect(@job.inports.map(&:name).include?('port')).to be true
+      expect(@job.inports.map(&:name).include?(:port)).to be true
     end
 
     it 'raises error on unknown port' do
-      @job = SideJob.queue('testq', 'TestWorkerMemory')
+      @job = SideJob.queue('testq', 'TestWorkerEmpty')
       expect { @job.input('port') }.to raise_error
     end
   end
@@ -349,16 +353,20 @@ describe SideJob::Job do
       expect(@job.output('port')).to eq(SideJob::Port.new(@job, :out, 'port'))
     end
 
+    it 'caches ports' do
+      expect(@job.output('port')).to be @job.output('port')
+    end
+
     it 'saves port to outports list' do
-      expect(@job.outports.map(&:name).include?('port')).to be false
+      expect(@job.outports.map(&:name).include?(:port)).to be false
       @job.output('port')
-      expect(@job.outports.map(&:name).include?('port')).to be true
+      expect(@job.outports.map(&:name).include?(:port)).to be true
       @job.reload!
-      expect(@job.outports.map(&:name).include?('port')).to be true
+      expect(@job.outports.map(&:name).include?(:port)).to be true
     end
 
     it 'raises error on unknown port' do
-      @job = SideJob.queue('testq', 'TestWorkerMemory')
+      @job = SideJob.queue('testq', 'TestWorkerEmpty')
       expect { @job.output('port') }.to raise_error
     end
   end
@@ -366,13 +374,13 @@ describe SideJob::Job do
   describe '#inports' do
     it 'returns all input ports that have ever been referenced' do
       job = SideJob.queue('testq', 'TestWorker')
-      expect(job.inports).to eq([])
+      current = job.inports.map(&:name)
       job.output('foo')
       job.input('port1')
-      expect(job.inports).to eq([SideJob::Port.new(job, :in, 'port1')])
+      expect(job.inports.map(&:name)).to match_array(current.concat [:port1])
       job.reload!
       job.input('port2')
-      expect(job.inports).to match_array([SideJob::Port.new(job, :in, 'port1'), SideJob::Port.new(job, :in, 'port2')])
+      expect(job.inports.map(&:name)).to match_array(current.concat [:port2])
     end
   end
 
@@ -509,20 +517,6 @@ describe SideJob::Job do
       SideJob.redis.hmset @job.redis_key, :field1, '789'
       @job.reload!
       expect(@job.get(:field1)).to eq 789
-    end
-  end
-
-  describe '#set_port_options' do
-    before do
-      @job = SideJob.queue('testq', 'TestWorker')
-    end
-
-    it 'can change a port to memory mode' do
-      expect(@job.input(:myport).mode).to be :queue
-      @job.set_port_options :in, :myport, {'mode' => 'memory'}
-      expect(@job.input(:myport).mode).to be :memory
-      @job.reload!
-      expect(@job.input(:myport).mode).to be :memory
     end
   end
 end

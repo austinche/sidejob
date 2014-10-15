@@ -179,13 +179,15 @@ module SideJob
     # Gets all known input ports.
     # @return [Array<SideJob::Port>] Input ports
     def inports
-      (get(:inports) || {}).keys.reject {|x| x == '*'}.map {|port| input(port)}
+      load_ports if ! @ports
+      @ports[:in].values
     end
 
     # Gets all known output ports.
     # @return [Array<SideJob::Port>] Output ports
     def outports
-      (get(:outports) || {}).keys.reject {|x| x == '*'}.map {|port| output(port)}
+      load_ports if ! @ports
+      @ports[:out].values
     end
 
     # Sets values in the job's state.
@@ -233,20 +235,10 @@ module SideJob
       @state[key.to_s]
     end
 
-    # Clears the state cache.
+    # Clears the state and ports cache.
     def reload!
       @state = nil
-    end
-
-    # Set port options in the job's state.
-    # @param type [:in, :out] Input or output port
-    # @param name [Symbol,String] Name of the port
-    # @param options [Hash] New port options
-    def set_port_options(type, name, options)
-      key = "#{type}ports"
-      ports = get(key) || {}
-      ports[name.to_s] = options
-      set key => ports
+      @ports = nil
     end
 
     private
@@ -271,16 +263,40 @@ module SideJob
     # @param name [Symbol,String] Name of the port
     # @return [SideJob::Port]
     def get_port(type, name)
+      load_ports if ! @ports
+
       name = name.to_s
-      ports = get("#{type}ports") || {}
-      if ports[name]
-        SideJob::Port.new(self, type, name, ports[name])
-      elsif ports['*']
-        # allow arbitrary ports, so create a new port with the default options
-        set_port_options type, name, ports['*']
-        SideJob::Port.new(self, type, name, ports['*'].dup)
+
+      return @ports[type][name] if @ports[type][name]
+
+      if @ports["#{type}*"]
+        # create a port dynamically using the default options for dynamic ports
+
+        # save the port into the job state
+        key = "#{type}ports"
+        portspec = get(key) || {}
+        portspec[name.to_s] = @ports["#{type}*"]
+        set key => portspec
+
+        @ports[type][name] = SideJob::Port.new(self, type, name, @ports["#{type}*"])
+        return @ports[type][name]
       else
-        raise "Unknown #{type}port #{name}"
+        raise "Unknown #{type}put port: #{name}"
+      end
+    end
+
+    # Caches all input and output ports.
+    def load_ports
+      @ports = {}
+      %i{in out}.each do |type|
+        @ports[type] = {}
+        (get("#{type}ports") || {}).each_pair do |name, options|
+          if name == '*'
+            @ports["#{type}*"] = options
+          else
+            @ports[type][name] = SideJob::Port.new(self, type, name, options)
+          end
+        end
       end
     end
 

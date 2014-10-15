@@ -98,17 +98,15 @@ describe SideJob::Worker do
     end
 
     it 'returns data from memory input ports' do
-      @job.input(:in1).mode = :memory
-      @job.input(:in1).write 1
+      @job.input(:memory).write 1
       @job.input(:in2).write [2, 3]
       @job.input(:in2).write 3
-      expect {|block| @worker.for_inputs(:in1, :in2, &block)}.to yield_successive_args([1, [2,3]], [1, 3])
+      expect {|block| @worker.for_inputs(:memory, :in2, &block)}.to yield_successive_args([1, [2,3]], [1, 3])
     end
 
     it 'does not suspend if there is only data on memory port' do
-      @job.input(:in1).mode = :memory
-      @job.input(:in1).write 1
-      expect {|block| @worker.for_inputs(:in1, :in2, &block)}.not_to yield_control
+      @job.input(:memory).write 1
+      expect {|block| @worker.for_inputs(:memory, :in2, &block)}.not_to yield_control
     end
   end
 end

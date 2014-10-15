@@ -2,6 +2,8 @@ class TestWorker
   include SideJob::Worker
   register(
       inports: {
+          'memory' => { mode: :memory },
+          'default' => { default: 'default' },
           '*' => {},
       },
       outports: {
@@ -12,21 +14,16 @@ class TestWorker
   end
 end
 
-class TestWorkerNoLog
+class TestWorkerEmpty
   include SideJob::Worker
-  register(
-      worker: { log_status: false }
-  )
   def perform
   end
 end
 
-class TestWorkerMemory
+class TestWorkerNoLog
   include SideJob::Worker
   register(
-      inports: {
-          memory: { mode: :memory }
-      }
+      worker: { log_status: false }
   )
   def perform
   end
