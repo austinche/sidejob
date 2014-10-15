@@ -46,6 +46,8 @@ Ports
 
 * Ports are named (case sensitive) and must match /^[a-zA-Z0-9_]+$/.
 * Any object that can be JSON encoded can be written or read from any input or output port.
+* Ports must be explicitly specified by jobs in the inports/outports hash.
+* If a job includes the special port '*', then it accepts any port using the options for port '*'.
 
 Port options:
 

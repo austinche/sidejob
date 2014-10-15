@@ -333,6 +333,11 @@ describe SideJob::Job do
       @job.reload!
       expect(@job.inports.map(&:name).include?('port')).to be true
     end
+
+    it 'raises error on unknown port' do
+      @job = SideJob.queue('testq', 'TestWorkerMemory')
+      expect { @job.input('port') }.to raise_error
+    end
   end
 
   describe '#output' do
@@ -350,6 +355,11 @@ describe SideJob::Job do
       expect(@job.outports.map(&:name).include?('port')).to be true
       @job.reload!
       expect(@job.outports.map(&:name).include?('port')).to be true
+    end
+
+    it 'raises error on unknown port' do
+      @job = SideJob.queue('testq', 'TestWorkerMemory')
+      expect { @job.output('port') }.to raise_error
     end
   end
 

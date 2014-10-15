@@ -158,6 +158,7 @@ module SideJob
     # Returns an input port
     # @param name [Symbol,String] Name of the port
     # @return [SideJob::Port]
+    # @raise [RuntimeError] Error raised if port does not exist
     def input(name)
       get_port :in, name
     end
@@ -165,6 +166,7 @@ module SideJob
     # Returns an output port
     # @param name [Symbol,String] Name of the port
     # @return [SideJob::Port]
+    # @raise [RuntimeError] Error raised if port does not exist
     def output(name)
       get_port :out, name
     end
@@ -172,13 +174,13 @@ module SideJob
     # Gets all known input ports
     # @return [Array<SideJob::Port>] Input ports
     def inports
-      (get(:inports) || {}).keys.map {|port| input(port)}
+      (get(:inports) || {}).keys.reject {|x| x == '*'}.map {|port| input(port)}
     end
 
     # Gets all known output ports
     # @return [Array<SideJob::Port>] Output ports
     def outports
-      (get(:outports) || {}).keys.map {|port| output(port)}
+      (get(:outports) || {}).keys.reject {|x| x == '*'}.map {|port| output(port)}
     end
 
     # Sets values in the job's state
@@ -268,10 +270,12 @@ module SideJob
       ports = get("#{type}ports") || {}
       if ports[name]
         SideJob::Port.new(self, type, name, ports[name])
+      elsif ports['*']
+        # allow arbitrary ports, so create a new port with the default options
+        set_port_options type, name, ports['*']
+        SideJob::Port.new(self, type, name, ports['*'].dup)
       else
-        # new unknown port so add it with default options
-        set_port_options type, name, {}
-        SideJob::Port.new(self, type, name)
+        raise "Unknown #{type}port #{name}"
       end
     end
 

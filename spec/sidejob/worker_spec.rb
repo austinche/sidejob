@@ -23,7 +23,7 @@ describe SideJob::Worker do
     end
 
     it 'returns a worker config that has been registered for the current queue' do
-      expect(SideJob::Worker.config('testq', 'TestWorker')).to eq SideJob::Worker.registry['TestWorker']
+      expect(SideJob::Worker.config('testq', 'TestWorker')).to eq JSON.parse(SideJob::Worker.registry['TestWorker'].to_json)
     end
 
     it 'returns a worker config that has been registered elsewhere' do

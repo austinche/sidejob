@@ -1,5 +1,13 @@
 class TestWorker
   include SideJob::Worker
+  register(
+      inports: {
+          '*' => {},
+      },
+      outports: {
+          '*' => {},
+      }
+  )
   def perform
   end
 end

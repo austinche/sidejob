@@ -2,6 +2,12 @@ require 'spec_helper'
 
 class TestSumFlow
   include SideJob::Worker
+  register(
+      inports: {},
+      outports: {
+          out: {},
+      }
+  )
   def perform
     if children.length == 0
       queue('testq', 'TestSum')

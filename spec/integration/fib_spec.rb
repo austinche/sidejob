@@ -6,6 +6,9 @@ class TestFib
   register(
       inports: {
           n: {mode: :memory}
+      },
+      outports: {
+          num: {}
       }
   )
   def perform
