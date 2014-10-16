@@ -35,7 +35,7 @@ module SideJob
           return
       end
 
-      config = DEFAULT_CONFIGURATION.merge(worker.get(:worker) || {})
+      config = DEFAULT_CONFIGURATION.merge(SideJob::Worker.config(queue, worker.class.name)['worker'] || {})
 
       # if another thread is already running this job, we don't run the job now
       # this simplifies workers from having to deal with thread safety

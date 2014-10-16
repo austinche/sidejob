@@ -44,10 +44,10 @@ Jobs that have been terminated along with all their children can be deleted enti
 Ports
 -----
 
-* Ports are named (case sensitive) and must match /^[a-zA-Z0-9_]+$/.
+* Ports are named (case sensitive) and must match `/^[a-zA-Z0-9_]+$/`.
 * Any object that can be JSON encoded can be written or read from any input or output port.
 * Ports must be explicitly specified by jobs in the inports/outports hash.
-* If a job includes the special port '*', then it accepts any port using the options for port '*'.
+* If a job includes the special port *, then it accepts any port using the options for port *.
 
 Port options:
 
@@ -61,7 +61,7 @@ Workers
 -------
 
 * A worker is the implementation of a specific job class
-* Workers are required to register themselves with a default job configuration
+* Workers are required to register themselves
 * A Sidekiq process should only handle a single queue so all registered workers in the process are for the same queue
 * It should have a perform method that is called on each run
 * It may have a shutdown method that is called before the job is terminated
@@ -102,7 +102,9 @@ The keys used by Sidekiq:
 
 Additional keys used by SideJob:
 
-* workers:<queue> - Hash for worker registry with default initial job state
+* workers:<queue> - Hash mapping class name to worker configuration. A worker needs to at least define
+  the inports and outports hashes that map port names to port options. Options under the worker key
+  modify the running of the worker by {SideJob::ServerMiddleware}.
 * job_id - Stores the last job ID (we use incrementing integers from 1)
 * jobs - Set containing all active job IDs
 * job:<jid> - Hash containing job state and configuration. All values are JSON encoded.
@@ -115,7 +117,6 @@ Additional keys used by SideJob:
     * ran_at - timestamp of the start of the last run
     * inports - Hash mapping input port name to options such as port mode
     * outports - Hash mapping output port name to options such as port mode
-    * worker - Hash with options for {SideJob::ServerMiddleware}
 * job:<jid>:in:<inport> and job:<jid>:out:<outport> - List with unread port data. New data is pushed on the right.
 * job:<jid>:ancestors - List with parent job IDs up to the root job that has no parent.
     Newer jobs are pushed on the left so the immediate parent is on the left and the root job is on the right.

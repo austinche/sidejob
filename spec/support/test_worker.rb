@@ -16,6 +16,7 @@ end
 
 class TestWorkerEmpty
   include SideJob::Worker
+  register
   def perform
   end
 end

@@ -78,12 +78,23 @@ describe SideJob do
       expect(SideJob.redis.lrange("#{j3.redis_key}:ancestors", 0, -1)).to eq([j2.jid, j1.jid])
     end
 
-    it 'can specify job configuration' do
-      expect {
-        job = SideJob.queue('testq', 'TestWorker', config: {foo: [1, 2]})
-        expect(job.status).to eq 'queued'
-        expect(job.get(:foo)).to eq [1, 2]
-      }.to change {Sidekiq::Stats.new.enqueued}.by(1)
+    it 'can add a port via inports configuration' do
+      job = SideJob.queue('testq', 'TestWorker', inports: {myport: {default: [1,2]}})
+      expect(job.status).to eq 'queued'
+      expect(job.input(:myport).default).to eq [1, 2]
+      expect(job.input(:myport).read).to eq [1, 2]
+    end
+
+    it 'can modify a port via inports configuration' do
+      job = SideJob.queue('testq', 'TestWorker', inports: {memory: {mode: 'queue'}})
+      expect(job.status).to eq 'queued'
+      expect(job.input(:memory).mode).to be :queue
+    end
+
+    it 'can add a port via outports configuration' do
+      job = SideJob.queue('testq', 'TestWorker', outports: {myport: {}})
+      expect(job.status).to eq 'queued'
+      expect(job.outports.map(&:name).include?(:myport)).to be true
     end
 
     it 'can specify a job time' do

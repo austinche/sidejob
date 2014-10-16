@@ -4,11 +4,10 @@ module SideJob
   module Worker
     @registry ||= {}
     class << self
-      # This holds default configuration for all available workers on one queue
+      # This holds the registry for all available workers on one queue
       attr_reader :registry
 
-      # Workers by default add themselves to the registry with an empty specification
-      # but can specify additional information with {ClassMethods#register}.
+      # Workers need to add themselves to the registry even if it's an empty configuration.
       # This method publishes the registry to redis so that other workers can call workers on this queue.
       # All workers for the queue should be defined as the existing registry is overwritten.
       # @param queue [String] Queue to register all defined workers
@@ -19,7 +18,7 @@ module SideJob
         end
       end
 
-      # Returns the default configuration registered for a worker
+      # Returns the configuration registered for a worker.
       # @param queue [String] Name of queue
       # @param klass [String] Name of worker class
       # @return [Hash, nil] Returns nil if the worker is not defined
@@ -34,7 +33,7 @@ module SideJob
     # Class methods added to Workers
     module ClassMethods
       # All workers need to register themselves
-      # @param config [Hash] The default configuration used by any jobs of this class
+      # @param config [Hash] The base configuration used by any jobs of this class
       def register(config={})
         SideJob::Worker.registry[self.name] = config
       end
@@ -47,7 +46,6 @@ module SideJob
         include SideJob::JobMethods
       end
       base.extend(ClassMethods)
-      base.send :register # register with an empty spec
     end
 
     # Queues a child job

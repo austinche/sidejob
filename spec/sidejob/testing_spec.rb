@@ -3,6 +3,7 @@ require 'spec_helper'
 describe 'SideJob testing helpers' do
   class TestLongRunning
     include SideJob::Worker
+    register
     def perform
       sleep 3
     end
@@ -10,6 +11,7 @@ describe 'SideJob testing helpers' do
 
   class TestFailure
     include SideJob::Worker
+    register
     def perform
       raise 'bad error'
     end
