@@ -42,7 +42,7 @@ class TestFib
 end
 
 describe TestFib do
-  it 'calculates fibonnaci correctly' do
+  it 'calculates fibonacci correctly' do
     job = SideJob.queue('testq', 'TestFib')
     job.input(:n).write 6 # 1, 1, 2, 3, 5, 8
     SideJob::Worker.drain_queue

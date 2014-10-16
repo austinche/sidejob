@@ -17,6 +17,14 @@ describe 'SideJob testing helpers' do
     end
   end
 
+  class TestMysteriousFailure
+    include SideJob::Worker
+    register
+    def perform
+      set status: 'failed'
+    end
+  end
+
   describe 'SideJob::Worker.drain_queue' do
     it 'runs jobs' do
       job = SideJob.queue('testq', 'TestSum')
@@ -43,8 +51,7 @@ describe 'SideJob testing helpers' do
     end
 
     it 'raises error if worker mysteriously fails' do
-      job = SideJob.queue('testq', 'TestWorker')
-      job.set status: 'failed'
+      job = SideJob.queue('testq', 'TestMysteriousFailure')
       expect { SideJob::Worker.drain_queue }.to raise_error(RuntimeError)
     end
 
@@ -65,14 +72,31 @@ describe 'SideJob testing helpers' do
       expect(job.output(:sum).read).to eq 10
     end
 
+    it 'queues a non-queued job by default' do
+      job = SideJob.queue('testq', 'TestSum')
+      5.times {|i| job.input(:in).write i}
+      job.input(:ready).write 1
+      job.set status: :suspended
+      job.run_inline
+      expect(job.output(:sum).read).to eq 10
+    end
+
+    it 'can turn off queuing of a job' do
+      job = SideJob.queue('testq', 'TestSum')
+      5.times {|i| job.input(:in).write i}
+      job.input(:ready).write 1
+      job.set status: :suspended
+      job.run_inline queue: false
+      expect(job.output(:sum).data?).to be false
+    end
+
     it 'raises errors by default' do
       job = SideJob.queue('testq', 'TestFailure')
       expect { job.run_inline }.to raise_error(RuntimeError, 'bad error')
     end
 
     it 'raises error if worker mysteriously fails' do
-      job = SideJob.queue('testq', 'TestWorker')
-      job.set status: 'failed'
+      job = SideJob.queue('testq', 'TestMysteriousFailure')
       expect { job.run_inline }.to raise_error(RuntimeError)
     end
 
