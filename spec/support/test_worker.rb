@@ -4,6 +4,7 @@ class TestWorker
       inports: {
           'memory' => { mode: :memory },
           'default' => { default: 'default' },
+          'memory_with_default' => { mode: :memory, default: 'default' },
           '*' => {},
       },
       outports: {

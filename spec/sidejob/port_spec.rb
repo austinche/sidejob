@@ -183,6 +183,13 @@ describe SideJob::Port do
       3.times { expect(@default.read).to eq 'default' }
     end
 
+    it 'can handle a memory port with default value' do
+      port = @job.input(:memory_with_default)
+      3.times { expect(port.read).to eq 'default' }
+      5.times { |i| port.write i}
+      3.times { expect(port.read).to eq(4) }
+    end
+
     it 'logs reads' do
       now = Time.now
       Time.stub(:now).and_return(now)
