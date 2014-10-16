@@ -108,5 +108,12 @@ describe SideJob::Worker do
       @job.input(:memory).write 1
       expect {|block| @worker.for_inputs(:memory, :in2, &block)}.not_to yield_control
     end
+
+    it 'allows for null default values' do
+      @job.input(:default_null).write 1
+      @job.input(:in2).write [2, 3]
+      @job.input(:in2).write 3
+      expect {|block| @worker.for_inputs(:default_null, :in2, &block)}.to yield_successive_args([1, [2,3]], [nil, 3])
+    end
   end
 end

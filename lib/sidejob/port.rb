@@ -26,6 +26,8 @@ module SideJob
 
       # An input port can have a default value to return from {#read} when it's empty
       @default = options['default'] if options['default']
+      @has_default = options.has_key?('default') # to allow @default to be nil
+
       raise "Cannot have a default value for output port #{@name}" if @default && @type == :out
     end
 
@@ -42,22 +44,26 @@ module SideJob
     # Returns the number of items waiting on this port.
     # @return [Fixnum]
     def size
-      length = SideJob.redis.llen(redis_key)
-      return 1 if length == 0 && ! default.nil?
-      length
+      SideJob.redis.llen(redis_key)
     end
 
     # Returns whether #{read} will return data.
     # @return [Boolean] True if there is data to read.
     def data?
-      size > 0
+      size > 0 || default?
     end
 
     # Returns whether #{read} may never run out of data.
     # This does not mean that there currently is data, e.g. in memory mode but no data.
     # @return [Boolean] True if port is in memory mode or has a default value
     def infinite?
-      mode == :memory || ! default.nil?
+      mode == :memory || default?
+    end
+
+    # Returns if the port has a default value. This method exists as the default value may be nil.
+    # @return [Boolean] True if the port has a default value
+    def default?
+      @has_default
     end
 
     # Write data to the port.
@@ -86,8 +92,11 @@ module SideJob
       if data
         data = JSON.parse("[#{data}]")[0] # enable parsing primitive types like strings, numbers
       else
-        data = default
-        raise EOFError unless data
+        if default?
+          data = default
+        else
+          raise EOFError
+        end
       end
 
       log('read', data)
@@ -95,14 +104,17 @@ module SideJob
     end
 
     include Enumerable
-    # Iterate over port data
-    # For memory ports, at most one data is returned
+    # Iterate over port data.
+    # For memory ports, at most one data is returned.
+    # Default values are not returned.
     # @yield [Object] Each data from port
     def each(&block)
       if mode == :memory
         yield read
       else
-        loop { yield read }
+        while size > 0 do
+          yield read
+        end
       end
     rescue EOFError
     end
