@@ -61,6 +61,14 @@ describe SideJob do
       expect(SideJob.redis.sismember('jobs', job.jid)).to be true
     end
 
+    it 'can specify job args' do
+      job = SideJob.queue('testq', 'TestWorker', args: [1,2])
+      expect(job.status).to eq 'queued'
+      expect(job.get(:args)).to eq [1,2]
+      expect_any_instance_of(TestWorker).to receive(:perform).with(1, 2)
+      SideJob::Worker.drain_queue
+    end
+
     it 'can specify job parent' do
       expect {
         parent = SideJob.queue('testq', 'TestWorker')

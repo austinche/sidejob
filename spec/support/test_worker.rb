@@ -12,7 +12,7 @@ class TestWorker
           '*' => {},
       }
   )
-  def perform
+  def perform(*args)
   end
 end
 

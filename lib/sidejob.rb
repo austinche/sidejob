@@ -28,13 +28,14 @@ module SideJob
   # Main function to queue a job
   # @param queue [String] Name of the queue to put the job in
   # @param klass [String] Name of the class that will handle the job
+  # @param args [Array] additional args to pass to the worker's perform method (default none)
   # @param parent [SideJob::Job] parent job
   # @param at [Time, Float] Time to schedule the job, otherwise queue immediately
   # @param by [String] Who created this job. Recommend <type>:<id> format for non-jobs as SideJob uses job:<jid>
   # @param inports [Hash{String => Hash}] Input port configuration. Port name to options.
   # @param outports [Hash{String => Hash}] Output port configuration. Port name to options.
   # @return [SideJob::Job] Job
-  def self.queue(queue, klass, parent: nil, at: nil, by: nil, inports: {}, outports: {})
+  def self.queue(queue, klass, args: [], parent: nil, at: nil, by: nil, inports: {}, outports: {})
     config = SideJob::Worker.config(queue, klass)
     raise "No worker registered for #{klass} in queue #{queue}" unless config
 
@@ -61,7 +62,7 @@ module SideJob
       multi.sadd 'jobs', jid
       now = SideJob.timestamp
       multi.hmset job.redis_key,
-                  config.merge({queue: queue, class: klass, created_by: by, created_at: now, updated_at: now,
+                  config.merge({queue: queue, class: klass, args: args, created_by: by, created_at: now, updated_at: now,
                                inports: _inports, outports: _outports}).
                       map {|key, val| [key, val.to_json]}.flatten(1)
 

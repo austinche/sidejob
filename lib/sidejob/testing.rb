@@ -15,7 +15,7 @@ module SideJob
               have_job = true
               job.delete
 
-              SideJob.find(job.jid).run_inline(errors: errors, queue: false)
+              SideJob.find(job.jid).run_inline(errors: errors, queue: false, args: job.args)
             end
           end
         end
@@ -27,12 +27,13 @@ module SideJob
     # Runs a single job once. This method only works for jobs with no child jobs.
     # @param errors [Boolean] Whether to propagate errors that occur in jobs (default true)
     # @param queue [Boolean] Whether to force the job to be queued (default true)
-    def run_inline(errors: true, queue: true)
+    # @param args [Array] Args to pass to the worker's perform method (default none)
+    def run_inline(errors: true, queue: true, args: [])
       worker = get(:class).constantize.new
       worker.jid = jid
       worker.set(status: :queued) if queue
       SideJob::ServerMiddleware.new.call(worker, {'enqueued_at' => Time.now.to_f}, get(:queue)) do
-        worker.perform
+        worker.perform(*args)
       end
 
       if errors && worker.status == 'failed'

@@ -110,6 +110,7 @@ Additional keys used by SideJob:
 * job:<jid> - Hash containing job state and configuration. All values are JSON encoded.
     * queue - queue name
     * class - name of class
+    * args - array of arguments passed to worker's perform method
     * status - job status
     * created_at - timestamp that the job was first queued
     * created_by - string indicating the entity that created the job. SideJob uses job:<jid> for jobs created by another job.

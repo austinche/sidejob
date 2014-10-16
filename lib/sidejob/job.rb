@@ -248,17 +248,18 @@ module SideJob
     def sidekiq_queue(time=nil)
       queue = get(:queue)
       klass = get(:class)
+      args = get(:args)
 
       if ! SideJob::Worker.config(queue, klass)
         set status: 'terminated'
         raise "Worker no longer registered for #{klass} in queue #{queue}"
       end
-      item = {'jid' => @jid, 'queue' => queue, 'class' => klass, 'args' => [], 'retry' => false}
+      item = {'jid' => @jid, 'queue' => queue, 'class' => klass, 'args' => args || [], 'retry' => false}
       item['at'] = time if time && time > Time.now.to_f
       Sidekiq::Client.push(item)
     end
 
-    # Returns an input or output port.
+    # Returns an input or output port.t
     # @param type [:in, :out] Input or output port
     # @param name [Symbol,String] Name of the port
     # @return [SideJob::Port]

@@ -58,9 +58,9 @@ describe SideJob::Worker do
 
   describe '#queue' do
     it 'can queue child jobs' do
-      expect(SideJob).to receive(:queue).with('testq', 'TestWorker', inports: {'myport' => {'mode' => 'memory'}}, parent: @job, by: "job:#{@worker.jid}").and_call_original
+      expect(SideJob).to receive(:queue).with('testq', 'TestWorker', args: [1,2], inports: {'myport' => {'mode' => 'memory'}}, parent: @job, by: "job:#{@worker.jid}").and_call_original
       expect {
-        child = @worker.queue('testq', 'TestWorker', inports: {'myport' => {'mode' => 'memory'}})
+        child = @worker.queue('testq', 'TestWorker', args: [1,2], inports: {'myport' => {'mode' => 'memory'}})
         expect(child.parent).to eq(@job)
         expect(@job.children).to eq([child])
       }.to change {Sidekiq::Stats.new.enqueued}.by(1)
