@@ -222,7 +222,7 @@ module SideJob
     end
 
     # Returns some data from the job's state.
-    # The job state is cached for the lifetime of the job object. Call {#reload!} if the state may have changed.
+    # The job state is cached for the lifetime of the job object. Call {#reload} if the state may have changed.
     # @param key [Symbol,String] Retrieve value for the given key
     # @return [Object,nil] Value from the job state or nil if key does not exist
     # @raise [RuntimeError] Error raised if job no longer exists
@@ -236,7 +236,7 @@ module SideJob
     end
 
     # Clears the state and ports cache.
-    def reload!
+    def reload
       @state = nil
       @ports = nil
     end

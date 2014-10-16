@@ -36,7 +36,7 @@ describe SideJob::ServerMiddleware do
     worker = msg.klass.constantize.new
     worker.jid = job.jid
     chain.invoke(worker, msg, @queue) { yield worker }
-    job.reload!
+    job.reload
     worker
   end
 
@@ -85,7 +85,7 @@ describe SideJob::ServerMiddleware do
       expect {
         child.run_inline
       }.to change {Sidekiq::Stats.new.enqueued}.by(1)
-      @job.reload!
+      @job.reload
       expect(@job.status).to eq 'queued'
     end
 
@@ -223,7 +223,7 @@ describe SideJob::ServerMiddleware do
       expect {
         process(child) { raise 'oops' }
       }.to change {Sidekiq::Stats.new.enqueued}.by(1)
-      @job.reload!
+      @job.reload
       expect(@job.status).to eq 'queued'
     end
   end

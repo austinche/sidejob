@@ -46,7 +46,7 @@ describe TestFib do
     job = SideJob.queue('testq', 'TestFib')
     job.input(:n).write 6 # 1, 1, 2, 3, 5, 8
     SideJob::Worker.drain_queue
-    job.reload!
+    job.reload
     expect(job.status).to eq 'completed'
     expect(job.output(:num).read).to eq(8)
   end

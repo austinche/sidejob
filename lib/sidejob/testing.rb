@@ -47,7 +47,7 @@ module SideJob
         end
       end
 
-      reload!
+      reload
     end
   end
 end

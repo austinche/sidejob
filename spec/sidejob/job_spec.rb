@@ -334,7 +334,7 @@ describe SideJob::Job do
       expect(@job.inports.map(&:name).include?(:port)).to be false
       @job.input('port')
       expect(@job.inports.map(&:name).include?(:port)).to be true
-      @job.reload!
+      @job.reload
       expect(@job.inports.map(&:name).include?(:port)).to be true
     end
 
@@ -361,7 +361,7 @@ describe SideJob::Job do
       expect(@job.outports.map(&:name).include?(:port)).to be false
       @job.output('port')
       expect(@job.outports.map(&:name).include?(:port)).to be true
-      @job.reload!
+      @job.reload
       expect(@job.outports.map(&:name).include?(:port)).to be true
     end
 
@@ -378,7 +378,7 @@ describe SideJob::Job do
       job.output('foo')
       job.input('port1')
       expect(job.inports.map(&:name)).to match_array(current.concat [:port1])
-      job.reload!
+      job.reload
       job.input('port2')
       expect(job.inports.map(&:name)).to match_array(current.concat [:port2])
     end
@@ -391,7 +391,7 @@ describe SideJob::Job do
       job.input('foo')
       job.output('port1')
       expect(job.outports).to eq([SideJob::Port.new(job, :out, 'port1')])
-      job.reload!
+      job.reload
       job.output('port2')
       expect(job.outports).to match_array([SideJob::Port.new(job, :out, 'port1'), SideJob::Port.new(job, :out, 'port2')])
     end
@@ -429,7 +429,7 @@ describe SideJob::Job do
       Time.stub(:now).and_return(now)
       @job.set test2: 456
       expect(@job.get(:updated_at)).to eq(SideJob.timestamp)
-      @job.reload!
+      @job.reload
       expect(@job.get(:updated_at)).to eq(SideJob.timestamp)
     end
 
@@ -490,7 +490,7 @@ describe SideJob::Job do
     end
 
     it 'raises error if job no longer exists and state is not cached' do
-      @job.reload!
+      @job.reload
       job2 = SideJob.find(@job.jid)
       job2.set status: 'terminated'
       job2.delete
@@ -506,7 +506,7 @@ describe SideJob::Job do
     end
   end
 
-  describe '#reload!' do
+  describe '#reload' do
     before do
       @job = SideJob.queue('testq', 'TestWorker')
       @job.set field1: 123
@@ -515,7 +515,7 @@ describe SideJob::Job do
     it 'clears the job state cache' do
       expect(@job.get(:field1)).to eq 123
       SideJob.redis.hmset @job.redis_key, :field1, '789'
-      @job.reload!
+      @job.reload
       expect(@job.get(:field1)).to eq 789
     end
   end
