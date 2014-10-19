@@ -99,6 +99,14 @@ describe SideJob do
       expect(job.input(:memory).mode).to be :queue
     end
 
+    it 'can write initial data to input port' do
+      job = SideJob.queue('testq', 'TestWorker', inports: {myport: {'data' => [1,2]}})
+      expect(job.status).to eq 'queued'
+      expect(job.input(:myport).size).to eq 2
+      expect(job.input(:myport).read).to eq 1
+      expect(job.input(:myport).read).to eq 2
+    end
+
     it 'can add a port via outports configuration' do
       job = SideJob.queue('testq', 'TestWorker', outports: {myport: {}})
       expect(job.status).to eq 'queued'
