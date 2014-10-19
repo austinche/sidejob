@@ -80,6 +80,10 @@ describe SideJob::Worker do
   end
 
   describe '#for_inputs' do
+    it 'does nothing if no ports provided' do
+      expect {|block| @worker.for_inputs(&block)}.not_to yield_control
+    end
+
     it 'yields data from input ports' do
       @job.input(:in1).write 1
       @job.input(:in1).write 'a'
@@ -114,6 +118,10 @@ describe SideJob::Worker do
       @job.input(:in2).write [2, 3]
       @job.input(:in2).write 3
       expect {|block| @worker.for_inputs(:default_null, :in2, &block)}.to yield_successive_args([1, [2,3]], [nil, 3])
+    end
+
+    it 'raises error if all ports are infinite' do
+      expect {|block| @worker.for_inputs(:memory, :default, &block)}.to raise_error
     end
   end
 end

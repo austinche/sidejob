@@ -71,19 +71,23 @@ module SideJob
 
     # Reads a set of input ports together.
     # Workers should use this method where possible instead of reading directly from ports due to complexities
-    # of dealing with memory ports. A worker should be idempotent (it can be called multiple times on the same state).
-    # Consider a job with a single memory port. Each time it is run, it could read the same data from the port.
-    # The output of the job then could depend on the number of times it is run. To prevent this, this method
-    # requires that there be at least one non-memory input port.
-    # Yields data from the ports until no non-memory ports have data or is suspended due to missing data.
+    # of dealing with memory ports and ports with defaults.
+    # A worker should be idempotent (it can be called multiple times on the same state).
+    # Consider reading from a single port with a default value. Each time it is run, it could read the same data
+    # from the port. The output of the job then could depend on the number of times it is run.
+    # To prevent this, this method requires that there be at least one input port which is not {Port#infinite?}.
+    # Yields data from the ports until either no ports have data or is suspended due to data on some but not all ports.
     # @param inputs [Array<String>] List of input ports to read
     # @yield [Array] Splat of input data in same order as inputs
-    # @raise [SideJob::Worker::Suspended] Raised if some non-memory input port has data but not all
+    # @raise [SideJob::Worker::Suspended] Raised if a non-infinite input port has data but not all ports
+    # @raise [RuntimeError] An error is raised if all input ports are infinite
     def for_inputs(*inputs, &block)
+      return unless inputs.length > 0
       ports = inputs.map {|name| input(name)}
       loop do
-        # complete if no non-memory port inputs, suspend if partial inputs
+        # error if ports are all infinite, complete if no non-infinite port inputs, suspend if partial inputs
         data = ports.map {|port| [ port.data?, port.infinite? ] }
+        raise "One of these input ports should not be infinite: #{inputs.join(',')}" if data.all? {|x| x[1]}
         return unless data.any? {|x| x[0] && ! x[1] }
         suspend unless data.all? {|x| x[0] }
 
