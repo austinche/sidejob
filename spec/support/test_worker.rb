@@ -5,7 +5,8 @@ class TestWorker
           'memory' => { mode: :memory },
           'default' => { default: 'default' },
           'default_null' => { default: nil },
-          'memory_with_default' => { mode: :memory, default: 'default' },
+          'default_false' => { default: false},
+          'memory_with_default' => { mode: :memory, default: 'memory default' },
           '*' => {},
       },
       outports: {

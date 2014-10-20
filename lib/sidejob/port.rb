@@ -25,7 +25,7 @@ module SideJob
       raise "Invalid #{@mode} mode for output port #{@name}" if @mode == :memory && @type == :out
 
       # An input port can have a default value to return from {#read} when it's empty
-      @default = options['default'] if options['default']
+      @default = options['default']
       @has_default = options.has_key?('default') # to allow @default to be nil
 
       raise "Cannot have a default value for output port #{@name}" if @default && @type == :out
@@ -109,6 +109,7 @@ module SideJob
     # Default values are not returned.
     # @yield [Object] Each data from port
     def each(&block)
+      return unless size > 0
       if mode == :memory
         yield read
       else

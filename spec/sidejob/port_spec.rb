@@ -5,9 +5,12 @@ describe SideJob::Port do
     @job = SideJob.queue('testq', 'TestWorker')
     @port = @job.input(:port1)
     @memory = @job.input(:memory)
-    @default = @job.input(:default)
-    @default_null = @job.input(:default_null)
-    @memory_with_default = @job.input(:memory_with_default)
+    @defaults = [
+        @job.input(:default),
+        @job.input(:default_null),
+        @job.input(:default_false),
+        @job.input(:memory_with_default)
+    ]
   end
 
   describe '#initialize' do
@@ -71,7 +74,7 @@ describe SideJob::Port do
     end
 
     it 'returns 0 if there is default value' do
-      expect(@default.size).to eq 0
+      @defaults.each {|port| expect(port.size).to eq 0 }
     end
   end
 
@@ -92,9 +95,7 @@ describe SideJob::Port do
     end
 
     it 'works when there is a default value on the port' do
-      expect(@default.data?).to be true
-      expect(@default_null.data?).to be true
-      expect(@memory_with_default.data?).to be true
+      @defaults.each {|port| expect(port.data?).to be true }
     end
   end
 
@@ -108,9 +109,7 @@ describe SideJob::Port do
     end
 
     it 'returns true for port with default value' do
-      expect(@default.infinite?).to be true
-      expect(@default_null.infinite?).to be true
-      expect(@memory_with_default.infinite?).to be true
+      @defaults.each {|port| expect(port.infinite?).to be true }
     end
   end
 
@@ -124,9 +123,7 @@ describe SideJob::Port do
     end
 
     it 'returns true for port with default value' do
-      expect(@default.default?).to be true
-      expect(@default_null.default?).to be true
-      expect(@memory_with_default.default?).to be true
+      @defaults.each {|port| expect(port.default?).to be true }
     end
   end
 
@@ -142,14 +139,6 @@ describe SideJob::Port do
       @memory.write [1, {foo: true}]
       @memory.write 1
       data = SideJob.redis.lrange(@memory.redis_key, 0, -1)
-      expect(data).to eq ["1"]
-    end
-
-    it 'writing to a memory with default port should only store most recent value' do
-      @memory_with_default.write 'abc'
-      @memory_with_default.write [1, {foo: true}]
-      @memory_with_default.write 1
-      data = SideJob.redis.lrange(@memory_with_default.redis_key, 0, -1)
       expect(data).to eq ["1"]
     end
 
@@ -207,23 +196,22 @@ describe SideJob::Port do
     end
 
     it 'can use default value' do
-      3.times { expect(@default.read).to eq 'default' }
-      @default.write true
-      expect(@default.read).to be true
-      3.times { expect(@default.read).to eq 'default' }
+      @defaults.each do |port|
+        3.times { expect(port.read).to eq port.default }
+        port.write 'mydata'
+        expect(port.read).to eq 'mydata'
+        3.times { expect(port.read).to eq port.mode == :memory ? 'mydata' : port.default }
+      end
     end
 
-    it 'can use default with a null value' do
-      3.times { expect(@default_null.read).to be nil }
-      @default_null.write true
-      expect(@default_null.read).to be true
-      3.times { expect(@default_null.read).to be nil }
+    it 'can use null default value' do
+      port = @job.input(:default_null)
+      expect(port.default).to be nil
     end
 
-    it 'can handle a memory port with default value' do
-      3.times { expect(@memory_with_default.read).to eq 'default' }
-      5.times { |i| @memory_with_default.write i}
-      3.times { expect(@memory_with_default.read).to eq(4) }
+    it 'can use false default value' do
+      port = @job.input(:default_false)
+      expect(port.default).to be false
     end
 
     it 'logs reads' do
@@ -278,10 +266,11 @@ describe SideJob::Port do
     end
 
     it 'default values are not returned' do
-      expect(@default.entries).to eq []
-      @default.write true
-      expect(@default.entries).to eq [true]
-      expect(@memory.entries).to eq []
+      @defaults.each do |port|
+        expect(port.entries).to eq []
+        port.write 'mydata'
+        expect(port.entries).to eq ['mydata']
+      end
     end
   end
 
