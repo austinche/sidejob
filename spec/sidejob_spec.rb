@@ -34,6 +34,7 @@ describe SideJob do
     it 'queues a sidekiq job' do
       expect {
         job = SideJob.queue('testq', 'TestWorker')
+        expect(job.exists?).to be true
         expect(job.status).to eq 'queued'
         job = Sidekiq::Queue.new('testq').find_job(job.jid)
         expect(job.queue).to eq('testq')
@@ -54,11 +55,6 @@ describe SideJob do
       Time.stub(:now).and_return(now)
       job = SideJob.queue('testq', 'TestWorker')
       expect(job.get(:created_at)).to eq(SideJob.timestamp)
-    end
-
-    it 'stores jid in jobs set' do
-      job = SideJob.queue('testq', 'TestWorker')
-      expect(SideJob.redis.sismember('jobs', job.jid)).to be true
     end
 
     it 'can specify job args' do

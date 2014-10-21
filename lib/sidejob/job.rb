@@ -28,7 +28,7 @@ module SideJob
     # Returns if the job still exists.
     # @return [Boolean] Returns true if this job exists and has not been deleted
     def exists?
-      SideJob.redis.exists redis_key
+      SideJob.redis.hexists 'job', @jid
     end
 
     # Adds a log entry to redis.
@@ -88,6 +88,13 @@ module SideJob
     # @param wait [Float] Run in the specified number of seconds
     # @return [SideJob::Job] self
     def run(force: false, at: nil, wait: nil)
+      case status
+        when 'terminating', 'terminated'
+          return unless force
+      end
+
+      set status: 'queued'
+
       time = nil
       if at
         time = at
@@ -95,14 +102,8 @@ module SideJob
       elsif wait
         time = Time.now.to_f + wait
       end
-
-      case status
-        when 'terminating', 'terminated'
-          return unless force
-      end
-
-      set status: 'queued'
       sidekiq_queue(time)
+
       self
     end
 
@@ -149,9 +150,10 @@ module SideJob
       # delete all SideJob keys
       ports = inports.map(&:redis_key) + outports.map(&:redis_key)
       SideJob.redis.multi do |multi|
-        multi.del ports + [redis_key, "#{redis_key}:children", "#{redis_key}:ancestors", "#{redis_key}:log"]
-        multi.srem 'jobs', @jid
+        multi.hdel 'job', @jid
+        multi.del ports + ["#{redis_key}:children", "#{redis_key}:ancestors", "#{redis_key}:log"]
       end
+      reload
       return true
     end
 
@@ -189,26 +191,20 @@ module SideJob
     # @param data [Hash{String,Symbol => Object}] Data to update: objects should be JSON encodable
     # @raise [RuntimeError] Error raised if job no longer exists
     def set(data)
-      check_exists
       return unless data.size > 0
-      now = SideJob.timestamp
-      SideJob.redis.hmset redis_key, data.map {|key, val| [key, val.to_json]}.flatten(1)
-      if @state
-        data.each_pair { |key, val| @state[key.to_s] = val }
-      end
+      load_state
+      data.each_pair { |key, val| @state[key.to_s] = val }
+      save_state
     end
 
     # Unsets some fields in the job's state
     # @param fields [Array<String,Symbol>] Fields to unset
     # @raise [RuntimeError] Error raised if job no longer exists
     def unset(*fields)
-      check_exists
       return unless fields.length > 0
-      now = SideJob.timestamp
-      SideJob.redis.hdel redis_key, fields
-      if @state
-        fields.each { |field| @state.delete(field.to_s) }
-      end
+      load_state
+      fields.each { |field| @state.delete(field.to_s) }
+      save_state
     end
 
     # Returns some data from the job's state.
@@ -217,11 +213,7 @@ module SideJob
     # @return [Object,nil] Value from the job state or nil if key does not exist
     # @raise [RuntimeError] Error raised if job no longer exists
     def get(key)
-      if ! @state
-        check_exists
-        @state = SideJob.redis.hgetall(redis_key)
-        @state.merge!(@state) {|key, val| JSON.parse("[#{val}]")[0]}
-      end
+      load_state
       @state[key.to_s]
     end
 
@@ -295,8 +287,23 @@ module SideJob
     def check_exists
       raise "Job #{@jid} no longer exists!" unless exists?
     end
-  end
 
+    def load_state
+      if ! @state
+        state = SideJob.redis.hget('job', @jid)
+        raise "Job #{@jid} no longer exists!" if ! state
+        @state = JSON.parse(state)
+      end
+      @state
+    end
+
+    def save_state
+      check_exists
+      if @state
+        SideJob.redis.hset 'job', @jid, @state.to_json
+      end
+    end
+  end
   # Wrapper for a job which may not be in progress unlike SideJob::Worker.
   # @see SideJob::JobMethods
   class Job

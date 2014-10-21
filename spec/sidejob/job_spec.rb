@@ -301,13 +301,6 @@ describe SideJob::Job do
       @job.delete
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be(0)
     end
-
-    it 'removes job from jobs set' do
-      expect(SideJob.redis {|redis| redis.sismember('jobs', @job.jid)}).to be true
-      @job.set status: 'terminated'
-      @job.delete
-      expect(SideJob.redis {|redis| redis.sismember('jobs', @job.jid)}).to be false
-    end
   end
 
   describe '#input' do
@@ -397,19 +390,22 @@ describe SideJob::Job do
 
     it 'can save state in redis' do
       @job.set(test: 'data', test2: 123)
-      expect(SideJob.redis.hget(@job.redis_key, 'test')).to eq '"data"'
-      expect(SideJob.redis.hget(@job.redis_key, 'test2')).to eq '123'
+      state = JSON.parse(SideJob.redis.hget('job', @job.jid))
+      expect(state['test']).to eq 'data'
+      expect(state['test2']).to eq 123
 
       # test updating
       @job.set(test: 'data2')
-      expect(SideJob.redis.hget(@job.redis_key, 'test')).to eq('"data2"')
+      state = JSON.parse(SideJob.redis.hget('job', @job.jid))
+      expect(state['test']).to eq 'data2'
     end
 
     it 'can update values' do
       3.times do |i|
         @job.set key: i
         expect(@job.get(:key)).to eq i
-        expect(SideJob.redis.hget(@job.redis_key, :key)).to eq i.to_json
+        state = JSON.parse(SideJob.redis.hget('job', @job.jid))
+        expect(state['key']).to eq i
       end
     end
 
@@ -494,7 +490,7 @@ describe SideJob::Job do
 
     it 'clears the job state cache' do
       expect(@job.get(:field1)).to eq 123
-      SideJob.redis.hmset @job.redis_key, :field1, '789'
+      SideJob.find(@job.jid).set({field1: 789})
       @job.reload
       expect(@job.get(:field1)).to eq 789
     end

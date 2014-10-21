@@ -31,7 +31,7 @@ module SideJob
     def run_inline(errors: true, queue: true, args: [])
       worker = get(:class).constantize.new
       worker.jid = jid
-      worker.set(status: :queued) if queue
+      worker.set(status: 'queued') if queue
       SideJob::ServerMiddleware.new.call(worker, {'enqueued_at' => Time.now.to_f}, get(:queue)) do
         worker.perform(*args)
       end
