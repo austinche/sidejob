@@ -57,13 +57,6 @@ describe SideJob::Job do
       expect(JSON.parse(log)).to eq({'type' => 'foo', 'abc' => 123, 'timestamp' => SideJob.timestamp})
     end
 
-    it 'updates updated_at timestamp' do
-      now = Time.now
-      Time.stub(:now).and_return(now)
-      @job.log('foo', {abc: 123})
-      expect(@job.get(:updated_at)).to eq(SideJob.timestamp)
-    end
-
     it 'raises error if job no longer exists' do
       job2 = SideJob.find(@job.jid)
       job2.set status: 'terminated'
@@ -418,19 +411,6 @@ describe SideJob::Job do
         expect(@job.get(:key)).to eq i
         expect(SideJob.redis.hget(@job.redis_key, :key)).to eq i.to_json
       end
-    end
-
-    it 'updates updated_at timestamp' do
-      now = Time.now + 1000
-      Time.stub(:now).and_return(now)
-      @job.set test: 123
-      expect(@job.get(:updated_at)).to eq(SideJob.timestamp)
-      now = Time.now + 2000
-      Time.stub(:now).and_return(now)
-      @job.set test2: 456
-      expect(@job.get(:updated_at)).to eq(SideJob.timestamp)
-      @job.reload
-      expect(@job.get(:updated_at)).to eq(SideJob.timestamp)
     end
 
     it 'raises error if job no longer exists' do

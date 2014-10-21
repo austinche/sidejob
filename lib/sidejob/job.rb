@@ -37,12 +37,7 @@ module SideJob
     # @raise [RuntimeError] Error raised if job no longer exists
     def log(type, data)
       check_exists
-      now = SideJob.timestamp
-      SideJob.redis.multi do |multi|
-        multi.lpush "#{redis_key}:log", data.merge(type: type, timestamp: now).to_json
-        multi.hset redis_key, :updated_at, now.to_json
-      end
-      @state['updated_at'] = now if @state
+      SideJob.redis.lpush "#{redis_key}:log", data.merge(type: type, timestamp: SideJob.timestamp).to_json
     end
 
     # Return all job logs and optionally clears them.
@@ -197,10 +192,9 @@ module SideJob
       check_exists
       return unless data.size > 0
       now = SideJob.timestamp
-      SideJob.redis.hmset redis_key, :updated_at, now.to_json, data.map {|key, val| [key, val.to_json]}.flatten(1)
+      SideJob.redis.hmset redis_key, data.map {|key, val| [key, val.to_json]}.flatten(1)
       if @state
         data.each_pair { |key, val| @state[key.to_s] = val }
-        @state['updated_at'] = now
       end
     end
 
@@ -211,13 +205,9 @@ module SideJob
       check_exists
       return unless fields.length > 0
       now = SideJob.timestamp
-      SideJob.redis.multi do |multi|
-        multi.hdel redis_key, fields
-        multi.hset redis_key, :updated_at, now.to_json
-      end
+      SideJob.redis.hdel redis_key, fields
       if @state
         fields.each { |field| @state.delete(field.to_s) }
-        @state['updated_at'] = now
       end
     end
 

@@ -62,9 +62,8 @@ module SideJob
 
     SideJob.redis.multi do |multi|
       multi.sadd 'jobs', jid
-      now = SideJob.timestamp
       multi.hmset job.redis_key,
-                  config.merge({queue: queue, class: klass, args: args, created_by: by, created_at: now, updated_at: now,
+                  config.merge({queue: queue, class: klass, args: args, created_by: by, created_at: SideJob.timestamp,
                                inports: _inports, outports: _outports}).
                       map {|key, val| [key, val.to_json]}.flatten(1)
 
