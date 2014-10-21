@@ -32,8 +32,8 @@ module SideJob
   # @param parent [SideJob::Job] parent job
   # @param at [Time, Float] Time to schedule the job, otherwise queue immediately
   # @param by [String] Who created this job. Recommend <type>:<id> format for non-jobs as SideJob uses job:<id>
-  # @param inports [Hash{String => Hash}] Input port configuration. Port name to options.
-  # @param outports [Hash{String => Hash}] Output port configuration. Port name to options.
+  # @param inports [Hash{Symbol,String => Hash}] Input port configuration. Port name to options.
+  # @param outports [Hash{Symbol,String => Hash}] Output port configuration. Port name to options.
   # @return [SideJob::Job] Job
   def self.queue(queue, klass, args: nil, parent: nil, at: nil, by: nil, inports: nil, outports: nil)
     config = SideJob::Worker.config(queue, klass)
@@ -48,22 +48,33 @@ module SideJob
       ancestry = [parent.id] + SideJob.redis.lrange("#{parent.redis_key}:ancestors", 0, -1)
     end
 
-    _inports = config['inports'] || {}
-    initial = {} # input port name -> array of data
-    (inports || {}).each_pair do |port, options|
-      _inports[port.to_s] = options.select {|key, val| ['default', 'mode'].include?(key.to_s) }
-      initial[port] = options['data'] if options['data']
-    end
-
-    _outports = config['outports'] || {}
-    (outports || {}).each_pair do |port, options|
-      _outports[port.to_s] = {} # currently no options
-    end
+    inports = (inports || {}).stringify_keys
+    outports = (outports || {}).stringify_keys
+    inports.each_key {|port| inports[port] = inports[port].stringify_keys }
+    outports.each_key {|port| outports[port] = outports[port].stringify_keys }
+    ports = {
+        in: (config['inports'] || {}).merge(inports),
+        out: (config['outports'] || {}).merge(outports || {}),
+    }
 
     SideJob.redis.multi do |multi|
-      multi.hset 'job', id,
-                 config.merge({queue: queue, class: klass, args: args, created_by: by, created_at: SideJob.timestamp,
-                               inports: _inports, outports: _outports}).to_json
+      multi.hset 'job', id, {queue: queue, class: klass, args: args, created_by: by, created_at: SideJob.timestamp}.to_json
+
+      ports.each_key do |type|
+        modes = ports[type].map do |port, options|
+          [port, options['mode'] || 'queue']
+        end.flatten(1)
+        multi.hmset "job:#{id}:#{type}ports:mode", *modes if modes.length > 0
+
+        defaults = ports[type].map do |port, options|
+          if options.has_key?('default')
+            [port, options['default'].to_json]
+          else
+            nil
+          end
+        end.compact.flatten(1)
+        multi.hmset "job:#{id}:#{type}ports:default", *defaults if defaults.length > 0
+      end
 
       if parent
         multi.rpush "#{job.redis_key}:ancestors", ancestry # we need to rpush to get the right order
@@ -72,9 +83,13 @@ module SideJob
     end
 
     # send initial data to ports
-    initial.each_pair do |port, data|
-      data.each do |x|
-        job.input(port).write x
+    ports.each_key do |type|
+      ports[type].each_pair do |port, options|
+        if options['data']
+          options['data'].each do |x|
+            job.input(port).write x
+          end
+        end
       end
     end
 

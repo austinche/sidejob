@@ -159,7 +159,7 @@ module SideJob
       ports = inports.map(&:redis_key) + outports.map(&:redis_key)
       SideJob.redis.multi do |multi|
         multi.hdel 'job', @id
-        multi.del ports + ["#{redis_key}:children", "#{redis_key}:ancestors", "#{redis_key}:log"]
+        multi.del ports + %w{children ancestors log inports:mode outports:mode inports:default outports:default}.map {|x| "#{redis_key}:#{x}" }
       end
       reload
       return true
@@ -184,15 +184,13 @@ module SideJob
     # Gets all known input ports.
     # @return [Array<SideJob::Port>] Input ports
     def inports
-      load_ports if ! @ports
-      @ports[:in].values
+      SideJob.redis.hkeys("#{redis_key}:inports:mode").map {|name| SideJob::Port.new(self, :in, name)}
     end
 
     # Gets all known output ports.
     # @return [Array<SideJob::Port>] Output ports
     def outports
-      load_ports if ! @ports
-      @ports[:out].values
+      SideJob.redis.hkeys("#{redis_key}:outports:mode").map {|name| SideJob::Port.new(self, :out, name)}
     end
 
     # Sets values in the job's state.
@@ -249,46 +247,14 @@ module SideJob
       Sidekiq::Client.push(item)
     end
 
-    # Returns an input or output port.t
+    # Returns an input or output port.
     # @param type [:in, :out] Input or output port
     # @param name [Symbol,String] Name of the port
     # @return [SideJob::Port]
     def get_port(type, name)
-      load_ports if ! @ports
-
-      name = name.to_s
-
-      return @ports[type][name] if @ports[type][name]
-
-      if @ports["#{type}*"]
-        # create a port dynamically using the default options for dynamic ports
-
-        # save the port into the job state
-        key = "#{type}ports"
-        portspec = get(key) || {}
-        portspec[name.to_s] = @ports["#{type}*"]
-        set key => portspec
-
-        @ports[type][name] = SideJob::Port.new(self, type, name, @ports["#{type}*"])
-        return @ports[type][name]
-      else
-        raise "Unknown #{type}put port: #{name}"
-      end
-    end
-
-    # Caches all input and output ports.
-    def load_ports
-      @ports = {}
-      %i{in out}.each do |type|
-        @ports[type] = {}
-        (get("#{type}ports") || {}).each_pair do |name, options|
-          if name == '*'
-            @ports["#{type}*"] = options
-          else
-            @ports[type][name] = SideJob::Port.new(self, type, name, options)
-          end
-        end
-      end
+      port = SideJob::Port.new(self, type, name)
+      raise "Unknown #{type}put port: #{name}" unless port.exists?
+      port
     end
 
     # @raise [RuntimeError] Error raised if job no longer exists

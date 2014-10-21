@@ -46,15 +46,13 @@ Ports
 
 * Ports are named (case sensitive) and must match `/^[a-zA-Z0-9_]+$/`.
 * Any object that can be JSON encoded can be written or read from any input or output port.
-* Ports must be explicitly specified by jobs in the inports/outports hash.
-* If a job includes the special port *, then it accepts any port using the options for port *.
+* Ports must be explicitly specified by workers or when queuing new jobs.
 
 Port options:
 
 * mode
     * Queue - This is the default operation mode. All data written is read in a first in first out manner.
-    * Memory - At most a single value can be stored on a port. A more recent value will overwrite an existing value.
-      A read on a memory port does not remove the stored value so the same value can be read many times.
+    * Memory - No data is stored on the port. The most recent value sets the port default value.
 * default - Default value when a read is done on the port with no data
 
 Workers
@@ -106,28 +104,27 @@ Additional keys used by SideJob:
   the inports and outports hashes that map port names to port options. Options under the worker key
   modify the running of the worker by {SideJob::ServerMiddleware}.
 * job_id - Stores the last job ID (we use incrementing integers from 1)
-* jobs - Set containing all active job IDs
-* job:<jid> - Hash containing job state and configuration. All values are JSON encoded.
+* job - Hash mapping active job IDs to JSON encoded job state.
     * queue - queue name
     * class - name of class
     * args - array of arguments passed to worker's perform method
-    * status - job status
     * created_at - timestamp that the job was first queued
-    * created_by - string indicating the entity that created the job. SideJob uses job:<jid> for jobs created by another job.
-    * updated_at - timestamp of the last update
+    * created_by - string indicating the entity that created the job. SideJob uses job:<id> for jobs created by another job.
+    * status - job status
     * ran_at - timestamp of the start of the last run
-    * inports - Hash mapping input port name to options such as port mode
-    * outports - Hash mapping output port name to options such as port mode
-* job:<jid>:in:<inport> and job:<jid>:out:<outport> - List with unread port data. New data is pushed on the right.
-* job:<jid>:ancestors - List with parent job IDs up to the root job that has no parent.
+    * Any additional keys used by the worker to track internal state
+* job:<id>:in:<inport> and job:<id>:out:<outport> - List with unread port data. New data is pushed on the right.
+* job:<id>:inports:mode and job:<id>:outports:mode - Hash mapping port name to port mode. All existing ports must be here.
+* job:<id>:inports:default and job:<id>:outports:default - Hash mapping port name to JSON encoded default value for port.
+* job:<id>:ancestors - List with parent job IDs up to the root job that has no parent.
     Newer jobs are pushed on the left so the immediate parent is on the left and the root job is on the right.
-* job:<jid>:children - Set containing all children job IDs
-* job:<jid>:log - List with job changes, new log entries pushed on left. Each log entry is JSON encoded.
+* job:<id>:children - Set containing all children job IDs
+* job:<id>:log - List with job changes, new log entries pushed on left. Each log entry is JSON encoded.
     * !{type: 'status', status: <new status>, timestamp: <date>}
     * !{type: 'read', by: <by string>, <in|out>port: <port name>, data: <data>, timestamp: <date>}
     * !{type: 'write', by: <by string>, <in|out>port: <port name>, data: <data>, timestamp: <date>}
     * !{type: 'error', error: <message>, backtrace: <exception backtrace>, timestamp: <date>}
-* job:<jid>:rate:<timestamp> - Rate limiter used to prevent run away executing of a job.
+* job:<id>:rate:<timestamp> - Rate limiter used to prevent run away executing of a job.
     Keys are automatically expired.
-* job:<jid>:lock - Used to prevent multiple worker threads from running a job.
+* job:<id>:lock - Used to prevent multiple worker threads from running a job.
     Auto expired to prevent stale locks.

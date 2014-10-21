@@ -1,44 +1,38 @@
 module SideJob
   # Represents an input or output port from a Job
   class Port
-    attr_reader :job, :type, :name, :mode, :default
+    attr_reader :job, :type, :name
 
     # @param job [SideJob::Job, SideJob::Worker]
     # @param type [:in, :out] Specifies whether it is input or output port
     # @param name [Symbol,String] Port names should match [a-zA-Z0-9_]+
-    # @param options [Hash] Port options like changing mode to memory
-    def initialize(job, type, name, options={})
+    def initialize(job, type, name)
       @job = job
       @type = type.to_sym
       @name = name.to_sym
       raise "Invalid port name: #{@name}" if @name !~ /^[a-zA-Z0-9_]+$/
-
-      # The default operating mode for a port is :queue which means packets are read/written as a FIFO queue.
-      # In :memory mode, only one value is stored on a port with more recent values overwriting older values.
-      # Reads do not clear out the data in :memory mode.
-      if options['mode']
-        @mode = options['mode'].to_sym
-      else
-        @mode = :queue
-      end
-      # Disallow setting output port to memory mode as it doesn't make sense
-      raise "Invalid #{@mode} mode for output port #{@name}" if @mode == :memory && @type == :out
-
-      # An input port can have a default value to return from {#read} when it's empty
-      @default = options['default']
-      @has_default = options.has_key?('default') # to allow @default to be nil
-
-      raise "Cannot have a default value for output port #{@name}" if @default && @type == :out
     end
 
     # @return [Boolean] True if two ports are equal
     def ==(other)
-      other.is_a?(Port) && job == other.job && type == other.type && name.to_s == other.name.to_s
+      other.is_a?(Port) && @job == other.job && @type == other.type && @name == other.name
     end
 
     # @see #==
     def eql?(other)
       return self == other
+    end
+
+    # @return [Boolean] Returns true if the port exists.
+    def exists?
+      ! mode.nil?
+    end
+
+    # @return [Symbol, nil] The port mode or nil if the port is invalid
+    def mode
+      mode = SideJob.redis.hget("#{@job.redis_key}:#{type}ports:mode", @name)
+      mode = mode.to_sym if mode
+      mode
     end
 
     # Returns the number of items waiting on this port.
@@ -47,50 +41,50 @@ module SideJob
       SideJob.redis.llen(redis_key)
     end
 
-    # Returns whether #{read} will return data.
+    # Returns whether {#read} will return data.
     # @return [Boolean] True if there is data to read.
     def data?
       size > 0 || default?
     end
 
-    # Returns whether #{read} may never run out of data.
-    # This does not mean that there currently is data, e.g. in memory mode but no data.
-    # @return [Boolean] True if port is in memory mode or has a default value
-    def infinite?
-      mode == :memory || default?
+    # Returns the port default value. Use {#default?} to distinguish between a null
+    # default value and no default.
+    # @return [Object, nil] The default value on the port or nil if none
+    def default
+      parse_json SideJob.redis.hget("#{@job.redis_key}:#{type}ports:default", @name)
     end
 
-    # Returns if the port has a default value. This method exists as the default value may be nil.
+    # Returns if the port has a default value.
     # @return [Boolean] True if the port has a default value
     def default?
-      @has_default
+      SideJob.redis.hexists("#{@job.redis_key}:#{type}ports:default", @name)
     end
 
     # Write data to the port.
+    # The default operating mode for a port is :queue which means packets are read/written as a FIFO queue.
+    # In :memory mode, writes do not enter the queue and instead overwrite the default port value.
     # @param data [Object] JSON encodable data to write to the port
     def write(data)
-      SideJob.redis.multi do |multi|
-        multi.del redis_key if mode == :memory
-        multi.rpush redis_key, data.to_json
+      case mode
+        when :queue
+          SideJob.redis.rpush redis_key, data.to_json
+        when :memory
+          SideJob.redis.hset "#{@job.redis_key}:#{type}ports:default", @name, data.to_json
+        else
+          raise "Missing port #{@name} or invalid mode #{mode}"
       end
 
       log('write', data)
       self
     end
 
-    # Reads the oldest data from the port
+    # Reads the oldest data from the port. Returns the default value if no data and there is a default.
     # @return [Object] First data from port
     # @raise [EOFError] Error raised if no data to be read
     def read
-      if mode == :memory
-        data = SideJob.redis.lrange redis_key, -1, -1
-        data = data[0] if data
-      else
-        data = SideJob.redis.lpop redis_key
-      end
-
+      data = SideJob.redis.lpop(redis_key)
       if data
-        data = JSON.parse("[#{data}]")[0] # enable parsing primitive types like strings, numbers
+        data = parse_json(data)
       else
         if default?
           data = default
@@ -104,18 +98,11 @@ module SideJob
     end
 
     include Enumerable
-    # Iterate over port data.
-    # For memory ports, at most one data is returned.
-    # Default values are not returned.
+    # Iterate over port data. Default values are not returned.
     # @yield [Object] Each data from port
     def each(&block)
-      return unless size > 0
-      if mode == :memory
+      while size > 0 do
         yield read
-      else
-        while size > 0 do
-          yield read
-        end
       end
     rescue EOFError
     end
@@ -133,6 +120,14 @@ module SideJob
     end
 
     private
+
+    # Wrapper around JSON.parse to also handle primitive types.
+    # @param data [String, nil] Data to parse
+    # @return [Object, nil]
+    def parse_json(data)
+      data = JSON.parse("[#{data}]")[0] if data
+      data
+    end
 
     # Log a read or write on the port.
     def log(type, data)

@@ -281,7 +281,7 @@ describe SideJob::Job do
 
   describe '#delete' do
     before do
-      @job = SideJob.queue('testq', 'TestWorker')
+      @job = SideJob.queue('testq', 'TestWorker', inports: {in1: {}}, outports: {out1: {}})
     end
 
     it 'does not delete non-terminated jobs' do
@@ -309,10 +309,10 @@ describe SideJob::Job do
     end
 
     it 'deletes data on input and output ports' do
-      @job.input('port1').write 'data'
-      @job.output('port2').write 'data'
-      expect(@job.input('port1').size).to be 1
-      expect(@job.output('port2').size).to be 1
+      @job.input(:in1).write 'data'
+      @job.output(:out1).write 'data'
+      expect(@job.input(:in1).size).to be 1
+      expect(@job.output(:out1).size).to be 1
       @job.set status: 'terminated'
       @job.delete
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be(0)
@@ -321,81 +321,45 @@ describe SideJob::Job do
 
   describe '#input' do
     before do
-      @job = SideJob.queue('testq', 'TestWorker')
+      @job = SideJob.queue('testq', 'TestWorker', inports: {port: {}})
     end
 
     it 'returns an input port' do
-      expect(@job.input('port')).to eq(SideJob::Port.new(@job, :in, 'port'))
-    end
-
-    it 'caches ports' do
-      expect(@job.input('port')).to be @job.input('port')
-    end
-
-    it 'saves port to inports list' do
-      expect(@job.inports.map(&:name).include?(:port)).to be false
-      @job.input('port')
-      expect(@job.inports.map(&:name).include?(:port)).to be true
-      @job.reload
-      expect(@job.inports.map(&:name).include?(:port)).to be true
+      expect(@job.input(:port)).to eq(SideJob::Port.new(@job, :in, :port))
     end
 
     it 'raises error on unknown port' do
       @job = SideJob.queue('testq', 'TestWorkerEmpty')
-      expect { @job.input('port') }.to raise_error
+      expect { @job.input(:port) }.to raise_error
     end
   end
 
   describe '#output' do
     before do
-      @job = SideJob.queue('testq', 'TestWorker')
+      @job = SideJob.queue('testq', 'TestWorker', outports: {port: {}})
     end
 
     it 'returns an output port' do
-      expect(@job.output('port')).to eq(SideJob::Port.new(@job, :out, 'port'))
-    end
-
-    it 'caches ports' do
-      expect(@job.output('port')).to be @job.output('port')
-    end
-
-    it 'saves port to outports list' do
-      expect(@job.outports.map(&:name).include?(:port)).to be false
-      @job.output('port')
-      expect(@job.outports.map(&:name).include?(:port)).to be true
-      @job.reload
-      expect(@job.outports.map(&:name).include?(:port)).to be true
+      expect(@job.output(:port)).to eq(SideJob::Port.new(@job, :out, :port))
     end
 
     it 'raises error on unknown port' do
       @job = SideJob.queue('testq', 'TestWorkerEmpty')
-      expect { @job.output('port') }.to raise_error
+      expect { @job.output(:port) }.to raise_error
     end
   end
 
   describe '#inports' do
-    it 'returns all input ports that have ever been referenced' do
-      job = SideJob.queue('testq', 'TestWorker')
-      current = job.inports.map(&:name)
-      job.output('foo')
-      job.input('port1')
-      expect(job.inports.map(&:name)).to match_array(current.concat [:port1])
-      job.reload
-      job.input('port2')
-      expect(job.inports.map(&:name)).to match_array(current.concat [:port2])
+    it 'returns all input ports' do
+      job = SideJob.queue('testq', 'TestWorker', inports: { port1: {}, port2: {} })
+      expect(job.inports.map(&:name)).to include(:port1, :port2)
     end
   end
 
   describe '#outports' do
-    it 'returns all output ports that have ever been referenced' do
-      job = SideJob.queue('testq', 'TestWorker')
-      expect(job.outports).to eq([])
-      job.input('foo')
-      job.output('port1')
-      expect(job.outports).to eq([SideJob::Port.new(job, :out, 'port1')])
-      job.reload
-      job.output('port2')
-      expect(job.outports).to match_array([SideJob::Port.new(job, :out, 'port1'), SideJob::Port.new(job, :out, 'port2')])
+    it 'returns all output ports' do
+      job = SideJob.queue('testq', 'TestWorker', outports: { port1: {}, port2: {} })
+      expect(job.outports.map(&:name)).to include(:port1, :port2)
     end
   end
 

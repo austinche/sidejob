@@ -2,7 +2,13 @@ require 'spec_helper'
 
 describe SideJob::Worker do
   before do
-    @job = SideJob.queue('testq', 'TestWorker')
+    @job = SideJob.queue('testq', 'TestWorker', inports: {
+        in1: {},
+        in2: {},
+        memory: { mode: :memory },
+        default: { default: 'default' },
+        default_null: { default: nil },
+    })
     @job.set status: 'running'
     @worker = TestWorker.new
     @worker.id = @job.id
@@ -120,7 +126,8 @@ describe SideJob::Worker do
       expect {|block| @worker.for_inputs(:default_null, :in2, &block)}.to yield_successive_args([1, [2,3]], [nil, 3])
     end
 
-    it 'raises error if all ports are infinite' do
+    it 'raises error if all ports have defaults' do
+      @job.input(:memory).write true
       expect {|block| @worker.for_inputs(:memory, :default, &block)}.to raise_error
     end
   end
