@@ -48,13 +48,14 @@ module SideJob
       base.extend(ClassMethods)
     end
 
+
     # Queues a child job
     # @see SideJob.queue
     def queue(queue, klass, **options)
       SideJob.queue(queue, klass, options.merge({parent: self, by: by_string}))
     end
 
-    # Finds a job by id, setting by string to job:<jid>
+    # Finds a job by id, setting by string to job:<id>
     # @see SideJob.find
     def find(job_id)
       SideJob.find(job_id, by: by_string)
@@ -98,7 +99,7 @@ module SideJob
     private
 
     def by_string
-      "job:#{@jid}"
+      "job:#{@id}"
     end
   end
 end

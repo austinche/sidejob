@@ -1,13 +1,29 @@
 require 'spec_helper'
 
 describe SideJob::Job do
+  describe '#id=' do
+    it 'reloads a job when changing id' do
+      @job = SideJob.queue('testq', 'TestWorker')
+      job2 = SideJob.queue('testq', 'TestWorker')
+      @job.set({foo: 123})
+      job2.set({foo: 456})
+      @job.id = job2.id
+      expect(@job.get(:foo)).to eq 456
+    end
+
+    it 'raises an error if job id does not exist' do
+      @job = SideJob.queue('testq', 'TestWorker')
+      expect { @job.id = 'missing' }.to raise_error
+    end
+  end
+
   describe '#==, #eql?' do
-    it 'two jobs with the same jid are eq' do
+    it 'two jobs with the same id are eq' do
       expect(SideJob::Job.new('123')).to eq(SideJob::Job.new('123'))
       expect(SideJob::Job.new('123')).to eql(SideJob::Job.new('123'))
     end
 
-    it 'two jobs with different jid are not eq' do
+    it 'two jobs with different id are not eq' do
       expect(SideJob::Job.new('123')).not_to eq(SideJob::Job.new('456'))
       expect(SideJob::Job.new('123')).not_to eql(SideJob::Job.new('456'))
     end
@@ -58,7 +74,7 @@ describe SideJob::Job do
     end
 
     it 'raises error if job no longer exists' do
-      job2 = SideJob.find(@job.jid)
+      job2 = SideJob.find(@job.id)
       job2.set status: 'terminated'
       job2.delete
       expect { @job.log('foo', {abc: 123}) }.to raise_error
@@ -184,14 +200,14 @@ describe SideJob::Job do
     it 'can schedule a job to run at a specific time using a float' do
       time = Time.now.to_f + 10000
       expect { @job.run(at: time) }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
-      expect(Sidekiq::ScheduledSet.new.find_job(@job.jid).at).to eq(Time.at(time))
+      expect(Sidekiq::ScheduledSet.new.find_job(@job.id).at).to eq(Time.at(time))
       expect(@job.status).to eq 'queued'
     end
 
     it 'can schedule a job to run at a specific time using a Time' do
       time = Time.now + 1000
       expect { @job.run(at: time) }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
-      expect(Sidekiq::ScheduledSet.new.find_job(@job.jid).at).to eq(Time.at(time.to_f))
+      expect(Sidekiq::ScheduledSet.new.find_job(@job.id).at).to eq(Time.at(time.to_f))
       expect(@job.status).to eq 'queued'
     end
 
@@ -199,12 +215,12 @@ describe SideJob::Job do
       now = Time.now
       Time.stub(:now).and_return(now)
       expect { @job.run(wait: 100) }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
-      expect(Sidekiq::ScheduledSet.new.find_job(@job.jid).at).to eq(Time.at(now.to_f + 100))
+      expect(Sidekiq::ScheduledSet.new.find_job(@job.id).at).to eq(Time.at(now.to_f + 100))
       expect(@job.status).to eq 'queued'
     end
 
     it 'raises error if job no longer exists' do
-      job2 = SideJob.find(@job.jid)
+      job2 = SideJob.find(@job.id)
       job2.set status: 'terminated'
       job2.delete
       expect { @job.run }.to raise_error
@@ -390,13 +406,13 @@ describe SideJob::Job do
 
     it 'can save state in redis' do
       @job.set(test: 'data', test2: 123)
-      state = JSON.parse(SideJob.redis.hget('job', @job.jid))
+      state = JSON.parse(SideJob.redis.hget('job', @job.id))
       expect(state['test']).to eq 'data'
       expect(state['test2']).to eq 123
 
       # test updating
       @job.set(test: 'data2')
-      state = JSON.parse(SideJob.redis.hget('job', @job.jid))
+      state = JSON.parse(SideJob.redis.hget('job', @job.id))
       expect(state['test']).to eq 'data2'
     end
 
@@ -404,14 +420,14 @@ describe SideJob::Job do
       3.times do |i|
         @job.set key: i
         expect(@job.get(:key)).to eq i
-        state = JSON.parse(SideJob.redis.hget('job', @job.jid))
+        state = JSON.parse(SideJob.redis.hget('job', @job.id))
         expect(state['key']).to eq i
       end
     end
 
     it 'raises error if job no longer exists' do
       @job.set status: 'terminated'
-      SideJob.find(@job.jid).delete
+      SideJob.find(@job.id).delete
       expect { @job.set key: 123 }.to raise_error
     end
   end
@@ -431,7 +447,7 @@ describe SideJob::Job do
 
     it 'raises error if job no longer exists' do
       @job.set status: 'terminated', a: 123
-      SideJob.find(@job.jid).delete
+      SideJob.find(@job.id).delete
       expect { @job.unset(:a) }.to raise_error
     end
   end
@@ -467,7 +483,7 @@ describe SideJob::Job do
 
     it 'raises error if job no longer exists and state is not cached' do
       @job.reload
-      job2 = SideJob.find(@job.jid)
+      job2 = SideJob.find(@job.id)
       job2.set status: 'terminated'
       job2.delete
       expect { @job.get(:key) }.to raise_error
@@ -475,7 +491,7 @@ describe SideJob::Job do
 
     it 'does not raise error if job no longer exists but state is cached' do
       @job.get(:foo)
-      job2 = SideJob.find(@job.jid)
+      job2 = SideJob.find(@job.id)
       job2.set status: 'terminated'
       job2.delete
       expect { @job.get(:key) }.not_to raise_error
@@ -490,7 +506,7 @@ describe SideJob::Job do
 
     it 'clears the job state cache' do
       expect(@job.get(:field1)).to eq 123
-      SideJob.find(@job.jid).set({field1: 789})
+      SideJob.find(@job.id).set({field1: 789})
       @job.reload
       expect(@job.get(:field1)).to eq 789
     end

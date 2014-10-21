@@ -36,7 +36,7 @@ describe SideJob do
         job = SideJob.queue('testq', 'TestWorker')
         expect(job.exists?).to be true
         expect(job.status).to eq 'queued'
-        job = Sidekiq::Queue.new('testq').find_job(job.jid)
+        job = Sidekiq::Queue.new('testq').find_job(job.id)
         expect(job.queue).to eq('testq')
         expect(job.klass).to eq('TestWorker')
         expect(job.args).to eq([])
@@ -45,9 +45,9 @@ describe SideJob do
 
     it 'generates an incrementing job id from 1' do
       job = SideJob.queue('testq', 'TestWorker')
-      expect(job.jid).to eq('1')
+      expect(job.id).to eq('1')
       job = SideJob.queue('testq', 'TestWorker')
-      expect(job.jid).to eq('2')
+      expect(job.id).to eq('2')
     end
 
     it 'stores created at timestamp' do
@@ -71,7 +71,7 @@ describe SideJob do
         job = SideJob.queue('testq', 'TestWorker', parent: parent)
         expect(job.status).to eq 'queued'
         expect(job.parent).to eq(parent)
-        expect(SideJob.redis.lrange("#{job.redis_key}:ancestors", 0, -1)).to eq([parent.jid])
+        expect(SideJob.redis.lrange("#{job.redis_key}:ancestors", 0, -1)).to eq([parent.id])
       }.to change {Sidekiq::Stats.new.enqueued}.by(2)
     end
 
@@ -79,7 +79,7 @@ describe SideJob do
       j1 = SideJob.queue('testq', 'TestWorker')
       j2 = SideJob.queue('testq', 'TestWorker', parent: j1)
       j3 = SideJob.queue('testq', 'TestWorker', parent: j2)
-      expect(SideJob.redis.lrange("#{j3.redis_key}:ancestors", 0, -1)).to eq([j2.jid, j1.jid])
+      expect(SideJob.redis.lrange("#{j3.redis_key}:ancestors", 0, -1)).to eq([j2.id, j1.id])
     end
 
     it 'can add a port via inports configuration' do
@@ -114,7 +114,7 @@ describe SideJob do
       expect {
         job = SideJob.queue('testq', 'TestWorker', at: at)
         expect(job.status).to eq 'queued'
-        expect(Sidekiq::ScheduledSet.new.find_job(job.jid).at).to eq(Time.at(at))
+        expect(Sidekiq::ScheduledSet.new.find_job(job.id).at).to eq(Time.at(at))
       }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
     end
 
@@ -132,7 +132,7 @@ describe SideJob do
   describe '.find' do
     it 'returns a job object by id' do
       job = SideJob.queue('testq', 'TestWorker')
-      expect(SideJob.find(job.jid)).to eq(job)
+      expect(SideJob.find(job.id)).to eq(job)
     end
 
     it 'returns nil if the job does not exist' do
@@ -141,7 +141,7 @@ describe SideJob do
 
     it 'can specify a by string' do
       job = SideJob.queue('testq', 'TestWorker', by: 'test:orig')
-      job2 = SideJob.find(job.jid, by: 'test:by')
+      job2 = SideJob.find(job.id, by: 'test:by')
       expect(job2.by).to eq 'test:by'
     end
   end

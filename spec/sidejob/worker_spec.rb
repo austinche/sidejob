@@ -5,7 +5,7 @@ describe SideJob::Worker do
     @job = SideJob.queue('testq', 'TestWorker')
     @job.set status: 'running'
     @worker = TestWorker.new
-    @worker.jid = @job.jid
+    @worker.id = @job.id
   end
 
   describe '.register_all' do
@@ -58,7 +58,7 @@ describe SideJob::Worker do
 
   describe '#queue' do
     it 'can queue child jobs' do
-      expect(SideJob).to receive(:queue).with('testq', 'TestWorker', args: [1,2], inports: {'myport' => {'mode' => 'memory'}}, parent: @job, by: "job:#{@worker.jid}").and_call_original
+      expect(SideJob).to receive(:queue).with('testq', 'TestWorker', args: [1,2], inports: {'myport' => {'mode' => 'memory'}}, parent: @job, by: "job:#{@worker.id}").and_call_original
       expect {
         child = @worker.queue('testq', 'TestWorker', args: [1,2], inports: {'myport' => {'mode' => 'memory'}})
         expect(child.parent).to eq(@job)
@@ -68,14 +68,14 @@ describe SideJob::Worker do
 
     it 'queues with by string set to self' do
       child = @worker.queue('testq', 'TestWorker')
-      expect(child.by).to eq "job:#{@worker.jid}"
+      expect(child.by).to eq "job:#{@worker.id}"
     end
   end
 
   describe '#find' do
     it 'calls SideJob.find with by string set to self' do
       job2 = SideJob.queue('testq', 'TestWorker')
-      expect(@worker.find(job2.jid).by).to eq "job:#{@worker.jid}"
+      expect(@worker.find(job2.id).by).to eq "job:#{@worker.id}"
     end
   end
 

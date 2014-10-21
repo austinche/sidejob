@@ -22,14 +22,14 @@ class TestFib
       if ! job1
         job1 = queue('testq', 'TestFib')
         job1.input(:n).write n-1
-        set(job1: job1.jid)
+        set(job1: job1.id)
       end
 
       job2 = get(:job2)
       if ! job2
         job2 = queue('testq', 'TestFib')
         job2.input(:n).write n-2
-        set(job2: job2.jid)
+        set(job2: job2.id)
       end
 
       if children.length != 2 || children[0].status != 'completed' || children[1].status != 'completed'

@@ -18,6 +18,8 @@ module SideJob
     # @param msg [Hash] Sidekiq message format
     # @param queue [String] Queue the job was pulled from
     def call(worker, msg, queue)
+      worker.id = worker.jid # set the job id to sidekiq's jid
+
       return unless worker.exists? # make sure the job has not been deleted
 
       last_run = worker.get(:ran_at)

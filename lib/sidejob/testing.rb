@@ -11,11 +11,11 @@ module SideJob
         while have_job
           have_job = false
           Sidekiq::Queue.all.each do |queue|
-            queue.each do |job|
+            queue.each do |sidekiq_job|
               have_job = true
-              job.delete
+              sidekiq_job.delete
 
-              SideJob.find(job.jid).run_inline(errors: errors, queue: false, args: job.args)
+              SideJob.find(sidekiq_job.jid).run_inline(errors: errors, queue: false, args: sidekiq_job.args)
             end
           end
         end
@@ -29,25 +29,26 @@ module SideJob
     # @param queue [Boolean] Whether to force the job to be queued (default true)
     # @param args [Array] Args to pass to the worker's perform method (default none)
     def run_inline(errors: true, queue: true, args: [])
+      set(status: 'queued') if queue
+
       worker = get(:class).constantize.new
-      worker.jid = jid
-      worker.set(status: 'queued') if queue
+      worker.jid = id
       SideJob::ServerMiddleware.new.call(worker, {'enqueued_at' => Time.now.to_f}, get(:queue)) do
         worker.perform(*args)
       end
 
-      if errors && worker.status == 'failed'
-        error = worker.logs.detect {|log| log['type'] == 'error'}
+      reload
+
+      if errors && status == 'failed'
+        error = logs.detect {|log| log['type'] == 'error'}
         if error
           exception = RuntimeError.exception(error['error'])
           exception.set_backtrace(error['backtrace'])
           raise exception
         else
-          raise "Job #{jid} failed but cannot find error log"
+          raise "Job #{id} failed but cannot find error log"
         end
       end
-
-      reload
     end
   end
 end

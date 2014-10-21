@@ -31,7 +31,7 @@ module SideJob
   # @param args [Array] additional args to pass to the worker's perform method (default none)
   # @param parent [SideJob::Job] parent job
   # @param at [Time, Float] Time to schedule the job, otherwise queue immediately
-  # @param by [String] Who created this job. Recommend <type>:<id> format for non-jobs as SideJob uses job:<jid>
+  # @param by [String] Who created this job. Recommend <type>:<id> format for non-jobs as SideJob uses job:<id>
   # @param inports [Hash{String => Hash}] Input port configuration. Port name to options.
   # @param outports [Hash{String => Hash}] Output port configuration. Port name to options.
   # @return [SideJob::Job] Job
@@ -39,13 +39,13 @@ module SideJob
     config = SideJob::Worker.config(queue, klass)
     raise "No worker registered for #{klass} in queue #{queue}" unless config
 
-    # To prevent race conditions, we generate the jid and set all data in redis before queuing the job to sidekiq
+    # To prevent race conditions, we generate the id and set all data in redis before queuing the job to sidekiq
     # Otherwise, sidekiq may start the job too quickly
-    jid = SideJob.redis.incr(:job_id).to_s
-    job = SideJob::Job.new(jid, by: by)
+    id = SideJob.redis.incr(:job_id).to_s
+    job = SideJob::Job.new(id, by: by)
 
     if parent
-      ancestry = [parent.jid] + SideJob.redis.lrange("#{parent.redis_key}:ancestors", 0, -1)
+      ancestry = [parent.id] + SideJob.redis.lrange("#{parent.redis_key}:ancestors", 0, -1)
     end
 
     _inports = config['inports'] || {}
@@ -61,13 +61,13 @@ module SideJob
     end
 
     SideJob.redis.multi do |multi|
-      multi.hset 'job', jid,
+      multi.hset 'job', id,
                  config.merge({queue: queue, class: klass, args: args, created_by: by, created_at: SideJob.timestamp,
                                inports: _inports, outports: _outports}).to_json
 
       if parent
         multi.rpush "#{job.redis_key}:ancestors", ancestry # we need to rpush to get the right order
-        multi.sadd "#{parent.redis_key}:children", jid
+        multi.sadd "#{parent.redis_key}:children", id
       end
     end
 

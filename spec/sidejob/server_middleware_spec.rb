@@ -32,9 +32,9 @@ describe SideJob::ServerMiddleware do
   def process(job)
     chain = Sidekiq::Middleware::Chain.new
     chain.add SideJob::ServerMiddleware
-    msg = Sidekiq::Queue.new(@queue).find_job(job.jid)
+    msg = Sidekiq::Queue.new(@queue).find_job(job.id)
     worker = msg.klass.constantize.new
-    worker.jid = job.jid
+    worker.jid = job.id
     chain.invoke(worker, msg, @queue) { yield worker }
     job.reload
     worker
@@ -53,9 +53,7 @@ describe SideJob::ServerMiddleware do
   it 'does not run if job has been deleted' do
     @job.set status: 'terminated'
     @job.delete
-    @run = false
-    process(@job) { @run = true}
-    expect(@run).to be false
+    expect { process(@job) }.to raise_error
   end
 
   describe 'handles a normal run' do

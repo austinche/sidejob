@@ -51,7 +51,7 @@ describe SideJob::Port do
 
   describe '#to_s' do
     it 'returns the redis key' do
-      expect(SideJob::Port.new(@job, :in, :port1).to_s).to eq "job:#{@job.jid}:in:port1"
+      expect(SideJob::Port.new(@job, :in, :port1).to_s).to eq "job:#{@job.id}:in:port1"
     end
   end
 
@@ -157,7 +157,7 @@ describe SideJob::Port do
       now = Time.now
       Time.stub(:now).and_return(now)
       SideJob.redis.del "#{@job.redis_key}:log"
-      @job = SideJob.find(@job.jid, by: 'test:job')
+      @job = SideJob.find(@job.id, by: 'test:job')
       @port = @job.input(:port1)
       @port.write('abc')
       log = SideJob.redis.lpop("#{@job.redis_key}:log")
@@ -232,7 +232,7 @@ describe SideJob::Port do
       Time.stub(:now).and_return(now)
       @port.write('abc')
       SideJob.redis.del "#{@job.redis_key}:log"
-      @job = SideJob.find(@job.jid, by: 'test:job')
+      @job = SideJob.find(@job.id, by: 'test:job')
       @port = @job.input(:port1)
       expect(@port.read).to eq('abc')
       log = SideJob.redis.lpop("#{@job.redis_key}:log")
