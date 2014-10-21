@@ -9,7 +9,6 @@ describe SideJob::ServerMiddleware do
       @shutdown_called = true
     end
     def perform
-      raise 'should not be here'
     end
   end
 
@@ -20,7 +19,6 @@ describe SideJob::ServerMiddleware do
       raise 'shutdown error'
     end
     def perform
-      raise 'should not be here'
     end
   end
 

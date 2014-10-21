@@ -14,12 +14,7 @@ class TestSumFlow
       suspend
     else
       if get(:sent)
-        sum = children[0].output(:sum).read
-        if sum
-          output(:out).write sum
-        else
-          suspend
-        end
+        output(:out).write children[0].output(:sum).read
       else
         children[0].input(:in).write 5
         children[0].input(:in).write 6
