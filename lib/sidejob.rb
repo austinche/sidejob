@@ -36,8 +36,7 @@ module SideJob
   # @param outports [Hash{Symbol,String => Hash}] Output port configuration. Port name to options.
   # @return [SideJob::Job] Job
   def self.queue(queue, klass, args: nil, parent: nil, at: nil, by: nil, inports: nil, outports: nil)
-    config = SideJob::Worker.config(queue, klass)
-    raise "No worker registered for #{klass} in queue #{queue}" unless config
+    raise "No worker registered for #{klass} in queue #{queue}" unless SideJob::Worker.config(queue, klass)
 
     # To prevent race conditions, we generate the id and set all data in redis before queuing the job to sidekiq
     # Otherwise, sidekiq may start the job too quickly
@@ -48,33 +47,8 @@ module SideJob
       ancestry = [parent.id] + SideJob.redis.lrange("#{parent.redis_key}:ancestors", 0, -1)
     end
 
-    inports = (inports || {}).stringify_keys
-    outports = (outports || {}).stringify_keys
-    inports.each_key {|port| inports[port] = inports[port].stringify_keys }
-    outports.each_key {|port| outports[port] = outports[port].stringify_keys }
-    ports = {
-        in: (config['inports'] || {}).merge(inports),
-        out: (config['outports'] || {}).merge(outports || {}),
-    }
-
     SideJob.redis.multi do |multi|
       multi.hset 'job', id, {queue: queue, class: klass, args: args, created_by: by, created_at: SideJob.timestamp}.to_json
-
-      ports.each_key do |type|
-        modes = ports[type].map do |port, options|
-          [port, options['mode'] || 'queue']
-        end.flatten(1)
-        multi.hmset "job:#{id}:#{type}ports:mode", *modes if modes.length > 0
-
-        defaults = ports[type].map do |port, options|
-          if options.has_key?('default')
-            [port, options['default'].to_json]
-          else
-            nil
-          end
-        end.compact.flatten(1)
-        multi.hmset "job:#{id}:#{type}ports:default", *defaults if defaults.length > 0
-      end
 
       if parent
         multi.rpush "#{job.redis_key}:ancestors", ancestry # we need to rpush to get the right order
@@ -82,16 +56,9 @@ module SideJob
       end
     end
 
-    # send initial data to ports
-    ports.each_key do |type|
-      ports[type].each_pair do |port, options|
-        if options['data']
-          options['data'].each do |x|
-            job.input(port).write x
-          end
-        end
-      end
-    end
+    # initialize ports
+    job.inports = inports
+    job.outports = outports
 
     job.run(at: at)
   end

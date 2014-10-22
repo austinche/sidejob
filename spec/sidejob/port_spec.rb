@@ -15,8 +15,9 @@ describe SideJob::Port do
     @port1 = @job.input(:port1)
     @out1 = @job.output(:out1)
     @memory = @job.input(:memory)
+    @default = @job.input(:default)
     @defaults = [
-        @job.input(:default),
+        @default,
         @job.input(:default_null),
         @job.input(:default_false),
         @job.input(:memory_with_default)
@@ -67,6 +68,32 @@ describe SideJob::Port do
     end
   end
 
+  describe '#options=' do
+    it 'can change mode to memory' do
+      expect(@port1.mode).to eq :queue
+      @port1.options = { mode: :memory }
+      expect(@port1.mode).to eq :memory
+    end
+
+    it 'can change mode to queue' do
+      expect(@memory.mode).to eq :memory
+      @memory.options = { mode: :queue }
+      expect(@memory.mode).to eq :queue
+    end
+
+    it 'can set default value' do
+      expect(@port1.default?).to be false
+      @port1.options = { default: 123 }
+      expect(@port1.default).to eq 123
+    end
+
+    it 'can remove default value' do
+      expect(@default.default?).to be true
+      @default.options = { }
+      expect(@default.default?).to be false
+    end
+  end
+
   describe '#mode' do
     it 'returns nil for non-existent ports' do
       expect(SideJob::Port.new(@job, :in, 'missing').mode).to be nil
@@ -74,7 +101,7 @@ describe SideJob::Port do
 
     it 'returns the port mode for queue ports' do
       expect(@port1.mode).to eq :queue
-      expect(@job.input(:default).mode).to eq :queue
+      expect(@default.mode).to eq :queue
     end
 
     it 'returns the port mode for memory ports' do
@@ -200,6 +227,11 @@ describe SideJob::Port do
     it 'does not run the job if it is an output port' do
       expect(@out1.job).not_to receive(:run)
       @out1.write 3
+    end
+
+    it 'does not run the job if it is a memory port' do
+      expect(@memory.job).not_to receive(:run)
+      @memory.write 3
     end
   end
 

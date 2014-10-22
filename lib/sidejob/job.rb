@@ -189,16 +189,32 @@ module SideJob
       get_port :out, name
     end
 
-    # Gets all known input ports.
+    # Gets all input ports.
     # @return [Array<SideJob::Port>] Input ports
     def inports
       SideJob.redis.hkeys("#{redis_key}:inports:mode").map {|name| SideJob::Port.new(self, :in, name)}
     end
 
-    # Gets all known output ports.
+    # Sets the input ports for the job.
+    # The ports are merged with the worker configuration.
+    # Any current ports that are not in the new port set are deleted (including any data on those ports).
+    # @param ports [Hash{Symbol,String => Hash}] Input port configuration. Port name to options.
+    def inports=(ports)
+      set_ports :in, ports
+    end
+
+    # Gets all output ports.
     # @return [Array<SideJob::Port>] Output ports
     def outports
       SideJob.redis.hkeys("#{redis_key}:outports:mode").map {|name| SideJob::Port.new(self, :out, name)}
+    end
+
+    # Sets the input ports for the job.
+    # The ports are merged with the worker configuration.
+    # Any current ports that are not in the new port set are deleted (including any data on those ports).
+    # @param ports [Hash{Symbol,String => Hash}] Output port configuration. Port name to options.
+    def outports=(ports)
+      set_ports :out, ports
     end
 
     # Returns some data from the job's state.
@@ -215,6 +231,13 @@ module SideJob
     def reload
       @state = nil
       @ports = nil
+      @config = nil
+    end
+
+    # Returns the worker configuration for the job.
+    # @see SideJob::Worker.config
+    def config
+      @config ||= SideJob::Worker.config(get(:queue), get(:class))
     end
 
     private
@@ -226,7 +249,7 @@ module SideJob
       klass = get(:class)
       args = get(:args)
 
-      if ! SideJob::Worker.config(queue, klass)
+      if ! SideJob.redis.hexists("workers:#{queue}", klass)
         self.status = 'terminated'
         raise "Worker no longer registered for #{klass} in queue #{queue}"
       end
@@ -241,8 +264,54 @@ module SideJob
     # @return [SideJob::Port]
     def get_port(type, name)
       port = SideJob::Port.new(self, type, name)
-      raise "Unknown #{type}put port: #{name}" unless port.exists?
+      if ! port.exists?
+        # dynamically configure the port if the worker configuration allows for any port
+        options = config["dynamic_#{type}port"]
+        if options
+          port.options = options
+        else
+          raise "Unknown #{type}put port: #{name}"
+        end
+      end
       port
+    end
+
+    # Sets the input/outputs ports for the job and overwrites all current options.
+    # The ports are merged with the worker configuration.
+    # Any current ports that are not in the new port set are deleted (including any data on those ports).
+    # @param type [:in, :out] Input or output ports
+    # @param ports [Hash{Symbol,String => Hash}] Port configuration. Port name to options.
+    def set_ports(type, ports)
+      current = SideJob.redis.hkeys("#{redis_key}:#{type}ports:mode") || []
+
+      ports = (ports || {}).stringify_keys
+      ports.each_key {|port| ports[port] = ports[port].stringify_keys }
+      ports = (config["#{type}ports"] || {}).merge(ports)
+
+      SideJob.redis.multi do |multi|
+        # remove data from old ports
+        (current - ports.keys).each do |port|
+          multi.del "#{redis_key}:#{type}:#{port}"
+        end
+
+        # completely replace the mode and default keys
+
+        multi.del "#{redis_key}:#{type}ports:mode"
+        modes = ports.map do |port, options|
+          [port, options['mode'] || 'queue']
+        end.flatten(1)
+        multi.hmset "#{redis_key}:#{type}ports:mode", *modes if modes.length > 0
+
+        defaults = ports.map do |port, options|
+          if options.has_key?('default')
+            [port, options['default'].to_json]
+          else
+            nil
+          end
+        end.compact.flatten(1)
+        multi.del "#{redis_key}:#{type}ports:default"
+        multi.hmset "#{redis_key}:#{type}ports:default", *defaults if defaults.length > 0
+      end
     end
 
     # @raise [RuntimeError] Error raised if job no longer exists

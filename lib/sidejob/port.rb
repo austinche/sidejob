@@ -20,12 +20,26 @@ module SideJob
 
     # @see #==
     def eql?(other)
-      return self == other
+      self == other
     end
 
     # @return [Boolean] Returns true if the port exists.
     def exists?
       ! mode.nil?
+    end
+
+    # Reset the port options. Currently supported options are mode and default.
+    # @param options [Hash] New port options
+    def options=(options)
+      options = options.stringify_keys
+      SideJob.redis.multi do |multi|
+        multi.hset "#{@job.redis_key}:#{type}ports:mode", @name, options['mode'] || 'queue'
+        if options.has_key?('default')
+          multi.hset "#{@job.redis_key}:#{type}ports:default", @name, options['default'].to_json
+        else
+          multi.hdel "#{@job.redis_key}:#{type}ports:default", @name
+        end
+      end
     end
 
     # @return [Symbol, nil] The port mode or nil if the port is invalid
@@ -68,13 +82,12 @@ module SideJob
       case mode
         when :queue
           SideJob.redis.rpush redis_key, data.to_json
+          @job.run if type == :in
         when :memory
           SideJob.redis.hset "#{@job.redis_key}:#{type}ports:default", @name, data.to_json
         else
           raise "Missing port #{@name} or invalid mode #{mode}"
       end
-
-      @job.run if type == :in
 
       log('write', data)
       self

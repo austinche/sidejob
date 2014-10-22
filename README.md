@@ -46,7 +46,8 @@ Ports
 
 * Ports are named (case sensitive) and must match `/^[a-zA-Z0-9_]+$/`.
 * Any object that can be JSON encoded can be written or read from any input or output port.
-* Ports must be explicitly specified by workers or when queuing new jobs.
+* Ports must be explicitly specified by workers or when queuing new jobs unless the worker is configured
+  with dynamic_inport or dynamic_outport which specifies the default port options for unknown ports.
 
 Port options:
 

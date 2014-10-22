@@ -1,6 +1,16 @@
 require 'spec_helper'
 
 describe SideJob::Job do
+  class TestWorkerDynamic
+    include SideJob::Worker
+    register(
+        dynamic_inport: {default: 'def'},
+        dynamic_outport: {default: 'def'},
+    )
+    def perform
+    end
+  end
+
   describe '#id=' do
     it 'reloads a job when changing id' do
       @job = SideJob.queue('testq', 'TestWorker')
@@ -325,47 +335,71 @@ describe SideJob::Job do
     end
   end
 
-  describe '#input' do
-    before do
-      @job = SideJob.queue('testq', 'TestWorker', inports: {port: {}})
+  # Tests are identical for input and output port methods
+  %i{in out}.each do |type|
+    describe "##{type}put" do
+      it "returns an #{type}put port" do
+        spec = {}
+        spec[:"#{type}ports"] = {port: {}}
+        @job = SideJob.queue('testq', 'TestWorker', **spec)
+        expect(@job.send("#{type}put", :port)).to eq(SideJob::Port.new(@job, type, :port))
+      end
+
+      it 'raises error on unknown port' do
+        @job = SideJob.queue('testq', 'TestWorker')
+        expect { @job.send("#{type}put", :unknown) }.to raise_error
+      end
+
+      it 'creates ports for workers configured with dynamic ports' do
+        @job = SideJob.queue('testq', 'TestWorkerDynamic')
+        expect {
+          port = @job.send("#{type}put", :unknown)
+          expect(port.size).to eq 0
+          expect(port.read).to eq 'def'
+        }.to change { @job.send("#{type}ports").size }.by(1)
+      end
     end
 
-    it 'returns an input port' do
-      expect(@job.input(:port)).to eq(SideJob::Port.new(@job, :in, :port))
+    describe "##{type}ports" do
+      it "returns all #{type}put ports" do
+        @job = SideJob.queue('testq', 'TestWorker')
+        expect(@job.send("#{type}ports")).to eq([SideJob::Port.new(@job, type, :static)])
+      end
     end
 
-    it 'raises error on unknown port' do
-      @job = SideJob.queue('testq', 'TestWorkerEmpty')
-      expect { @job.input(:port) }.to raise_error
-    end
-  end
+    describe "##{type}ports=" do
+      before do
+        @job = SideJob.queue('testq', 'TestWorker')
+      end
 
-  describe '#output' do
-    before do
-      @job = SideJob.queue('testq', 'TestWorker', outports: {port: {}})
-    end
+      it 'uses worker ports when nothing is given' do
+        expect(@job.send("#{type}ports").size).to eq 1
+      end
 
-    it 'returns an output port' do
-      expect(@job.output(:port)).to eq(SideJob::Port.new(@job, :out, :port))
-    end
+      it 'can specify additional ports with options' do
+        @job.send("#{type}ports=", {myport: {mode: :memory, default: 'def'}})
+        expect(@job.send("#{type}ports").size).to eq 2
+        expect(@job.send("#{type}ports").map(&:name)).to include(:myport)
+        expect(@job.send("#{type}put", :myport).mode).to eq :memory
+        expect(@job.send("#{type}put", :myport).default).to eq 'def'
+      end
 
-    it 'raises error on unknown port' do
-      @job = SideJob.queue('testq', 'TestWorkerEmpty')
-      expect { @job.output(:port) }.to raise_error
-    end
-  end
+      it 'can change existing port mode while keeping data intact' do
+        @job.send("#{type}put", :static).write 'data'
+        @job.send("#{type}ports=", {static: {mode: :memory, default: 'def'}})
+        expect(@job.send("#{type}ports").size).to eq 1
+        expect(@job.send("#{type}put", :static).mode).to eq :memory
+        expect(@job.send("#{type}put", :static).default).to eq 'def'
+        expect(@job.send("#{type}put", :static).read).to eq 'data'
+      end
 
-  describe '#inports' do
-    it 'returns all input ports' do
-      job = SideJob.queue('testq', 'TestWorker', inports: { port1: {}, port2: {} })
-      expect(job.inports.map(&:name)).to include(:port1, :port2)
-    end
-  end
-
-  describe '#outports' do
-    it 'returns all output ports' do
-      job = SideJob.queue('testq', 'TestWorker', outports: { port1: {}, port2: {} })
-      expect(job.outports.map(&:name)).to include(:port1, :port2)
+      it 'deletes no longer used ports' do
+        @job.send("#{type}ports=", {myport: {}})
+        @job.send("#{type}put", :myport).write 123
+        @job.send("#{type}ports=", {})
+        expect(@job.send("#{type}ports").map(&:name)).not_to include(:myport)
+        expect { @job.send("#{type}put", :myport) }.to raise_error
+      end
     end
   end
 
@@ -425,6 +459,19 @@ describe SideJob::Job do
       SideJob.redis.hset 'job', @job.id, {queue: 'testq', class: 'TestWorker', field1: 789}.to_json
       @job.reload
       expect(@job.get(:field1)).to eq 789
+    end
+  end
+
+  describe '#config' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+    end
+
+    it 'returns and caches worker configuration' do
+      expect(SideJob::Worker).to receive(:config).with('testq', 'TestWorker').once.and_call_original
+      @job.reload
+      @job.config
+      @job.config # test cached
     end
   end
 end
