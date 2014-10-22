@@ -96,10 +96,37 @@ module SideJob
       end
     end
 
+    # Sets values in the job's internal state.
+    # @param data [Hash{String,Symbol => Object}] Data to update: objects should be JSON encodable
+    # @raise [RuntimeError] Error raised if job no longer exists
+    def set(data)
+      return unless data.size > 0
+      load_state
+      data.each_pair { |key, val| @state[key.to_s] = val }
+      save_state
+    end
+
+    # Unsets some fields in the job's internal state
+    # @param fields [Array<String,Symbol>] Fields to unset
+    # @raise [RuntimeError] Error raised if job no longer exists
+    def unset(*fields)
+      return unless fields.length > 0
+      load_state
+      fields.each { |field| @state.delete(field.to_s) }
+      save_state
+    end
+
     private
 
     def by_string
       "job:#{@id}"
+    end
+
+    def save_state
+      check_exists
+      if @state
+        SideJob.redis.hset 'job', @id, @state.to_json
+      end
     end
   end
 end

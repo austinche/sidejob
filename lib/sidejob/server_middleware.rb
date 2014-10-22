@@ -108,7 +108,7 @@ module SideJob
     private
 
     def set_status(worker, status, config)
-      worker.set status: status
+      worker.status = status
       worker.log 'status', {status: status} if config['log_status']
     end
 

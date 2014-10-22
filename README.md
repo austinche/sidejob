@@ -110,9 +110,9 @@ Additional keys used by SideJob:
     * args - array of arguments passed to worker's perform method
     * created_at - timestamp that the job was first queued
     * created_by - string indicating the entity that created the job. SideJob uses job:<id> for jobs created by another job.
-    * status - job status
     * ran_at - timestamp of the start of the last run
     * Any additional keys used by the worker to track internal state
+* job:<id>:status - Job status as string.
 * job:<id>:in:<inport> and job:<id>:out:<outport> - List with unread port data. New data is pushed on the right.
 * job:<id>:inports:mode and job:<id>:outports:mode - Hash mapping port name to port mode. All existing ports must be here.
 * job:<id>:inports:default and job:<id>:outports:default - Hash mapping port name to JSON encoded default value for port.

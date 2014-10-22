@@ -21,7 +21,7 @@ describe 'SideJob testing helpers' do
     include SideJob::Worker
     register
     def perform
-      set status: 'failed'
+      self.status = 'failed'
     end
   end
 
@@ -76,7 +76,7 @@ describe 'SideJob testing helpers' do
       job = SideJob.queue('testq', 'TestSum')
       5.times {|i| job.input(:in).write i}
       job.input(:ready).write 1
-      job.set status: :suspended
+      job.status = 'suspended'
       job.run_inline
       expect(job.output(:sum).read).to eq 10
     end
@@ -85,7 +85,7 @@ describe 'SideJob testing helpers' do
       job = SideJob.queue('testq', 'TestSum')
       5.times {|i| job.input(:in).write i}
       job.input(:ready).write 1
-      job.set status: :suspended
+      job.status = 'suspended'
       job.run_inline queue: false
       expect(job.output(:sum).data?).to be false
     end

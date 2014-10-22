@@ -40,7 +40,7 @@ describe SideJob::ServerMiddleware do
 
   %w{running suspended completed failed terminated}.each do |status|
     it "does not run if status is #{status}" do
-      @job.set status: status
+      @job.status = status
       @run = false
       process(@job) { @run = true}
       expect(@run).to be false
@@ -49,7 +49,7 @@ describe SideJob::ServerMiddleware do
   end
 
   it 'does not run if job has been deleted' do
-    @job.set status: 'terminated'
+    @job.status = 'terminated'
     @job.delete
     expect { process(@job) }.to raise_error
   end
@@ -75,7 +75,7 @@ describe SideJob::ServerMiddleware do
     end
 
     it 'runs the parent job' do
-      @job.set status: 'suspended'
+      @job.status = 'suspended'
       child = SideJob.queue(@queue, 'TestWorker', {parent: @job})
       expect(@job.status).to eq 'suspended'
       expect {
@@ -114,8 +114,8 @@ describe SideJob::ServerMiddleware do
     end
 
     it 'does not do anything if the enqueued_at time is before the ran_at' do
+      process(@job) {|worker| worker.set ran_at: SideJob.timestamp}
       @run = false
-      @job.set ran_at: SideJob.timestamp
       process(@job) {@run = true}
       expect(@run).to be false
     end
@@ -214,7 +214,7 @@ describe SideJob::ServerMiddleware do
     end
 
     it 'runs the parent job' do
-      @job.set status: 'suspended'
+      @job.status = 'suspended'
       child = SideJob.queue(@queue, 'TestWorker', {parent: @job})
       expect {
         process(child) { raise 'oops' }
@@ -253,7 +253,7 @@ describe SideJob::ServerMiddleware do
 
   describe 'handles job termination' do
     it 'sets status to terminated upon run' do
-      @job.set status: 'terminating'
+      @job.status = 'terminating'
       process(@job) { raise 'should not be called' }
       expect(@job.status).to eq 'terminated'
       errors = @job.logs.select {|log| log['type'] == 'error'}
@@ -261,7 +261,7 @@ describe SideJob::ServerMiddleware do
     end
 
     it 'logs terminated status change' do
-      @job.set status: 'terminating'
+      @job.status = 'terminating'
       process(@job) { raise 'should not be called' }
       log = @job.logs.detect {|log| log['type'] == 'status'}
       expect(log['status']).to eq 'terminated'
@@ -269,14 +269,14 @@ describe SideJob::ServerMiddleware do
 
     it 'does not log if configured to not log' do
       @job = SideJob.queue(@queue, 'TestWorkerNoLog')
-      @job.set status: 'terminating'
+      @job.status = 'terminating'
       process(@job) { raise 'should not be called' }
       expect(@job.logs.select {|log| log['type'] == 'status'}.size).to be 0
     end
 
     it 'runs parent' do
       child = SideJob.queue(@queue, 'TestWorker', {parent: @job})
-      child.set status: 'terminating'
+      child.status = 'terminating'
       process(child) { raise 'should not be called' }
       expect(child.status).to eq 'terminated'
       expect(@job.status).to eq 'queued'
@@ -284,14 +284,14 @@ describe SideJob::ServerMiddleware do
 
     it 'calls worker shutdown method' do
       @job = SideJob.queue(@queue, 'TestWorkerShutdown')
-      @job.set status: 'terminating'
+      @job.status = 'terminating'
       worker = process(@job) { raise 'not reached' }
       expect(worker.shutdown_called).to be true
     end
 
     it 'logs but ignores exceptions thrown during shutdown' do
       @job = SideJob.queue(@queue, 'TestWorkerShutdownError')
-      @job.set status: 'terminating'
+      @job.status = 'terminating'
       worker = process(@job) { raise 'not reached' }
       logs = @job.logs.select {|log| log['type'] == 'error'}
       expect(logs.size).to eq 1

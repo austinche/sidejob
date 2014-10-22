@@ -29,7 +29,7 @@ module SideJob
     # @param queue [Boolean] Whether to force the job to be queued (default true)
     # @param args [Array] Args to pass to the worker's perform method (default none)
     def run_inline(errors: true, queue: true, args: [])
-      set(status: 'queued') if queue
+      self.status = 'queued' if queue
 
       worker = get(:class).constantize.new
       worker.jid = id

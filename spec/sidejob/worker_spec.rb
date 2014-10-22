@@ -9,9 +9,9 @@ describe SideJob::Worker do
         default: { default: 'default' },
         default_null: { default: nil },
     })
-    @job.set status: 'running'
     @worker = TestWorker.new
     @worker.id = @job.id
+    @worker.status = 'running'
   end
 
   describe '.register_all' do
@@ -129,6 +129,52 @@ describe SideJob::Worker do
     it 'raises error if all ports have defaults' do
       @job.input(:memory).write true
       expect {|block| @worker.for_inputs(:memory, :default, &block)}.to raise_error
+    end
+  end
+
+  describe '#set' do
+    it 'can save state in redis' do
+      @worker.set(test: 'data', test2: 123)
+      state = JSON.parse(SideJob.redis.hget('job', @worker.id))
+      expect(state['test']).to eq 'data'
+      expect(state['test2']).to eq 123
+
+      # test updating
+      @worker.set(test: 'data2')
+      state = JSON.parse(SideJob.redis.hget('job', @worker.id))
+      expect(state['test']).to eq 'data2'
+    end
+
+    it 'can update values' do
+      3.times do |i|
+        @worker.set key: i
+        expect(@worker.get(:key)).to eq i
+        state = JSON.parse(SideJob.redis.hget('job', @worker.id))
+        expect(state['key']).to eq i
+      end
+    end
+
+    it 'raises error if job no longer exists' do
+      @worker.status = 'terminated'
+      SideJob.find(@worker.id).delete
+      expect { @worker.set key: 123 }.to raise_error
+    end
+  end
+
+  describe '#unset' do
+    it 'unsets fields' do
+      @worker.set(a: 123, b: 456, c: 789)
+      @worker.unset('a', :b)
+      expect(@worker.get(:a)).to eq nil
+      expect(@worker.get(:b)).to eq nil
+      expect(@worker.get(:c)).to eq 789
+    end
+
+    it 'raises error if job no longer exists' do
+      @worker.status = 'terminated'
+      @worker.set a: 123
+      SideJob.find(@worker.id).delete
+      expect { @worker.unset(:a) }.to raise_error
     end
   end
 end

@@ -4,11 +4,10 @@ describe SideJob::Job do
   describe '#id=' do
     it 'reloads a job when changing id' do
       @job = SideJob.queue('testq', 'TestWorker')
-      job2 = SideJob.queue('testq', 'TestWorker')
-      @job.set({foo: 123})
-      job2.set({foo: 456})
+      job2 = SideJob.queue('testq', 'TestWorkerEmpty')
+      expect(@job.get(:class)).to eq 'TestWorker'
       @job.id = job2.id
-      expect(@job.get(:foo)).to eq 456
+      expect(@job.get(:class)).to eq 'TestWorkerEmpty'
     end
 
     it 'raises an error if job id does not exist' do
@@ -75,7 +74,7 @@ describe SideJob::Job do
 
     it 'raises error if job no longer exists' do
       job2 = SideJob.find(@job.id)
-      job2.set status: 'terminated'
+      job2.status = 'terminated'
       job2.delete
       expect { @job.log('foo', {abc: 123}) }.to raise_error
     end
@@ -109,7 +108,14 @@ describe SideJob::Job do
   describe '#status' do
     it 'retrieves status' do
       @job = SideJob.queue('testq', 'TestWorker')
-      @job.set status: 'newstatus'
+      expect(@job.status).to eq 'queued'
+    end
+  end
+
+  describe '#status=' do
+    it 'sets status' do
+      @job = SideJob.queue('testq', 'TestWorker')
+      @job.status = 'newstatus'
       expect(@job.status).to eq 'newstatus'
     end
   end
@@ -125,13 +131,13 @@ describe SideJob::Job do
     end
 
     it 'does nothing if status is terminated' do
-      @job.set status: 'terminated'
+      @job.status = 'terminated'
       @job.terminate
       expect(@job.status).to eq 'terminated'
     end
 
     it 'throws error and immediately sets status to terminated if job class is unregistered' do
-      @job.set queue: 'unknown'
+      SideJob.redis.del 'workers:testq'
       expect { @job.terminate }.to raise_error
       expect(@job.status).to eq 'terminated'
     end
@@ -166,7 +172,7 @@ describe SideJob::Job do
     %w{queued running suspended completed failed}.each do |status|
       it "queues the job if status is #{status}" do
         expect {
-          @job.set status: status
+          @job.status = status
           @job.run
           expect(@job.status).to eq 'queued'
         }.to change {Sidekiq::Stats.new.enqueued}.by(1)
@@ -176,7 +182,7 @@ describe SideJob::Job do
     %w{terminating terminated}.each do |status|
       it "does not queue the job if status is #{status}" do
         expect {
-          @job.set status: status
+          @job.status = status
           @job.run
           expect(@job.status).to eq status
         }.to change {Sidekiq::Stats.new.enqueued}.by(0)
@@ -184,7 +190,7 @@ describe SideJob::Job do
 
       it "queues the job if status is #{status} and force=true" do
         expect {
-          @job.set status: status
+          @job.status = status
           @job.run(force: true)
           expect(@job.status).to eq 'queued'
         }.to change {Sidekiq::Stats.new.enqueued}.by(1)
@@ -192,7 +198,7 @@ describe SideJob::Job do
     end
 
     it 'throws error and immediately sets status to terminated if job class is unregistered' do
-      @job.set queue: 'unknown'
+      SideJob.redis.del "workers:#{@job.get(:queue)}"
       expect { @job.run }.to raise_error
       expect(@job.status).to eq 'terminated'
     end
@@ -221,8 +227,8 @@ describe SideJob::Job do
 
     it 'raises error if job no longer exists' do
       job2 = SideJob.find(@job.id)
-      job2.set status: 'terminated'
-      job2.delete
+      job2.status = 'terminated'
+      expect(job2.delete).to be true
       expect { @job.run }.to raise_error
     end
   end
@@ -261,20 +267,20 @@ describe SideJob::Job do
     end
 
     it 'returns true if job status is terminated' do
-      @job.set status: 'terminated'
+      @job.status = 'terminated'
       expect(@job.terminated?).to be true
     end
 
     it 'returns false if child job is not terminated' do
-      @job.set status: 'terminated'
+      @job.status = 'terminated'
       SideJob.queue('testq', 'TestWorker', parent: @job)
       expect(@job.terminated?).to be false
     end
 
     it 'returns true if child job is terminated' do
-      @job.set status: 'terminated'
+      @job.status = 'terminated'
       child = SideJob.queue('testq', 'TestWorker', parent: @job)
-      child.set status: 'terminated'
+      child.status = 'terminated'
       expect(@job.terminated?).to be true
     end
   end
@@ -290,7 +296,7 @@ describe SideJob::Job do
     end
 
     it 'deletes terminated jobs' do
-      @job.set status: 'terminated'
+      @job.status = 'terminated'
       expect(@job.delete).to be true
       expect(@job.exists?).to be false
     end
@@ -300,8 +306,8 @@ describe SideJob::Job do
       expect(@job.status).to eq('queued')
       expect(child.status).to eq('queued')
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be > 0
-      @job.set status: 'terminated'
-      child.set status: 'terminated'
+      @job.status = 'terminated'
+      child.status = 'terminated'
       @job.delete
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be(0)
       expect(@job.exists?).to be false
@@ -313,7 +319,7 @@ describe SideJob::Job do
       @job.output(:out1).write 'data'
       expect(@job.input(:in1).size).to be 1
       expect(@job.output(:out1).size).to be 1
-      @job.set status: 'terminated'
+      @job.status = 'terminated'
       @job.delete
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be(0)
     end
@@ -363,64 +369,11 @@ describe SideJob::Job do
     end
   end
 
-  describe '#set' do
-    before do
-      @job = SideJob.queue('testq', 'TestWorker')
-    end
-
-    it 'can save state in redis' do
-      @job.set(test: 'data', test2: 123)
-      state = JSON.parse(SideJob.redis.hget('job', @job.id))
-      expect(state['test']).to eq 'data'
-      expect(state['test2']).to eq 123
-
-      # test updating
-      @job.set(test: 'data2')
-      state = JSON.parse(SideJob.redis.hget('job', @job.id))
-      expect(state['test']).to eq 'data2'
-    end
-
-    it 'can update values' do
-      3.times do |i|
-        @job.set key: i
-        expect(@job.get(:key)).to eq i
-        state = JSON.parse(SideJob.redis.hget('job', @job.id))
-        expect(state['key']).to eq i
-      end
-    end
-
-    it 'raises error if job no longer exists' do
-      @job.set status: 'terminated'
-      SideJob.find(@job.id).delete
-      expect { @job.set key: 123 }.to raise_error
-    end
-  end
-
-  describe '#unset' do
-    before do
-      @job = SideJob.queue('testq', 'TestWorker')
-    end
-
-    it 'unsets fields' do
-      @job.set(a: 123, b: 456, c: 789)
-      @job.unset('a', :b)
-      expect(@job.get(:a)).to eq nil
-      expect(@job.get(:b)).to eq nil
-      expect(@job.get(:c)).to eq 789
-    end
-
-    it 'raises error if job no longer exists' do
-      @job.set status: 'terminated', a: 123
-      SideJob.find(@job.id).delete
-      expect { @job.unset(:a) }.to raise_error
-    end
-  end
-
   describe '#get' do
     before do
       @job = SideJob.queue('testq', 'TestWorker')
-      @data = { field1: 'value1', field2: [1,2], field3: 123 }
-      @job.set @data
+      SideJob.redis.hset 'job', @job.id, { queue: 'testq', class: 'TestWorker', field1: 'value1', field2: [1,2], field3: 123 }.to_json
+      @job.reload
     end
 
     it 'returns a value from job state using symbol key' do
@@ -448,7 +401,7 @@ describe SideJob::Job do
     it 'raises error if job no longer exists and state is not cached' do
       @job.reload
       job2 = SideJob.find(@job.id)
-      job2.set status: 'terminated'
+      job2.status = 'terminated'
       job2.delete
       expect { @job.get(:key) }.to raise_error
     end
@@ -456,7 +409,7 @@ describe SideJob::Job do
     it 'does not raise error if job no longer exists but state is cached' do
       @job.get(:foo)
       job2 = SideJob.find(@job.id)
-      job2.set status: 'terminated'
+      job2.status = 'terminated'
       job2.delete
       expect { @job.get(:key) }.not_to raise_error
     end
@@ -465,12 +418,11 @@ describe SideJob::Job do
   describe '#reload' do
     before do
       @job = SideJob.queue('testq', 'TestWorker')
-      @job.set field1: 123
     end
 
     it 'clears the job state cache' do
-      expect(@job.get(:field1)).to eq 123
-      SideJob.find(@job.id).set({field1: 789})
+      expect(@job.get(:field1)).to be nil
+      SideJob.redis.hset 'job', @job.id, {queue: 'testq', class: 'TestWorker', field1: 789}.to_json
       @job.reload
       expect(@job.get(:field1)).to eq 789
     end

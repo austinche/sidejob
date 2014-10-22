@@ -62,7 +62,13 @@ module SideJob
     # Retrieve the job's status.
     # @return [String] Job status
     def status
-      get(:status)
+      SideJob.redis.get "#{redis_key}:status"
+    end
+
+    # Set the job status.
+    # @param status [String] The new job status
+    def status=(status)
+      SideJob.redis.set "#{redis_key}:status", status
     end
 
     # Prepare to terminate the job. Sets status to 'terminating'.
@@ -75,7 +81,7 @@ module SideJob
     # @return [SideJob::Job] self
     def terminate(recursive: false)
       if status != 'terminated'
-        set status: 'terminating'
+        self.status = 'terminating'
         sidekiq_queue
       end
       if recursive
@@ -96,12 +102,14 @@ module SideJob
     # @param wait [Float] Run in the specified number of seconds
     # @return [SideJob::Job] self
     def run(force: false, at: nil, wait: nil)
+      check_exists
+
       case status
         when 'terminating', 'terminated'
           return unless force
       end
 
-      set status: 'queued'
+      self.status = 'queued'
 
       time = nil
       if at
@@ -159,7 +167,7 @@ module SideJob
       ports = inports.map(&:redis_key) + outports.map(&:redis_key)
       SideJob.redis.multi do |multi|
         multi.hdel 'job', @id
-        multi.del ports + %w{children ancestors log inports:mode outports:mode inports:default outports:default}.map {|x| "#{redis_key}:#{x}" }
+        multi.del ports + %w{status children ancestors log inports:mode outports:mode inports:default outports:default}.map {|x| "#{redis_key}:#{x}" }
       end
       reload
       return true
@@ -193,26 +201,6 @@ module SideJob
       SideJob.redis.hkeys("#{redis_key}:outports:mode").map {|name| SideJob::Port.new(self, :out, name)}
     end
 
-    # Sets values in the job's state.
-    # @param data [Hash{String,Symbol => Object}] Data to update: objects should be JSON encodable
-    # @raise [RuntimeError] Error raised if job no longer exists
-    def set(data)
-      return unless data.size > 0
-      load_state
-      data.each_pair { |key, val| @state[key.to_s] = val }
-      save_state
-    end
-
-    # Unsets some fields in the job's state
-    # @param fields [Array<String,Symbol>] Fields to unset
-    # @raise [RuntimeError] Error raised if job no longer exists
-    def unset(*fields)
-      return unless fields.length > 0
-      load_state
-      fields.each { |field| @state.delete(field.to_s) }
-      save_state
-    end
-
     # Returns some data from the job's state.
     # The job state is cached for the lifetime of the job object. Call {#reload} if the state may have changed.
     # @param key [Symbol,String] Retrieve value for the given key
@@ -239,7 +227,7 @@ module SideJob
       args = get(:args)
 
       if ! SideJob::Worker.config(queue, klass)
-        set status: 'terminated'
+        self.status = 'terminated'
         raise "Worker no longer registered for #{klass} in queue #{queue}"
       end
       item = {'jid' => @id, 'queue' => queue, 'class' => klass, 'args' => args || [], 'retry' => false}
@@ -270,14 +258,8 @@ module SideJob
       end
       @state
     end
-
-    def save_state
-      check_exists
-      if @state
-        SideJob.redis.hset 'job', @id, @state.to_json
-      end
-    end
   end
+
   # Wrapper for a job which may not be in progress unlike SideJob::Worker.
   # @see SideJob::JobMethods
   class Job
