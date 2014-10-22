@@ -9,8 +9,11 @@ describe SideJob::Port do
         default_null: { default: nil },
         default_false: { default: false},
         memory_with_default: { mode: :memory, default: 'memory default' },
+    }, outports: {
+        out1: {},
     })
     @port1 = @job.input(:port1)
+    @out1 = @job.output(:out1)
     @memory = @job.input(:memory)
     @defaults = [
         @job.input(:default),
@@ -187,6 +190,16 @@ describe SideJob::Port do
     it 'raises error if port mode is unknown ' do
       SideJob.redis.hset "#{@job.redis_key}:inports:mode", 'foo', '???'
       expect { SideJob::Port.new(@job, :in, 'foo').write true }.to raise_error
+    end
+
+    it 'runs the job if it is an input port' do
+      expect(@port1.job).to receive(:run)
+      @port1.write 3
+    end
+
+    it 'does not run the job if it is an output port' do
+      expect(@out1.job).not_to receive(:run)
+      @out1.write 3
     end
   end
 

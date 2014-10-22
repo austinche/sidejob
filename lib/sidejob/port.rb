@@ -60,7 +60,7 @@ module SideJob
       SideJob.redis.hexists("#{@job.redis_key}:#{type}ports:default", @name)
     end
 
-    # Write data to the port.
+    # Write data to the port. If port in an input port, runs the job.
     # The default operating mode for a port is :queue which means packets are read/written as a FIFO queue.
     # In :memory mode, writes do not enter the queue and instead overwrite the default port value.
     # @param data [Object] JSON encodable data to write to the port
@@ -73,6 +73,8 @@ module SideJob
         else
           raise "Missing port #{@name} or invalid mode #{mode}"
       end
+
+      @job.run if type == :in
 
       log('write', data)
       self
