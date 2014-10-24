@@ -308,6 +308,70 @@ describe SideJob::Port do
     end
   end
 
+  describe '#connect_to' do
+    it 'does nothing on an empty port' do
+      @out1.connect_to @port1
+      expect(@port1.data?).to be false
+    end
+
+    it 'sends data to a port' do
+      @out1.write 1
+      @out1.write [2,3]
+      @out1.connect_to @port1
+      expect(@out1.data?).to be false
+      expect(@port1.read).to eq 1
+      expect(@port1.read).to eq [2,3]
+      expect(@port1.data?).to be false
+    end
+
+    it 'sends data to all destination ports' do
+      dest = [@port1, @memory, @default]
+      @out1.write 1
+      @out1.write [2,3]
+      @out1.connect_to dest
+      expect(@port1.read).to eq 1
+      expect(@port1.read).to eq [2,3]
+      expect(@port1.data?).to be false
+      expect(@memory.size).to eq 0
+      expect(@memory.read).to eq [2,3]
+      expect(@default.read).to eq 1
+      expect(@default.read).to eq [2,3]
+      expect(@default.read).to eq 'default'
+    end
+
+    it 'passes port default values to all destinations' do
+      dest = [@port1, @memory, @out1]
+      @default.write 1
+      @default.write [2,3]
+      @default.connect_to dest
+      expect(@port1.read).to eq 1
+      expect(@port1.read).to eq [2,3]
+      expect(@port1.default).to eq 'default'
+      expect(@memory.size).to eq 0
+      expect(@memory.default).to eq 'default'
+      expect(@out1.read).to eq 1
+      expect(@out1.read).to eq [2,3]
+      expect(@out1.default).to eq 'default'
+    end
+
+    it 'runs job for normal input port' do
+      expect(@port1.job).to receive(:run)
+      @out1.write true
+      @out1.connect_to @port1
+    end
+
+    it 'does not run job if no data sent' do
+      expect(@port1.job).not_to receive(:run)
+      @out1.connect_to @port1
+    end
+
+    it 'does not run job for memory port' do
+      expect(@memory.job).not_to receive(:run)
+      @out1.write true
+      @out1.connect_to @memory
+    end
+  end
+
   describe 'is Enumerable' do
     it 'can iterate over port elements' do
       10.times {|i| @port1.write i}

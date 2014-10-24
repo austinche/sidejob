@@ -112,6 +112,47 @@ module SideJob
       data
     end
 
+    # Connects this port to a number of other ports.
+    # All data is read from the current port and written to the destination ports.
+    # If the current port has a default value, the default is copied to all destination ports.
+    # @param ports [Array<SideJob::Port>, SideJob::Port] Destination port(s)
+    def connect_to(ports)
+      ports = [ports] unless ports.is_a?(Array)
+      ports_by_mode = ports.group_by {|port| port.mode}
+
+      default = SideJob.redis.hget("#{@job.redis_key}:#{@type}ports:default", @name)
+
+      # empty the port of all data
+      data = SideJob.redis.multi do |multi|
+        multi.lrange redis_key, 0, -1
+        multi.del redis_key
+      end[0]
+
+      to_run = Set.new
+
+      SideJob.redis.multi do |multi|
+        if data.length > 0
+          (ports_by_mode[:queue] || []).each do |port|
+            multi.rpush port.redis_key, data
+            to_run.add port.job if port.type == :in
+          end
+          if ! default
+            (ports_by_mode[:memory] || []).each do |port|
+              multi.hset "#{port.job.redis_key}:#{port.type}ports:default", port.name, data.last
+            end
+          end
+        end
+
+        if default
+          ports.each do |port|
+            multi.hset "#{port.job.redis_key}:#{port.type}ports:default", port.name, default
+          end
+        end
+      end
+
+      to_run.each { |job| job.run }
+    end
+
     include Enumerable
     # Iterate over port data. Default values are not returned.
     # @yield [Object] Each data from port
