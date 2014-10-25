@@ -18,24 +18,22 @@ class TestFib
     if n <= 2
       output(:num).write 1
     else
-      job1 = get(:job1)
+      job1 = child(:job1)
       if ! job1
-        job1 = queue('testq', 'TestFib')
+        job1 = queue('testq', 'TestFib', name: :job1)
         job1.input(:n).write n-1
-        set(job1: job1.id)
       end
 
-      job2 = get(:job2)
+      job2 = child(:job2)
       if ! job2
-        job2 = queue('testq', 'TestFib')
+        job2 = queue('testq', 'TestFib', name: :job2)
         job2.input(:n).write n-2
-        set(job2: job2.id)
       end
 
-      if children.length != 2 || children[0].status != 'completed' || children[1].status != 'completed'
+      if job1.status != 'completed' || job2.status != 'completed'
         suspend
       else
-        output(:num).write (children[0].output(:num).read + children[1].output(:num).read)
+        output(:num).write (job1.output(:num).read + job2.output(:num).read)
       end
     end
   end

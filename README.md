@@ -21,7 +21,7 @@ Jobs
     * Therefore, Sidekiq's jids are not unique
 * Jobs have a queue and class name
 * Jobs have any number of input and output ports
-* A job can have any number of child jobs
+* A job can have any number of named child jobs
 * Each job has at most one parent job
 * Jobs can store any JSON encoded object in its internal state
 
@@ -119,7 +119,7 @@ Additional keys used by SideJob:
 * job:<id>:inports:default and job:<id>:outports:default - Hash mapping port name to JSON encoded default value for port.
 * job:<id>:ancestors - List with parent job IDs up to the root job that has no parent.
     Newer jobs are pushed on the left so the immediate parent is on the left and the root job is on the right.
-* job:<id>:children - Set containing all children job IDs
+* job:<id>:children - Hash mapping child job name to child job ID
 * job:<id>:log - List with job changes, new log entries pushed on left. Each log entry is JSON encoded.
     * !{type: 'status', status: <new status>, timestamp: <date>}
     * !{type: 'read', by: <by string>, <in|out>port: <port name>, data: <data>, timestamp: <date>}

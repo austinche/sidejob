@@ -68,17 +68,29 @@ describe SideJob do
     it 'can specify job parent' do
       expect {
         parent = SideJob.queue('testq', 'TestWorker')
-        job = SideJob.queue('testq', 'TestWorker', parent: parent)
+        job = SideJob.queue('testq', 'TestWorker', parent: parent, name: 'child1')
         expect(job.status).to eq 'queued'
         expect(job.parent).to eq(parent)
+        expect(parent.child('child1')).to eq job
         expect(SideJob.redis.lrange("#{job.redis_key}:ancestors", 0, -1)).to eq([parent.id])
       }.to change {Sidekiq::Stats.new.enqueued}.by(2)
     end
 
-    it 'sets ancestor tree correctly parent' do
+    it 'raises an error if name: option not specified with parent' do
+      parent = SideJob.queue('testq', 'TestWorker')
+      expect { SideJob.queue('testq', 'TestWorker', parent: parent) }.to raise_error
+    end
+
+    it 'raises an error if name: name is not unique' do
+      parent = SideJob.queue('testq', 'TestWorker')
+      SideJob.queue('testq', 'TestWorker', parent: parent, name: 'child')
+      expect { SideJob.queue('testq', 'TestWorker', parent: parent, name: 'child') }.to raise_error
+    end
+
+    it 'sets ancestor tree correctly' do
       j1 = SideJob.queue('testq', 'TestWorker')
-      j2 = SideJob.queue('testq', 'TestWorker', parent: j1)
-      j3 = SideJob.queue('testq', 'TestWorker', parent: j2)
+      j2 = SideJob.queue('testq', 'TestWorker', parent: j1, name: 'child1')
+      j3 = SideJob.queue('testq', 'TestWorker', parent: j2, name: 'child1')
       expect(SideJob.redis.lrange("#{j3.redis_key}:ancestors", 0, -1)).to eq([j2.id, j1.id])
     end
 

@@ -9,18 +9,19 @@ class TestSumFlow
       }
   )
   def perform
-    if children.length == 0
-      queue('testq', 'TestSum')
+    sum = child(:sum)
+    if ! sum
+      queue('testq', 'TestSum', name: :sum)
       suspend
     else
       if get(:sent)
-        output(:out).write children[0].output(:sum).read
+        output(:out).write sum.output(:sum).read
       else
-        children[0].input(:in).write 5
-        children[0].input(:in).write 6
-        children[0].input(:ready).write 1
+        sum.input(:in).write 5
+        sum.input(:in).write 6
+        sum.input(:ready).write 1
         set(sent: 1)
-        children[0].run
+        sum.run
         suspend
       end
     end

@@ -85,7 +85,7 @@ module SideJob
         sidekiq_queue
       end
       if recursive
-        children.each do |child|
+        children.each_value do |child|
           child.terminate(recursive: true)
         end
       end
@@ -123,10 +123,19 @@ module SideJob
       self
     end
 
-    # Returns all children jobs (unordered).
-    # @return [Array<SideJob::Job>] Children jobs
+    # Returns a child job by name.
+    # @param name [Symbol, String] Child job name to look up
+    # @return [SideJob::Job, nil] Child job or nil if not found
+    def child(name)
+      id = SideJob.redis.hget("#{redis_key}:children", name)
+      return SideJob::Job.new(id, by: @by) if id
+      nil
+    end
+
+    # Returns all children jobs.
+    # @return [Hash<String => SideJob::Job>] Children jobs by name
     def children
-      SideJob.redis.smembers("#{redis_key}:children").map {|id| SideJob::Job.new(id, by: @by)}
+      SideJob.redis.hgetall("#{redis_key}:children").each_with_object({}) {|child, hash| hash[child[0]] = SideJob::Job.new(child[1], by: @by)}
     end
 
     # Returns all ancestor jobs.
@@ -147,7 +156,7 @@ module SideJob
     # @return [Boolean] True if this job and all children recursively are terminated
     def terminated?
       return false if status != 'terminated'
-      children.each do |child|
+      children.each_value do |child|
         return false unless child.terminated?
       end
       return true
@@ -159,7 +168,7 @@ module SideJob
       return false unless terminated?
 
       # recursively delete all children first
-      children.each do |child|
+      children.each_value do |child|
         child.delete
       end
 

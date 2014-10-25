@@ -159,16 +159,16 @@ describe SideJob::Job do
     end
 
     it 'by default does not terminate children' do
-      child = SideJob.queue('testq', 'TestWorker', parent: @job)
+      child = SideJob.queue('testq', 'TestWorker', parent: @job, name: 'child')
       expect(child.status).to eq 'queued'
       @job.terminate
       expect(child.status).to eq 'queued'
     end
 
     it 'can recursively terminate' do
-      5.times { SideJob.queue('testq', 'TestWorker', parent: @job) }
+      5.times {|i| SideJob.queue('testq', 'TestWorker', parent: @job, name: "child#{i}") }
       @job.terminate(recursive: true)
-      @job.children.each do |child|
+      @job.children.each_value do |child|
         expect(child.status).to eq 'terminating'
       end
     end
@@ -243,11 +243,24 @@ describe SideJob::Job do
     end
   end
 
+  describe '#child' do
+    it 'returns nil for missing child' do
+      job = SideJob.queue('testq', 'TestWorker')
+      expect(job.child('child')).to be nil
+    end
+
+    it 'returns child by name' do
+      job = SideJob.queue('testq', 'TestWorker')
+      child = SideJob.queue('testq', 'TestWorker', parent: job, name: 'child')
+      expect(job.child('child')).to eq child
+    end
+  end
+
   describe '#children, #parent' do
     it 'can get children and parent jobs' do
       parent = SideJob.queue('testq', 'TestWorker')
-      child = SideJob.queue('testq', 'TestWorker', {parent: parent})
-      expect(parent.children).to eq([child])
+      child = SideJob.queue('testq', 'TestWorker', parent: parent, name: 'child')
+      expect(parent.children).to eq('child' => child)
       expect(child.parent).to eq(parent)
     end
   end
@@ -260,9 +273,9 @@ describe SideJob::Job do
 
     it 'returns entire job tree' do
       j1 = SideJob.queue('testq', 'TestWorker')
-      j2 = SideJob.queue('testq', 'TestWorker', {parent: j1})
-      j3 = SideJob.queue('testq', 'TestWorker', {parent: j2})
-      j4 = SideJob.queue('testq', 'TestWorker', {parent: j3})
+      j2 = SideJob.queue('testq', 'TestWorker', parent: j1, name: 'child')
+      j3 = SideJob.queue('testq', 'TestWorker', parent: j2, name: 'child')
+      j4 = SideJob.queue('testq', 'TestWorker', parent: j3, name: 'child')
       expect(j4.ancestors).to eq([j3, j2, j1])
     end
   end
@@ -283,13 +296,13 @@ describe SideJob::Job do
 
     it 'returns false if child job is not terminated' do
       @job.status = 'terminated'
-      SideJob.queue('testq', 'TestWorker', parent: @job)
+      SideJob.queue('testq', 'TestWorker', parent: @job, name: 'child')
       expect(@job.terminated?).to be false
     end
 
     it 'returns true if child job is terminated' do
       @job.status = 'terminated'
-      child = SideJob.queue('testq', 'TestWorker', parent: @job)
+      child = SideJob.queue('testq', 'TestWorker', parent: @job, name: 'child')
       child.status = 'terminated'
       expect(@job.terminated?).to be true
     end
@@ -312,7 +325,7 @@ describe SideJob::Job do
     end
 
     it 'recursively deletes jobs' do
-      child = SideJob.queue('testq', 'TestWorker', {parent: @job})
+      child = SideJob.queue('testq', 'TestWorker', parent: @job, name: 'child')
       expect(@job.status).to eq('queued')
       expect(child.status).to eq('queued')
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be > 0

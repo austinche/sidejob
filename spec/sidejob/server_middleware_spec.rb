@@ -76,7 +76,7 @@ describe SideJob::ServerMiddleware do
 
     it 'runs the parent job' do
       @job.status = 'suspended'
-      child = SideJob.queue(@queue, 'TestWorker', {parent: @job})
+      child = SideJob.queue(@queue, 'TestWorker', parent: @job, name: 'child')
       expect(@job.status).to eq 'suspended'
       expect {
         child.run_inline
@@ -160,7 +160,7 @@ describe SideJob::ServerMiddleware do
 
     it 'does not run if job is too deep' do
       (SideJob::ServerMiddleware::DEFAULT_CONFIGURATION['max_depth']+1).times do |i|
-        @job = SideJob.queue(@queue, 'TestWorker', {parent: @job})
+        @job = SideJob.queue(@queue, 'TestWorker', parent: @job, name: 'child')
       end
       @run = false
       process(@job) { @run = true }
@@ -170,7 +170,7 @@ describe SideJob::ServerMiddleware do
 
     it 'does run if job is not too deep' do
       SideJob::ServerMiddleware::DEFAULT_CONFIGURATION['max_depth'].times do |i|
-        @job = SideJob.queue(@queue, 'TestWorker', {parent: @job})
+        @job = SideJob.queue(@queue, 'TestWorker', parent: @job, name: 'child')
       end
       @run = false
       process(@job) { @run = true }
@@ -215,7 +215,7 @@ describe SideJob::ServerMiddleware do
 
     it 'runs the parent job' do
       @job.status = 'suspended'
-      child = SideJob.queue(@queue, 'TestWorker', {parent: @job})
+      child = SideJob.queue(@queue, 'TestWorker', parent: @job, name: 'child')
       expect {
         process(child) { raise 'oops' }
       }.to change {Sidekiq::Stats.new.enqueued}.by(1)
@@ -275,7 +275,7 @@ describe SideJob::ServerMiddleware do
     end
 
     it 'runs parent' do
-      child = SideJob.queue(@queue, 'TestWorker', {parent: @job})
+      child = SideJob.queue(@queue, 'TestWorker', parent: @job, name: 'child')
       child.status = 'terminating'
       process(child) { raise 'should not be called' }
       expect(child.status).to eq 'terminated'

@@ -30,29 +30,32 @@ module SideJob
   # @param klass [String] Name of the class that will handle the job
   # @param args [Array] additional args to pass to the worker's perform method (default none)
   # @param parent [SideJob::Job] parent job
+  # @param name [String] Name of child job (required if parent specified)
   # @param at [Time, Float] Time to schedule the job, otherwise queue immediately
   # @param by [String] Who created this job. Recommend <type>:<id> format for non-jobs as SideJob uses job:<id>
   # @param inports [Hash{Symbol,String => Hash}] Input port configuration. Port name to options.
   # @param outports [Hash{Symbol,String => Hash}] Output port configuration. Port name to options.
   # @return [SideJob::Job] Job
-  def self.queue(queue, klass, args: nil, parent: nil, at: nil, by: nil, inports: nil, outports: nil)
+  def self.queue(queue, klass, args: nil, parent: nil, name: nil, at: nil, by: nil, inports: nil, outports: nil)
     raise "No worker registered for #{klass} in queue #{queue}" unless SideJob::Worker.config(queue, klass)
+
+    if parent
+      raise 'Missing name option for job with a parent' unless name
+      raise "Parent already has child job with name #{name}" if parent.child(name)
+      ancestry = [parent.id] + SideJob.redis.lrange("#{parent.redis_key}:ancestors", 0, -1)
+    end
 
     # To prevent race conditions, we generate the id and set all data in redis before queuing the job to sidekiq
     # Otherwise, sidekiq may start the job too quickly
     id = SideJob.redis.incr(:job_id).to_s
     job = SideJob::Job.new(id, by: by)
 
-    if parent
-      ancestry = [parent.id] + SideJob.redis.lrange("#{parent.redis_key}:ancestors", 0, -1)
-    end
-
     SideJob.redis.multi do |multi|
       multi.hset 'job', id, {queue: queue, class: klass, args: args, created_by: by, created_at: SideJob.timestamp}.to_json
 
       if parent
         multi.rpush "#{job.redis_key}:ancestors", ancestry # we need to rpush to get the right order
-        multi.sadd "#{parent.redis_key}:children", id
+        multi.hset "#{parent.redis_key}:children", name, id
       end
     end
 

@@ -64,16 +64,16 @@ describe SideJob::Worker do
 
   describe '#queue' do
     it 'can queue child jobs' do
-      expect(SideJob).to receive(:queue).with('testq', 'TestWorker', args: [1,2], inports: {'myport' => {'mode' => 'memory'}}, parent: @job, by: "job:#{@worker.id}").and_call_original
+      expect(SideJob).to receive(:queue).with('testq', 'TestWorker', args: [1,2], inports: {'myport' => {'mode' => 'memory'}}, parent: @job, name: 'child', by: "job:#{@worker.id}").and_call_original
       expect {
-        child = @worker.queue('testq', 'TestWorker', args: [1,2], inports: {'myport' => {'mode' => 'memory'}})
+        child = @worker.queue('testq', 'TestWorker', args: [1,2], inports: {'myport' => {'mode' => 'memory'}}, name: 'child')
         expect(child.parent).to eq(@job)
-        expect(@job.children).to eq([child])
+        expect(@job.children).to eq('child' => child)
       }.to change {Sidekiq::Stats.new.enqueued}.by(1)
     end
 
     it 'queues with by string set to self' do
-      child = @worker.queue('testq', 'TestWorker')
+      child = @worker.queue('testq', 'TestWorker', name: 'child')
       expect(child.by).to eq "job:#{@worker.id}"
     end
   end
