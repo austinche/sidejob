@@ -1,16 +1,6 @@
 require 'spec_helper'
 
 describe SideJob::Job do
-  class TestWorkerDynamic
-    include SideJob::Worker
-    register(
-        dynamic_inport: {default: 'def'},
-        dynamic_outport: {default: 'def'},
-    )
-    def perform
-    end
-  end
-
   describe '#id=' do
     it 'reloads a job when changing id' do
       @job = SideJob.queue('testq', 'TestWorker')
@@ -362,21 +352,12 @@ describe SideJob::Job do
         @job = SideJob.queue('testq', 'TestWorker')
         expect { @job.send("#{type}put", :unknown) }.to raise_error
       end
-
-      it 'creates ports for workers configured with dynamic ports' do
-        @job = SideJob.queue('testq', 'TestWorkerDynamic')
-        expect {
-          port = @job.send("#{type}put", :unknown)
-          expect(port.size).to eq 0
-          expect(port.read).to eq 'def'
-        }.to change { @job.send("#{type}ports").size }.by(1)
-      end
     end
 
     describe "##{type}ports" do
       it "returns all #{type}put ports" do
-        @job = SideJob.queue('testq', 'TestWorker')
-        expect(@job.send("#{type}ports")).to eq([SideJob::Port.new(@job, type, :static)])
+        @job = SideJob.queue('testq', 'TestWorker', inports: { port1: {} }, outports: { port1: {} })
+        expect(@job.send("#{type}ports")).to eq([SideJob::Port.new(@job, type, :port1)])
       end
     end
 
@@ -385,25 +366,23 @@ describe SideJob::Job do
         @job = SideJob.queue('testq', 'TestWorker')
       end
 
-      it 'uses worker ports when nothing is given' do
-        expect(@job.send("#{type}ports").size).to eq 1
-      end
-
-      it 'can specify additional ports with options' do
+      it 'can specify ports with options' do
+        expect(@job.send("#{type}ports").size).to eq 0
         @job.send("#{type}ports=", {myport: {mode: :memory, default: 'def'}})
-        expect(@job.send("#{type}ports").size).to eq 2
+        expect(@job.send("#{type}ports").size).to eq 1
         expect(@job.send("#{type}ports").map(&:name)).to include(:myport)
         expect(@job.send("#{type}put", :myport).mode).to eq :memory
         expect(@job.send("#{type}put", :myport).default).to eq 'def'
       end
 
       it 'can change existing port mode while keeping data intact' do
-        @job.send("#{type}put", :static).write 'data'
-        @job.send("#{type}ports=", {static: {mode: :memory, default: 'def'}})
+        @job.send("#{type}ports=", {myport: {}})
+        @job.send("#{type}put", :myport).write 'data'
+        @job.send("#{type}ports=", {myport: {mode: :memory, default: 'def'}})
         expect(@job.send("#{type}ports").size).to eq 1
-        expect(@job.send("#{type}put", :static).mode).to eq :memory
-        expect(@job.send("#{type}put", :static).default).to eq 'def'
-        expect(@job.send("#{type}put", :static).read).to eq 'data'
+        expect(@job.send("#{type}put", :myport).mode).to eq :memory
+        expect(@job.send("#{type}put", :myport).default).to eq 'def'
+        expect(@job.send("#{type}put", :myport).read).to eq 'data'
       end
 
       it 'deletes no longer used ports' do

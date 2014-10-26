@@ -273,15 +273,7 @@ module SideJob
     # @return [SideJob::Port]
     def get_port(type, name)
       port = SideJob::Port.new(self, type, name)
-      if ! port.exists?
-        # dynamically configure the port if the worker configuration allows for any port
-        options = config["dynamic_#{type}port"]
-        if options
-          port.options = options
-        else
-          raise "Unknown #{type}put port: #{name}"
-        end
-      end
+      raise "Unknown #{type}put port: #{name}" unless port.exists?
       port
     end
 
@@ -293,9 +285,12 @@ module SideJob
     def set_ports(type, ports)
       current = SideJob.redis.hkeys("#{redis_key}:#{type}ports:mode") || []
 
-      ports = (ports || {}).stringify_keys
-      ports.each_key {|port| ports[port] = ports[port].stringify_keys }
-      ports = (config["#{type}ports"] || {}).merge(ports)
+      if ports
+        ports = (ports || {}).stringify_keys
+        ports.each_key {|port| ports[port] = ports[port].stringify_keys }
+      else
+        ports = config["#{type}ports"] || {}
+      end
 
       SideJob.redis.multi do |multi|
         # remove data from old ports

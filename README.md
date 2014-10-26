@@ -46,8 +46,7 @@ Ports
 
 * Ports are named (case sensitive) and must match `/^[a-zA-Z0-9_]+$/`.
 * Any object that can be JSON encoded can be written or read from any input or output port.
-* Ports must be explicitly specified by workers or when queuing new jobs unless the worker is configured
-  with dynamic_inport or dynamic_outport which specifies the default port options for unknown ports.
+* Ports must be explicitly specified for each job either by the worker configuration or when queuing new jobs.
 
 Port options:
 
@@ -101,7 +100,7 @@ The keys used by Sidekiq:
 
 Additional keys used by SideJob:
 
-* workers:<queue> - Hash mapping class name to worker configuration. A worker needs to at least define
+* workers:<queue> - Hash mapping class name to worker configuration. A worker should define
   the inports and outports hashes that map port names to port options. Options under the worker key
   modify the running of the worker by {SideJob::ServerMiddleware}.
 * job_id - Stores the last job ID (we use incrementing integers from 1)
