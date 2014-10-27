@@ -52,7 +52,7 @@ describe SideJob do
 
     it 'stores created at timestamp' do
       now = Time.now
-      Time.stub(:now).and_return(now)
+      allow(Time).to receive(:now) { now }
       job = SideJob.queue('testq', 'TestWorker')
       expect(job.get(:created_at)).to eq(SideJob.timestamp)
     end

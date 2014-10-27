@@ -190,7 +190,7 @@ describe SideJob::Port do
 
     it 'logs writes' do
       now = Time.now
-      Time.stub(:now).and_return(now)
+      allow(Time).to receive(:now) { now }
       SideJob.redis.del "#{@job.redis_key}:log"
       @port1.write 'abc'
       @port1.write 123
@@ -201,7 +201,7 @@ describe SideJob::Port do
 
     it 'logs writes by another job' do
       now = Time.now
-      Time.stub(:now).and_return(now)
+      allow(Time).to receive(:now) { now }
       SideJob.redis.del "#{@job.redis_key}:log"
       @job = SideJob.find(@job.id, by: 'test:job')
       @port1 = @job.input(:port1)
@@ -284,7 +284,7 @@ describe SideJob::Port do
 
     it 'logs reads' do
       now = Time.now
-      Time.stub(:now).and_return(now)
+      allow(Time).to receive(:now) { now }
       ['abc', 123].each {|x| @port1.write x}
       SideJob.redis.del "#{@job.redis_key}:log"
       expect(@port1.read).to eq('abc')
@@ -297,7 +297,7 @@ describe SideJob::Port do
 
     it 'logs reads by another job' do
       now = Time.now
-      Time.stub(:now).and_return(now)
+      allow(Time).to receive(:now) { now }
       @port1.write('abc')
       SideJob.redis.del "#{@job.redis_key}:log"
       @job = SideJob.find(@job.id, by: 'test:job')

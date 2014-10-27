@@ -66,7 +66,7 @@ describe SideJob::Job do
 
     it 'adds a timestamp to log entries' do
       now = Time.now
-      Time.stub(:now).and_return(now)
+      allow(Time).to receive(:now) { now }
       @job.log('foo', {abc: 123})
       log = SideJob.redis.lpop "#{@job.redis_key}:log"
       expect(JSON.parse(log)).to eq({'type' => 'foo', 'abc' => 123, 'timestamp' => SideJob.timestamp})
@@ -83,7 +83,7 @@ describe SideJob::Job do
   describe '#logs' do
     it 'returns all logs' do
       now = Time.now
-      Time.stub(:now).and_return(now)
+      allow(Time).to receive(:now) { now }
       job = SideJob.queue('testq', 'TestWorker')
       SideJob.redis.del "#{job.redis_key}:log"
       job.log('foo', {abc: 123})
@@ -95,7 +95,7 @@ describe SideJob::Job do
 
     it 'returns and clears all logs' do
       now = Time.now
-      Time.stub(:now).and_return(now)
+      allow(Time).to receive(:now) { now }
       job = SideJob.queue('testq', 'TestWorker')
       SideJob.redis.del "#{job.redis_key}:log"
       job.log('foo', {abc: 123})
@@ -219,7 +219,7 @@ describe SideJob::Job do
 
     it 'can schedule a job to run in a specific time' do
       now = Time.now
-      Time.stub(:now).and_return(now)
+      allow(Time).to receive(:now) { now }
       expect { @job.run(wait: 100) }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
       expect(Sidekiq::ScheduledSet.new.find_job(@job.id).at).to eq(Time.at(now.to_f + 100))
       expect(@job.status).to eq 'queued'

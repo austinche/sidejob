@@ -87,7 +87,7 @@ describe SideJob::ServerMiddleware do
 
     it 'sets the ran_at time at the beginning of the run' do
       now = Time.now
-      Time.stub(:now).and_return(now)
+      allow(Time).to receive(:now) { now }
       process(@job) { |worker| @ran_at = worker.get(:ran_at) }
       expect(@ran_at).to eq SideJob.timestamp
       expect(@job.status).to eq 'completed'
@@ -97,7 +97,7 @@ describe SideJob::ServerMiddleware do
   describe 'prevents multiple threads running the same job' do
     it 'sets the job lock to the current time' do
       now = Time.now
-      Time.stub(:now).and_return(now)
+      allow(Time).to receive(:now) { now }
       process(@job) { @lock = SideJob.redis.get("#{@job.redis_key}:lock").to_f }
       expect(@lock).to eq(now.to_f)
       expect(SideJob.redis.exists("#{@job.redis_key}:lock")).to be false
@@ -105,7 +105,7 @@ describe SideJob::ServerMiddleware do
 
     it 'sets the job lock to the current time and does not run if already locked' do
       now = Time.now
-      Time.stub(:now).and_return(now)
+      allow(Time).to receive(:now) { now }
       @run = false
       SideJob.redis.set "#{@job.redis_key}:lock", (now-10).to_f
       process(@job) { @run = true }
@@ -138,7 +138,7 @@ describe SideJob::ServerMiddleware do
   describe 'prevents job loops' do
     it 'does not run if called too many times in a minute' do
       now = Time.now
-      Time.stub(:now).and_return(now)
+      allow(Time).to receive(:now) { now }
       key = "#{@job.redis_key}:rate:#{Time.now.to_i/60}"
       SideJob.redis.set key, SideJob::ServerMiddleware::DEFAULT_CONFIGURATION['max_runs_per_minute']
       @run = false
@@ -149,7 +149,7 @@ describe SideJob::ServerMiddleware do
 
     it 'does run if not called too many times in a minute' do
       now = Time.now
-      Time.stub(:now).and_return(now)
+      allow(Time).to receive(:now) { now }
       key = "#{@job.redis_key}:rate:#{Time.now.to_i/60}"
       SideJob.redis.set key, SideJob::ServerMiddleware::DEFAULT_CONFIGURATION['max_runs_per_minute']-1
       @run = false
@@ -182,7 +182,7 @@ describe SideJob::ServerMiddleware do
   describe 'handles worker exceptions' do
     it 'sets status to failed on exception and logs error' do
       now = Time.now
-      Time.stub(:now).and_return(now)
+      allow(Time).to receive(:now) { now }
       process(@job) { raise 'oops' }
       expect(@job.status).to eq 'failed'
 
