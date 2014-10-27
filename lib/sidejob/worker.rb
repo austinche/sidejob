@@ -39,15 +39,24 @@ module SideJob
       end
     end
 
+    # Methods loaded last to override other included methods
+    module OverrideMethods
+      # Returns the jid set by sidekiq as the job id
+      # @return [String] Job id
+      def id
+        jid
+      end
+    end
+
     # @see SideJob::Worker
     def self.included(base)
       base.class_eval do
         include Sidekiq::Worker
         include SideJob::JobMethods
+        include SideJob::Worker::OverrideMethods
       end
       base.extend(ClassMethods)
     end
-
 
     # Queues a child job
     # @see SideJob.queue
@@ -119,13 +128,13 @@ module SideJob
     private
 
     def by_string
-      "job:#{@id}"
+      "job:#{id}"
     end
 
     def save_state
       check_exists
       if @state
-        SideJob.redis.hset 'job', @id, @state.to_json
+        SideJob.redis.hset 'job', id, @state.to_json
       end
     end
   end

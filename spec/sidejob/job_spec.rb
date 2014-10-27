@@ -1,21 +1,6 @@
 require 'spec_helper'
 
 describe SideJob::Job do
-  describe '#id=' do
-    it 'reloads a job when changing id' do
-      @job = SideJob.queue('testq', 'TestWorker')
-      job2 = SideJob.queue('testq', 'TestWorkerEmpty')
-      expect(@job.get(:class)).to eq 'TestWorker'
-      @job.id = job2.id
-      expect(@job.get(:class)).to eq 'TestWorkerEmpty'
-    end
-
-    it 'raises an error if job id does not exist' do
-      @job = SideJob.queue('testq', 'TestWorker')
-      expect { @job.id = 'missing' }.to raise_error
-    end
-  end
-
   describe '#==, #eql?' do
     it 'two jobs with the same id are eq' do
       expect(SideJob::Job.new('123')).to eq(SideJob::Job.new('123'))

@@ -51,7 +51,9 @@ describe SideJob::ServerMiddleware do
   it 'does not run if job has been deleted' do
     @job.status = 'terminated'
     @job.delete
-    expect { process(@job) }.to raise_error
+    @run = false
+    process(@job) { @run = true}
+    expect(@run).to be false
   end
 
   describe 'handles a normal run' do

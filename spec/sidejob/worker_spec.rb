@@ -10,7 +10,7 @@ describe SideJob::Worker do
         default_null: { default: nil },
     })
     @worker = TestWorker.new
-    @worker.id = @job.id
+    @worker.jid = @job.id
     @worker.status = 'running'
   end
 

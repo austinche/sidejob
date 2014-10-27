@@ -3,18 +3,9 @@ module SideJob
   module JobMethods
     attr_reader :id, :by
 
-    # Sets the job id and clears any cached state.
-    # @param id [String]
-    # @raise [RuntimeError] Error raised if job id does not exist
-    def id=(id)
-      @id = id
-      reload
-      check_exists
-    end
-
     # @return [Boolean] True if two jobs or workers have the same id
     def ==(other)
-      other.respond_to?(:id) && @id == other.id
+      other.respond_to?(:id) && id == other.id
     end
 
     # @see #==
@@ -24,19 +15,19 @@ module SideJob
 
     # @return [Fixnum] Hash value based on the id
     def hash
-      @id.hash
+      id.hash
     end
 
     # @return [String] Prefix for all redis keys related to this job
     def redis_key
-      "job:#{@id}"
+      "job:#{id}"
     end
     alias :to_s :redis_key
 
     # Returns if the job still exists.
     # @return [Boolean] Returns true if this job exists and has not been deleted
     def exists?
-      SideJob.redis.hexists 'job', @id
+      SideJob.redis.hexists 'job', id
     end
 
     # Adds a log entry to redis.
@@ -175,7 +166,7 @@ module SideJob
       # delete all SideJob keys
       ports = inports.map(&:redis_key) + outports.map(&:redis_key)
       SideJob.redis.multi do |multi|
-        multi.hdel 'job', @id
+        multi.hdel 'job', id
         multi.del ports + %w{status children ancestors log inports:mode outports:mode inports:default outports:default}.map {|x| "#{redis_key}:#{x}" }
       end
       reload
@@ -262,7 +253,7 @@ module SideJob
         self.status = 'terminated'
         raise "Worker no longer registered for #{klass} in queue #{queue}"
       end
-      item = {'jid' => @id, 'queue' => queue, 'class' => klass, 'args' => args || [], 'retry' => false}
+      item = {'jid' => id, 'queue' => queue, 'class' => klass, 'args' => args || [], 'retry' => false}
       item['at'] = time if time && time > Time.now.to_f
       Sidekiq::Client.push(item)
     end
@@ -320,13 +311,13 @@ module SideJob
 
     # @raise [RuntimeError] Error raised if job no longer exists
     def check_exists
-      raise "Job #{@id} no longer exists!" unless exists?
+      raise "Job #{id} no longer exists!" unless exists?
     end
 
     def load_state
       if ! @state
-        state = SideJob.redis.hget('job', @id)
-        raise "Job #{@id} no longer exists!" if ! state
+        state = SideJob.redis.hget('job', id)
+        raise "Job #{id} no longer exists!" if ! state
         @state = JSON.parse(state)
       end
       @state
