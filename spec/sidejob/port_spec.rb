@@ -83,8 +83,9 @@ describe SideJob::Port do
 
     it 'can set default value' do
       expect(@port1.default?).to be false
-      @port1.options = { default: 123 }
-      expect(@port1.default).to eq 123
+      @port1.options = { default: [1,2] }
+      expect(@port1.default).to eq [1,2]
+      expect(@port1.read).to eq [1,2]
     end
 
     it 'can remove default value' do
@@ -151,6 +152,29 @@ describe SideJob::Port do
 
     it 'works when there is a default value on the port' do
       @defaults.each {|port| expect(port.data?).to be true }
+    end
+  end
+
+  describe '#default' do
+    it 'returns nil for no default' do
+      expect(@port1.default).to be nil
+    end
+
+    it 'returns parsed object by default' do
+      @port1.options = {default: [1,2]}
+      expect(@port1.default).to eq [1,2]
+    end
+
+    it 'can return default as json' do
+      @port1.options = {default: [1,2]}
+      expect(@port1.default(json: true)).to eq '[1,2]'
+    end
+
+    it 'can return null default value' do
+      @port1.options = {default: nil}
+      expect(@port1.default(json: true)).to eq 'null'
+      expect(@port1.default).to be nil
+      expect(@port1.default?).to be true
     end
   end
 
@@ -274,12 +298,12 @@ describe SideJob::Port do
 
     it 'can use null default value' do
       port = @job.input(:default_null)
-      expect(port.default).to be nil
+      expect(port.read).to eq nil
     end
 
     it 'can use false default value' do
       port = @job.input(:default_false)
-      expect(port.default).to be false
+      expect(port.read).to be false
     end
 
     it 'logs reads' do

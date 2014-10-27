@@ -383,6 +383,7 @@ describe SideJob::Job do
         expect(@job.send("#{type}put", :myport).mode).to eq :memory
         expect(@job.send("#{type}put", :myport).default).to eq 'def'
         expect(@job.send("#{type}put", :myport).read).to eq 'data'
+        expect(@job.send("#{type}put", :myport).read).to eq 'def'
       end
 
       it 'deletes no longer used ports' do

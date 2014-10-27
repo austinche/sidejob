@@ -61,11 +61,16 @@ module SideJob
       size > 0 || default?
     end
 
-    # Returns the port default value. Use {#default?} to distinguish between a null
-    # default value and no default.
-    # @return [Object, nil] The default value on the port or nil if none
-    def default
-      parse_json SideJob.redis.hget("#{@job.redis_key}:#{type}ports:default", @name)
+    # Returns the port default value. To distinguish a null default value vs no default, use json: true or {#default?}.
+    # @param json [Boolean] If true, returns the default value as a JSON encoded string (default false)
+    # @return [String, Object, nil] The default value on the port or nil if none
+    def default(json: false)
+      default = SideJob.redis.hget("#{@job.redis_key}:#{type}ports:default", @name)
+      if json
+        default
+      else
+        parse_json default
+      end
     end
 
     # Returns if the port has a default value.
@@ -97,17 +102,9 @@ module SideJob
     # @return [Object] First data from port
     # @raise [EOFError] Error raised if no data to be read
     def read
-      data = SideJob.redis.lpop(redis_key)
-      if data
-        data = parse_json(data)
-      else
-        if default?
-          data = default
-        else
-          raise EOFError
-        end
-      end
-
+      data = SideJob.redis.lpop(redis_key) || default(json: true)
+      raise EOFError unless data
+      data = parse_json(data)
       log('read', data)
       data
     end
@@ -120,7 +117,7 @@ module SideJob
       ports = [ports] unless ports.is_a?(Array)
       ports_by_mode = ports.group_by {|port| port.mode}
 
-      default = SideJob.redis.hget("#{@job.redis_key}:#{@type}ports:default", @name)
+      default = default(json: true)
 
       # empty the port of all data
       data = SideJob.redis.multi do |multi|
@@ -181,6 +178,7 @@ module SideJob
     # @param data [String, nil] Data to parse
     # @return [Object, nil]
     def parse_json(data)
+      raise "Invalid json #{data}" if data && ! data.is_a?(String)
       data = JSON.parse("[#{data}]")[0] if data
       data
     end

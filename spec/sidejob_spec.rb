@@ -97,7 +97,6 @@ describe SideJob do
     it 'can add a port via inports configuration' do
       job = SideJob.queue('testq', 'TestWorker', inports: {myport: {default: [1,2]}})
       expect(job.status).to eq 'queued'
-      expect(job.input(:myport).default).to eq [1, 2]
       expect(job.input(:myport).read).to eq [1, 2]
     end
 
