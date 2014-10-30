@@ -28,7 +28,7 @@ module SideJob
     # Returns if the job still exists.
     # @return [Boolean] Returns true if this job exists and has not been deleted
     def exists?
-      SideJob.redis.hexists 'job', id
+      SideJob.redis.hexists 'jobs', id
     end
 
     # If a job logger is defined, call the log method on it with the log entry. Otherwise, call {SideJob.log}.
@@ -165,7 +165,7 @@ module SideJob
       # delete all SideJob keys
       ports = inports.map(&:redis_key) + outports.map(&:redis_key)
       SideJob.redis.multi do |multi|
-        multi.hdel 'job', id
+        multi.hdel 'jobs', id
         multi.del ports + %w{status children ancestors inports:mode outports:mode inports:default outports:default}.map {|x| "#{redis_key}:#{x}" }
       end
       reload
@@ -315,7 +315,7 @@ module SideJob
 
     def load_state
       if ! @state
-        state = SideJob.redis.hget('job', id)
+        state = SideJob.redis.hget('jobs', id)
         raise "Job #{id} no longer exists!" if ! state
         @state = JSON.parse(state)
       end

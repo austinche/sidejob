@@ -126,7 +126,7 @@ module SideJob
     def save_state
       check_exists
       if @state
-        SideJob.redis.hset 'job', id, @state.to_json
+        SideJob.redis.hset 'jobs', id, @state.to_json
       end
     end
   end

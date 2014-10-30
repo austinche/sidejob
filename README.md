@@ -103,11 +103,11 @@ Additional keys used by SideJob:
 * workers:<queue> - Hash mapping class name to worker configuration. A worker should define
   the inports and outports hashes that map port names to port options. Options under the worker key
   modify the running of the worker by {SideJob::ServerMiddleware}.
-* job_id - Stores the last job ID (we use incrementing integers from 1)
-* job_logs - List with JSON encoded logs.
+* jobs:last_id - Stores the last job ID (we use incrementing integers from 1)
+* jobs:logs - List with JSON encoded logs.
     * { timestamp: <date>, job: <id>, read: [{ job: <id>, <in|out>port: <port>, data: [<data>] }, ...], write: [{ job: <id>, <in|out>port: <port>, data: [<data>] }, ...] }
     * { timestamp: <date>, job: <id>, error: <message>, backtrace: <exception backtrace> }
-* job - Hash mapping active job IDs to JSON encoded job state.
+* jobs - Hash mapping active job IDs to JSON encoded job state.
     * queue - queue name
     * class - name of class
     * args - array of arguments passed to worker's perform method

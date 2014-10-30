@@ -154,7 +154,7 @@ describe SideJob do
       now = Time.now
       allow(Time).to receive(:now) { now }
       SideJob.log({abc: 123})
-      log = SideJob.redis.rpop 'job_logs'
+      log = SideJob.redis.rpop 'jobs:logs'
       expect(JSON.parse(log)).to eq({'abc' => 123, 'timestamp' => SideJob.timestamp})
     end
   end

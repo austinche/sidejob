@@ -47,11 +47,11 @@ module SideJob
 
     # To prevent race conditions, we generate the id and set all data in redis before queuing the job to sidekiq
     # Otherwise, sidekiq may start the job too quickly
-    id = SideJob.redis.incr(:job_id).to_s
+    id = SideJob.redis.incr('jobs:last_id').to_s
     job = SideJob::Job.new(id)
 
     SideJob.redis.multi do |multi|
-      multi.hset 'job', id, {queue: queue, class: klass, args: args, created_by: by, created_at: SideJob.timestamp}.to_json
+      multi.hset 'jobs', id, {queue: queue, class: klass, args: args, created_by: by, created_at: SideJob.timestamp}.to_json
 
       if parent
         multi.rpush "#{job.redis_key}:ancestors", ancestry # we need to rpush to get the right order
@@ -84,7 +84,7 @@ module SideJob
   # Adds a log entry to redis with current timestamp.
   # @param entry [Hash] Log entry
   def self.log(entry)
-    SideJob.redis.rpush 'job_logs', entry.merge(timestamp: SideJob.timestamp).to_json
+    SideJob.redis.rpush 'jobs:logs', entry.merge(timestamp: SideJob.timestamp).to_json
   end
 
   # Return all job logs and optionally clears them.
@@ -92,8 +92,8 @@ module SideJob
   # @return [Array<Hash>] All logs for the job with the oldest first
   def self.logs(clear: true)
     SideJob.redis.multi do |multi|
-      multi.lrange 'job_logs', 0, -1
-      multi.del 'job_logs' if clear
+      multi.lrange 'jobs:logs', 0, -1
+      multi.del 'jobs:logs' if clear
     end[0].map {|log| JSON.parse(log)}
   end
 end

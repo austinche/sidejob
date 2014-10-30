@@ -144,21 +144,22 @@ describe SideJob::Worker do
   describe '#set' do
     it 'can save state in redis' do
       @worker.set(test: 'data', test2: 123)
-      state = JSON.parse(SideJob.redis.hget('job', @worker.id))
+      state = JSON.parse(SideJob.redis.hget('jobs', @worker.id))
       expect(state['test']).to eq 'data'
       expect(state['test2']).to eq 123
 
       # test updating
       @worker.set(test: 'data2')
-      state = JSON.parse(SideJob.redis.hget('job', @worker.id))
+      state = JSON.parse(SideJob.redis.hget('jobs', @worker.id))
       expect(state['test']).to eq 'data2'
     end
 
     it 'can update values' do
       3.times do |i|
         @worker.set key: i
+        @worker.reload
         expect(@worker.get(:key)).to eq i
-        state = JSON.parse(SideJob.redis.hget('job', @worker.id))
+        state = JSON.parse(SideJob.redis.hget('jobs', @worker.id))
         expect(state['key']).to eq i
       end
     end

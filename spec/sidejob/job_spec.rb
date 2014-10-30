@@ -411,7 +411,7 @@ describe SideJob::Job do
   describe '#get' do
     before do
       @job = SideJob.queue('testq', 'TestWorker')
-      SideJob.redis.hset 'job', @job.id, { queue: 'testq', class: 'TestWorker', field1: 'value1', field2: [1,2], field3: 123 }.to_json
+      SideJob.redis.hset 'jobs', @job.id, { queue: 'testq', class: 'TestWorker', field1: 'value1', field2: [1,2], field3: 123 }.to_json
       @job.reload
     end
 
@@ -461,7 +461,7 @@ describe SideJob::Job do
 
     it 'clears the job state cache' do
       expect(@job.get(:field1)).to be nil
-      SideJob.redis.hset 'job', @job.id, {queue: 'testq', class: 'TestWorker', field1: 789}.to_json
+      SideJob.redis.hset 'jobs', @job.id, {queue: 'testq', class: 'TestWorker', field1: 789}.to_json
       @job.reload
       expect(@job.get(:field1)).to eq 789
     end
