@@ -11,12 +11,3 @@ class TestWorkerEmpty
   def perform
   end
 end
-
-class TestWorkerNoLog
-  include SideJob::Worker
-  register(
-      worker: { log_status: false }
-  )
-  def perform
-  end
-end

@@ -63,19 +63,6 @@ describe SideJob::ServerMiddleware do
       expect(@job.status).to eq 'completed'
     end
 
-    it 'logs running and completed status' do
-      process(@job) { }
-      logs = @job.logs.select {|log| log['type'] == 'status'}
-      expect(logs[0]['status']).to eq 'completed'
-      expect(logs[1]['status']).to eq 'running'
-    end
-
-    it 'does not log status if configured to not log' do
-      @job = SideJob.queue(@queue, 'TestWorkerNoLog')
-      process(@job) {}
-      expect(@job.logs.select {|log| log['type'] == 'status'}.size).to be 0
-    end
-
     it 'runs the parent job' do
       @job.status = 'suspended'
       child = SideJob.queue(@queue, 'TestWorker', parent: @job, name: 'child')
@@ -188,23 +175,12 @@ describe SideJob::ServerMiddleware do
       process(@job) { raise 'oops' }
       expect(@job.status).to eq 'failed'
 
-      log = @job.logs.select {|log| log['type'] == 'error'}
+      log = SideJob.logs.select {|log| log['error'] }
       expect(log.size).to eq(1)
+      expect(log[0]['job']).to eq @job.id
       expect(log[0]['error']).to eq('oops')
       # check that we trim down backtrace to remove sidekiq lines
       expect(log[0]['backtrace']).to_not match(/sidekiq/)
-    end
-
-    it 'logs failed status change' do
-      process(@job) { raise 'oops' }
-      log = @job.logs.detect {|log| log['type'] == 'status'}
-      expect(log['status']).to eq 'failed'
-    end
-
-    it 'does not log if configured to not log' do
-      @job = SideJob.queue(@queue, 'TestWorkerNoLog')
-      process(@job) { raise 'oops' }
-      expect(@job.logs.select {|log| log['type'] == 'status'}.size).to be 0
     end
 
     it 'does not set status to failed if status is not running' do
@@ -232,18 +208,6 @@ describe SideJob::ServerMiddleware do
       expect(@job.status).to eq 'suspended'
     end
 
-    it 'logs suspended status change' do
-      process(@job) { |worker| worker.suspend }
-      log = @job.logs.detect {|log| log['type'] == 'status'}
-      expect(log['status']).to eq 'suspended'
-    end
-
-    it 'does not log if configured to not log' do
-      @job = SideJob.queue(@queue, 'TestWorkerNoLog')
-      process(@job) { @job.suspend }
-      expect(@job.logs.select {|log| log['type'] == 'status'}.size).to be 0
-    end
-
     it 'does not set status to suspended if job was requeued' do
       process(@job) do |worker|
         worker.run
@@ -258,22 +222,8 @@ describe SideJob::ServerMiddleware do
       @job.status = 'terminating'
       process(@job) { raise 'should not be called' }
       expect(@job.status).to eq 'terminated'
-      errors = @job.logs.select {|log| log['type'] == 'error'}
+      errors = SideJob.logs.select {|log| log['type'] == 'error'}
       expect(errors.size).to eq 0
-    end
-
-    it 'logs terminated status change' do
-      @job.status = 'terminating'
-      process(@job) { raise 'should not be called' }
-      log = @job.logs.detect {|log| log['type'] == 'status'}
-      expect(log['status']).to eq 'terminated'
-    end
-
-    it 'does not log if configured to not log' do
-      @job = SideJob.queue(@queue, 'TestWorkerNoLog')
-      @job.status = 'terminating'
-      process(@job) { raise 'should not be called' }
-      expect(@job.logs.select {|log| log['type'] == 'status'}.size).to be 0
     end
 
     it 'runs parent' do
@@ -295,8 +245,9 @@ describe SideJob::ServerMiddleware do
       @job = SideJob.queue(@queue, 'TestWorkerShutdownError')
       @job.status = 'terminating'
       worker = process(@job) { raise 'not reached' }
-      logs = @job.logs.select {|log| log['type'] == 'error'}
+      logs = SideJob.logs.select {|log| log['error']}
       expect(logs.size).to eq 1
+      expect(logs[0]['job']).to eq @job.id
       expect(logs[0]['error']).to eq 'shutdown error'
     end
   end

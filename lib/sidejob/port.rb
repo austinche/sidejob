@@ -94,8 +94,7 @@ module SideJob
           raise "Missing port #{@name} or invalid mode #{mode}"
       end
 
-      log('write', data)
-      self
+      @job.log({read: [], write: [log_port_data(self, [data])]})
     end
 
     # Reads the oldest data from the port. Returns the default value if no data and there is a default.
@@ -105,7 +104,9 @@ module SideJob
       data = SideJob.redis.lpop(redis_key) || default(json: true)
       raise EOFError unless data
       data = parse_json(data)
-      log('read', data)
+
+      @job.log({read: [log_port_data(self, [data])], write: []})
+
       data
     end
 
@@ -113,7 +114,9 @@ module SideJob
     # All data is read from the current port and written to the destination ports.
     # If the current port has a default value, the default is copied to all destination ports.
     # @param ports [Array<SideJob::Port>, SideJob::Port] Destination port(s)
-    def connect_to(ports)
+    # @param metadata [Hash] If provided, the metadata is merged into the log entry
+    # @return [Array<Object>] Returns all data on current port
+    def connect_to(ports, metadata={})
       ports = [ports] unless ports.is_a?(Array)
       ports_by_mode = ports.group_by {|port| port.mode}
 
@@ -147,7 +150,13 @@ module SideJob
         end
       end
 
+      data.map! {|x| parse_json x}
+      if data.length > 0
+        SideJob.log metadata.merge({read: [log_port_data(self, data)], write: ports.map { |port| log_port_data(port, data)}})
+      end
+
       to_run.each { |job| job.run }
+      data
     end
 
     include Enumerable
@@ -174,6 +183,12 @@ module SideJob
 
     private
 
+    def log_port_data(port, data)
+      x = {job: port.job.id, data: data}
+      x[:"#{port.type}port"] = port.name
+      x
+    end
+
     # Wrapper around JSON.parse to also handle primitive types.
     # @param data [String, nil] Data to parse
     # @return [Object, nil]
@@ -181,14 +196,6 @@ module SideJob
       raise "Invalid json #{data}" if data && ! data.is_a?(String)
       data = JSON.parse("[#{data}]")[0] if data
       data
-    end
-
-    # Log a read or write on the port.
-    def log(type, data)
-      log = {data: data}
-      log[:by] = @job.by if @job.by
-      log["#{@type}port"] = @name
-      @job.log type, log
     end
   end
 end

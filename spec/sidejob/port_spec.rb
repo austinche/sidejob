@@ -215,23 +215,12 @@ describe SideJob::Port do
     it 'logs writes' do
       now = Time.now
       allow(Time).to receive(:now) { now }
-      SideJob.redis.del "#{@job.redis_key}:log"
-      @port1.write 'abc'
-      @port1.write 123
-      logs = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).map {|log| JSON.parse(log)}
-      expect(logs).to eq [{'type' => 'write', 'inport' => 'port1', 'data' => 123, 'timestamp' => SideJob.timestamp},
-                          {'type' => 'write', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp},]
-    end
-
-    it 'logs writes by another job' do
-      now = Time.now
-      allow(Time).to receive(:now) { now }
-      SideJob.redis.del "#{@job.redis_key}:log"
-      @job = SideJob.find(@job.id, by: 'test:job')
-      @port1 = @job.input(:port1)
-      @port1.write('abc')
-      log = SideJob.redis.lpop("#{@job.redis_key}:log")
-      expect(JSON.parse(log)).to eq({'type' => 'write', 'by' => 'test:job', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp})
+      @job.group_port_logs do
+        @port1.write 'abc'
+        @port1.write 123
+      end
+      expect(SideJob.logs).to eq [{'timestamp' => SideJob.timestamp, 'read' => [],
+                                   'write' => ['job' => @job.id, 'inport' => 'port1', 'data' => ['abc', 123]]}]
     end
 
     it 'raises error if port does not exist' do
@@ -310,38 +299,27 @@ describe SideJob::Port do
       now = Time.now
       allow(Time).to receive(:now) { now }
       ['abc', 123].each {|x| @port1.write x}
-      SideJob.redis.del "#{@job.redis_key}:log"
-      expect(@port1.read).to eq('abc')
-      expect(@port1.read).to eq(123)
-      logs = SideJob.redis.lrange("#{@job.redis_key}:log", 0, -1).
-          map {|log| JSON.parse(log)}
-      expect(logs).to eq [{'type' => 'read', 'inport' => 'port1', 'data' => 123, 'timestamp' => SideJob.timestamp},
-                          {'type' => 'read', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp},]
-    end
-
-    it 'logs reads by another job' do
-      now = Time.now
-      allow(Time).to receive(:now) { now }
-      @port1.write('abc')
-      SideJob.redis.del "#{@job.redis_key}:log"
-      @job = SideJob.find(@job.id, by: 'test:job')
-      @port1 = @job.input(:port1)
-      expect(@port1.read).to eq('abc')
-      log = SideJob.redis.lpop("#{@job.redis_key}:log")
-      expect(JSON.parse(log)).to eq({'type' => 'read', 'by' => 'test:job', 'inport' => 'port1', 'data' => 'abc', 'timestamp' => SideJob.timestamp})
+      SideJob.logs
+      @job.group_port_logs do
+        expect(@port1.read).to eq('abc')
+        expect(@port1.read).to eq(123)
+      end
+      expect(SideJob.logs).to eq [{'timestamp' => SideJob.timestamp,
+                                   'read' => ['job' => @job.id, 'inport' => 'port1', 'data' => ['abc', 123]],
+                                   'write' => []}]
     end
   end
 
   describe '#connect_to' do
     it 'does nothing on an empty port' do
-      @out1.connect_to @port1
+      expect(@out1.connect_to(@port1)).to eq []
       expect(@port1.data?).to be false
     end
 
     it 'sends data to a port' do
       @out1.write 1
       @out1.write [2,3]
-      @out1.connect_to @port1
+      expect(@out1.connect_to(@port1)).to eq [1, [2,3]]
       expect(@out1.data?).to be false
       expect(@port1.read).to eq 1
       expect(@port1.read).to eq [2,3]
@@ -393,6 +371,37 @@ describe SideJob::Port do
       expect(@memory.job).not_to receive(:run)
       @out1.write true
       @out1.connect_to @memory
+    end
+
+    it 'logs data' do
+      now = Time.now
+      allow(Time).to receive(:now) { now }
+      @out1.write 1
+      @out1.write [2,3]
+      SideJob.logs(clear: true)
+      @out1.connect_to(@port1)
+      expect(SideJob.logs).to eq([{'timestamp' => SideJob.timestamp,
+                                   'read' => [{'job' => @job.id, 'outport' => 'out1', 'data' => [1,[2,3]]}],
+                                   'write' => [{'job' => @job.id, 'inport' => 'port1', 'data' => [1,[2,3]]}] }])
+    end
+
+    it 'can specify additional metadata to add to log' do
+      now = Time.now
+      allow(Time).to receive(:now) { now }
+      job2 = SideJob.queue('testq', 'TestWorker')
+      @out1.write 1
+      @out1.write [2,3]
+      SideJob.logs(clear: true)
+      @out1.connect_to(@port1, user: 'test')
+      expect(SideJob.logs).to eq([{'timestamp' => SideJob.timestamp, 'user' => 'test',
+                                   'read' => [{'job' => @job.id, 'outport' => 'out1', 'data' => [1,[2,3]]}],
+                                   'write' => [{'job' => @job.id, 'inport' => 'port1', 'data' => [1,[2,3]]}] }])
+    end
+
+    it 'does not log if no data on port' do
+      job2 = SideJob.queue('testq', 'TestWorker')
+      @out1.connect_to(@port1)
+      expect(SideJob.logs).to eq([])
     end
   end
 

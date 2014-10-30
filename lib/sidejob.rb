@@ -32,7 +32,7 @@ module SideJob
   # @param parent [SideJob::Job] parent job
   # @param name [String] Name of child job (required if parent specified)
   # @param at [Time, Float] Time to schedule the job, otherwise queue immediately
-  # @param by [String] Who created this job. Recommend <type>:<id> format for non-jobs as SideJob uses job:<id>
+  # @param by [String] Who created this job. Recommend <type>:<id> format for non-jobs as SideJob uses job:<id>.
   # @param inports [Hash{Symbol,String => Hash}] Input port configuration. Port name to options.
   # @param outports [Hash{Symbol,String => Hash}] Output port configuration. Port name to options.
   # @return [SideJob::Job] Job
@@ -48,7 +48,7 @@ module SideJob
     # To prevent race conditions, we generate the id and set all data in redis before queuing the job to sidekiq
     # Otherwise, sidekiq may start the job too quickly
     id = SideJob.redis.incr(:job_id).to_s
-    job = SideJob::Job.new(id, by: by)
+    job = SideJob::Job.new(id)
 
     SideJob.redis.multi do |multi|
       multi.hset 'job', id, {queue: queue, class: klass, args: args, created_by: by, created_at: SideJob.timestamp}.to_json
@@ -68,11 +68,10 @@ module SideJob
 
   # Finds a job by id
   # @param job_id [String, nil] Job Id
-  # @param by [String] By string to store for associating entities to events
   # @return [SideJob::Job, nil] Job object or nil if it doesn't exist
-  def self.find(job_id, by: nil)
+  def self.find(job_id)
     return nil unless job_id
-    job = SideJob::Job.new(job_id, by: by)
+    job = SideJob::Job.new(job_id)
     return job.exists? ? job : nil
   end
 
@@ -80,6 +79,22 @@ module SideJob
   # @return [String] Current timestamp
   def self.timestamp
     Time.now.utc.iso8601(9)
+  end
+
+  # Adds a log entry to redis with current timestamp.
+  # @param entry [Hash] Log entry
+  def self.log(entry)
+    SideJob.redis.rpush 'job_logs', entry.merge(timestamp: SideJob.timestamp).to_json
+  end
+
+  # Return all job logs and optionally clears them.
+  # @param clear [Boolean] If true, delete logs after returning them (default true)
+  # @return [Array<Hash>] All logs for the job with the oldest first
+  def self.logs(clear: true)
+    SideJob.redis.multi do |multi|
+      multi.lrange 'job_logs', 0, -1
+      multi.del 'job_logs' if clear
+    end[0].map {|log| JSON.parse(log)}
   end
 end
 

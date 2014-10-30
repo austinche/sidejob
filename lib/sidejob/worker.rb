@@ -58,16 +58,10 @@ module SideJob
       base.extend(ClassMethods)
     end
 
-    # Queues a child job
+    # Queues a child job, setting parent and by to self.
     # @see SideJob.queue
     def queue(queue, klass, **options)
-      SideJob.queue(queue, klass, options.merge({parent: self, by: by_string}))
-    end
-
-    # Finds a job by id, setting by string to job:<id>
-    # @see SideJob.find
-    def find(job_id)
-      SideJob.find(job_id, by: by_string)
+      SideJob.queue(queue, klass, options.merge({parent: self, by: "job:#{id}"}))
     end
 
     # Exception raised by {#suspend}
@@ -95,13 +89,15 @@ module SideJob
       return unless inputs.length > 0
       ports = inputs.map {|name| input(name)}
       loop do
-        # error if ports all have defaults, complete if no non-default port inputs, suspend if partial inputs
-        data = ports.map {|port| [ port.data?, port.default? ] }
-        raise "One of these input ports should not have a default value: #{inputs.join(',')}" if data.all? {|x| x[1]}
-        return unless data.any? {|x| x[0] && ! x[1] }
-        suspend unless data.all? {|x| x[0] }
+        group_port_logs(job: id) do
+          # error if ports all have defaults, complete if no non-default port inputs, suspend if partial inputs
+          data = ports.map {|port| [ port.data?, port.default? ] }
+          raise "One of these input ports should not have a default value: #{inputs.join(',')}" if data.all? {|x| x[1]}
+          return unless data.any? {|x| x[0] && ! x[1] }
+          suspend unless data.all? {|x| x[0] }
 
-        yield *ports.map(&:read)
+          yield *ports.map(&:read)
+        end
       end
     end
 
@@ -126,10 +122,6 @@ module SideJob
     end
 
     private
-
-    def by_string
-      "job:#{id}"
-    end
 
     def save_state
       check_exists

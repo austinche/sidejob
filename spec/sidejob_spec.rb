@@ -123,12 +123,12 @@ describe SideJob do
 
     it 'can specify a by string' do
       job = SideJob.queue('testq', 'TestWorker', by: 'test:sidejob')
-      expect(job.by).to eq 'test:sidejob'
+      expect(job.get(:created_by)).to eq 'test:sidejob'
     end
 
     it 'defaults to empty by string' do
       job = SideJob.queue('testq', 'TestWorker')
-      expect(job.by).to be nil
+      expect(job.get(:created_by)).to be nil
     end
   end
 
@@ -141,17 +141,42 @@ describe SideJob do
     it 'returns nil if the job does not exist' do
       expect(SideJob.find('job')).to be_nil
     end
-
-    it 'can specify a by string' do
-      job = SideJob.queue('testq', 'TestWorker', by: 'test:orig')
-      job2 = SideJob.find(job.id, by: 'test:by')
-      expect(job2.by).to eq 'test:by'
-    end
   end
 
   describe '.timestamp' do
     it 'returns subseconds' do
       expect(SideJob.timestamp).to match /T\d\d:\d\d:\d\d\./
+    end
+  end
+
+  describe '.log' do
+    it 'adds a timestamp to log entries' do
+      now = Time.now
+      allow(Time).to receive(:now) { now }
+      SideJob.log({abc: 123})
+      log = SideJob.redis.rpop 'job_logs'
+      expect(JSON.parse(log)).to eq({'abc' => 123, 'timestamp' => SideJob.timestamp})
+    end
+  end
+
+  describe '.logs' do
+    before do
+      now = Time.now
+      allow(Time).to receive(:now) { now }
+      SideJob.log({abc: 123})
+    end
+
+    it 'returns and clears all logs' do
+      expect(SideJob.logs).to eq([{'abc' => 123, 'timestamp' => SideJob.timestamp}])
+      SideJob.log({xyz: 456})
+      expect(SideJob.logs).to eq([{'xyz' => 456, 'timestamp' => SideJob.timestamp}])
+    end
+
+    it 'returns and leaves logs' do
+      expect(SideJob.logs(clear: false)).to eq([{'abc' => 123, 'timestamp' => SideJob.timestamp}])
+      SideJob.log({xyz: 456})
+      expect(SideJob.logs(clear: false)).to eq([{'abc' => 123, 'timestamp' => SideJob.timestamp},
+                                                {'xyz' => 456, 'timestamp' => SideJob.timestamp},])
     end
   end
 end

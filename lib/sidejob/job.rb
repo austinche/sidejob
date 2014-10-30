@@ -1,7 +1,8 @@
 module SideJob
   # Methods shared between {SideJob::Job} and {SideJob::Worker}.
   module JobMethods
-    attr_reader :id, :by
+    attr_reader :id
+    attr_accessor :logger
 
     # @return [Boolean] True if two jobs or workers have the same id
     def ==(other)
@@ -30,24 +31,24 @@ module SideJob
       SideJob.redis.hexists 'job', id
     end
 
-    # Adds a log entry to redis.
-    # @param type [String] Log type
-    # @param data [Hash] Any extra log data
-    # @raise [RuntimeError] Error raised if job no longer exists
-    def log(type, data)
-      check_exists
-      SideJob.redis.lpush "#{redis_key}:log", data.merge(type: type, timestamp: SideJob.timestamp).to_json
+    # If a job logger is defined, call the log method on it with the log entry. Otherwise, call {SideJob.log}.
+    # @param entry [Hash] Log entry
+    def log(entry)
+      (@logger || SideJob).log(entry)
     end
 
-    # Return all job logs and optionally clears them.
-    # @param clear [Boolean] If true, delete logs after returning them (default false)
-    # @return [Array<Hash>] All logs for the job with the newest first
-    def logs(clear: false)
-      key = "#{redis_key}:log"
-      SideJob.redis.multi do |multi|
-        multi.lrange key, 0, -1
-        multi.del key if clear
-      end[0].map {|x| JSON.parse(x)}
+    # Groups all port reads and writes within the block into a single logged event.
+    # @param metadata [Hash] If provided, the metadata is merged into the final log entry
+    def group_port_logs(metadata={}, &block)
+      new_group = @logger.nil?
+      @logger ||= GroupPortLogs.new
+      @logger.add_metadata metadata
+      yield
+    ensure
+      if new_group
+        @logger.done
+        @logger = nil
+      end
     end
 
     # Retrieve the job's status.
@@ -118,28 +119,26 @@ module SideJob
     # @param name [Symbol, String] Child job name to look up
     # @return [SideJob::Job, nil] Child job or nil if not found
     def child(name)
-      id = SideJob.redis.hget("#{redis_key}:children", name)
-      return SideJob::Job.new(id, by: @by) if id
-      nil
+      SideJob.find(SideJob.redis.hget("#{redis_key}:children", name))
     end
 
     # Returns all children jobs.
     # @return [Hash<String => SideJob::Job>] Children jobs by name
     def children
-      SideJob.redis.hgetall("#{redis_key}:children").each_with_object({}) {|child, hash| hash[child[0]] = SideJob::Job.new(child[1], by: @by)}
+      SideJob.redis.hgetall("#{redis_key}:children").each_with_object({}) {|child, hash| hash[child[0]] = SideJob.find(child[1])}
     end
 
     # Returns all ancestor jobs.
     # @return [Array<SideJob::Job>] Ancestors (parent will be first and root job will be last)
     def ancestors
-      SideJob.redis.lrange("#{redis_key}:ancestors", 0, -1).map { |id| SideJob::Job.new(id, by: @by) }
+      SideJob.redis.lrange("#{redis_key}:ancestors", 0, -1).map { |id| SideJob.find(id) }
     end
 
     # Returns the parent job.
     # @return [SideJob::Job, nil] Parent job or nil if none
     def parent
       parent = SideJob.redis.lindex("#{redis_key}:ancestors", 0)
-      parent = SideJob::Job.new(parent, by: @by) if parent
+      parent = SideJob.find(parent) if parent
       parent
     end
 
@@ -167,7 +166,7 @@ module SideJob
       ports = inports.map(&:redis_key) + outports.map(&:redis_key)
       SideJob.redis.multi do |multi|
         multi.hdel 'job', id
-        multi.del ports + %w{status children ancestors log inports:mode outports:mode inports:default outports:default}.map {|x| "#{redis_key}:#{x}" }
+        multi.del ports + %w{status children ancestors inports:mode outports:mode inports:default outports:default}.map {|x| "#{redis_key}:#{x}" }
       end
       reload
       return true
@@ -330,10 +329,52 @@ module SideJob
     include JobMethods
 
     # @param id [String] Job id
-    # @param by [String] By string to store for associating entities to events
-    def initialize(id, by: nil)
+    def initialize(id)
       @id = id
-      @by = by
+    end
+  end
+
+  # Logger that groups all port read/writes together.
+  # @see {JobMethods#group_port_logs}
+  class GroupPortLogs
+    # If entry is not a port log, send it on to {SideJob.log}. Otherwise, collect the log until {#done} is called.
+    # @param entry [Hash] Log entry
+    def log(entry)
+      if entry[:read] && entry[:write]
+        # collect reads and writes by port and group data together
+        @port_events ||= {read: {}, write: {}} # {job: id, <in|out>port: port} -> data array
+        %i{read write}.each do |type|
+          entry[type].each do |event|
+            data = event.delete(:data)
+            @port_events[type][event] ||= []
+            @port_events[type][event].concat data
+          end
+        end
+      else
+        SideJob.log(entry)
+      end
+    end
+
+    # Merges the collected port read and writes and send logs to {SideJob.log}.
+    def done
+      return unless @port_events && (@port_events[:read].length > 0 || @port_events[:write].length > 0)
+
+      entry = {}
+      %i{read write}.each do |type|
+        entry[type] = @port_events[type].map do |port, data|
+          port.merge({data: data})
+        end
+      end
+
+      SideJob.log @metadata.merge(entry)
+      @port_events = nil
+    end
+
+    # Add metadata fields to the final log entry.
+    # @param metadata [Hash] Data to be merged with the existing metadata and final log entry
+    def add_metadata(metadata)
+      @metadata ||= {}
+      @metadata.merge!(metadata)
     end
   end
 end

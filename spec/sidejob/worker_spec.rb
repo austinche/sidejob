@@ -8,7 +8,7 @@ describe SideJob::Worker do
         memory: { mode: :memory },
         default: { default: 'default' },
         default_null: { default: nil },
-    })
+    }, outports: {out1: {}})
     @worker = TestWorker.new
     @worker.jid = @job.id
     @worker.status = 'running'
@@ -74,14 +74,7 @@ describe SideJob::Worker do
 
     it 'queues with by string set to self' do
       child = @worker.queue('testq', 'TestWorker', name: 'child')
-      expect(child.by).to eq "job:#{@worker.id}"
-    end
-  end
-
-  describe '#find' do
-    it 'calls SideJob.find with by string set to self' do
-      job2 = SideJob.queue('testq', 'TestWorker')
-      expect(@worker.find(job2.id).by).to eq "job:#{@worker.id}"
+      expect(child.get(:created_by)).to eq "job:#{@worker.id}"
     end
   end
 
@@ -96,6 +89,22 @@ describe SideJob::Worker do
       @job.input(:in2).write [2, 3]
       @job.input(:in2).write foo: 123
       expect {|block| @worker.for_inputs(:in1, :in2, &block)}.to yield_successive_args([1, [2,3]], ['a', {'foo' => 123}])
+    end
+
+    it 'logs input and output from them' do
+      now = Time.now
+      allow(Time).to receive(:now) { now }
+      @job.input(:in1).write 1
+      @job.input(:in1).write 2
+      @job.input(:in2).write ['a', 'b']
+      @job.input(:in2).write ['c', 'd']
+      SideJob.logs(clear: true)
+      @worker.for_inputs(:in1, :in2) do |in1, in2|
+        @worker.output(:out1).write [in1, in2[0]]
+      end
+      expect(SideJob.logs).to eq([{'timestamp' => SideJob.timestamp, 'job' => @job.id, 'read' => [{'job' => @job.id, 'inport' => 'in1', 'data' => [1]}, {'job' => @job.id, 'inport' => 'in2', 'data' => [['a', 'b']]}], 'write' => [{'job' => @job.id, 'outport' => 'out1', 'data' => [[1, 'a']]}]},
+                                  {'timestamp' => SideJob.timestamp, 'job' => @job.id, 'read' => [{'job' => @job.id, 'inport' => 'in1', 'data' => [2]}, {'job' => @job.id, 'inport' => 'in2', 'data' => [['c', 'd']]}], 'write' => [{'job' => @job.id, 'outport' => 'out1', 'data' => [[2, 'c']]}]},
+                                 ])
     end
 
     it 'suspends on partial inputs' do

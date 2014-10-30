@@ -91,7 +91,7 @@ The keys used by Sidekiq:
     * beat - heartbeat timestamp (every 5 seconds)
     * busy - number of busy workers
     * info - JSON encoded info with keys hostname, started_at, pid, tag, concurrency, queues, labels. Expiry of 60 seconds.
-* <host>:<pid>:workers - Hash containing running workers (thread ID -> !{queue: <queue>, payload: <message>, run_at: <timestamp>})
+* <host>:<pid>:workers - Hash containing running workers (thread ID -> { queue: <queue>, payload: <message>, run_at: <timestamp> })
 * <host>:<pid>-signals - List for remotely sending signals to a sidekiq process (USR1 and TERM), 60 second expiry.
 * stat:processed - Cumulative number of jobs processed
 * stat:failed - Cumulative number of jobs failed
@@ -104,6 +104,9 @@ Additional keys used by SideJob:
   the inports and outports hashes that map port names to port options. Options under the worker key
   modify the running of the worker by {SideJob::ServerMiddleware}.
 * job_id - Stores the last job ID (we use incrementing integers from 1)
+* job_logs - List with JSON encoded logs.
+    * { timestamp: <date>, job: <id>, read: [{ job: <id>, <in|out>port: <port>, data: [<data>] }, ...], write: [{ job: <id>, <in|out>port: <port>, data: [<data>] }, ...] }
+    * { timestamp: <date>, job: <id>, error: <message>, backtrace: <exception backtrace> }
 * job - Hash mapping active job IDs to JSON encoded job state.
     * queue - queue name
     * class - name of class
@@ -119,11 +122,6 @@ Additional keys used by SideJob:
 * job:<id>:ancestors - List with parent job IDs up to the root job that has no parent.
     Newer jobs are pushed on the left so the immediate parent is on the left and the root job is on the right.
 * job:<id>:children - Hash mapping child job name to child job ID
-* job:<id>:log - List with job changes, new log entries pushed on left. Each log entry is JSON encoded.
-    * !{type: 'status', status: <new status>, timestamp: <date>}
-    * !{type: 'read', by: <by string>, <in|out>port: <port name>, data: <data>, timestamp: <date>}
-    * !{type: 'write', by: <by string>, <in|out>port: <port name>, data: <data>, timestamp: <date>}
-    * !{type: 'error', error: <message>, backtrace: <exception backtrace>, timestamp: <date>}
 * job:<id>:rate:<timestamp> - Rate limiter used to prevent run away executing of a job.
     Keys are automatically expired.
 * job:<id>:lock - Used to prevent multiple worker threads from running a job.

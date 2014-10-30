@@ -40,14 +40,14 @@ module SideJob
       reload
 
       if errors && status == 'failed'
-        error = logs.detect {|log| log['type'] == 'error'}
-        if error
-          exception = RuntimeError.exception(error['error'])
-          exception.set_backtrace(error['backtrace'])
-          raise exception
-        else
-          raise "Job #{id} failed but cannot find error log"
+        SideJob.logs.each do |event|
+          if event['error']
+            exception = RuntimeError.exception(event['error'])
+            exception.set_backtrace(event['backtrace'])
+            raise exception
+          end
         end
+        raise "Job #{id} failed but cannot find error log"
       end
     end
   end
