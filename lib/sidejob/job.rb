@@ -275,16 +275,20 @@ module SideJob
     def set_ports(type, ports)
       current = SideJob.redis.hkeys("#{redis_key}:#{type}ports:mode") || []
 
+      replace_port_data = []
       if ports
         ports = (ports || {}).stringify_keys
-        ports.each_key {|port| ports[port] = ports[port].stringify_keys }
+        ports.each_key do |port|
+          ports[port] = ports[port].stringify_keys
+          replace_port_data << port if ports[port]['data']
+        end
       else
         ports = config["#{type}ports"] || {}
       end
 
       SideJob.redis.multi do |multi|
         # remove data from old ports
-        (current - ports.keys).each do |port|
+        ((current - ports.keys) | replace_port_data).each do |port|
           multi.del "#{redis_key}:#{type}:#{port}"
         end
 
@@ -305,6 +309,17 @@ module SideJob
         end.compact.flatten(1)
         multi.del "#{redis_key}:#{type}ports:default"
         multi.hmset "#{redis_key}:#{type}ports:default", *defaults if defaults.length > 0
+      end
+
+      group_port_logs do
+        ports.each_pair do |port, options|
+          if options['data']
+            port = get_port(type, port)
+            options['data'].each do |x|
+              port.write x
+            end
+          end
+        end
       end
     end
 

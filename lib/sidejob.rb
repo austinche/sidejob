@@ -39,10 +39,12 @@ module SideJob
   def self.queue(queue, klass, args: nil, parent: nil, name: nil, at: nil, by: nil, inports: nil, outports: nil)
     raise "No worker registered for #{klass} in queue #{queue}" unless SideJob::Worker.config(queue, klass)
 
+    log_options = {}
     if parent
       raise 'Missing name option for job with a parent' unless name
       raise "Parent already has child job with name #{name}" if parent.child(name)
       ancestry = [parent.id] + SideJob.redis.lrange("#{parent.redis_key}:ancestors", 0, -1)
+      log_options = {job: parent.id}
     end
 
     # To prevent race conditions, we generate the id and set all data in redis before queuing the job to sidekiq
@@ -60,8 +62,10 @@ module SideJob
     end
 
     # initialize ports
-    job.inports = inports
-    job.outports = outports
+    job.group_port_logs(log_options) do
+      job.inports = inports
+      job.outports = outports
+    end
 
     job.run(at: at)
   end

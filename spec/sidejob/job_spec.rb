@@ -405,6 +405,37 @@ describe SideJob::Job do
         expect(@job.send("#{type}ports").map(&:name)).not_to include(:myport)
         expect { @job.send("#{type}put", :myport) }.to raise_error
       end
+
+      it 'can specify port data' do
+        @job.send("#{type}ports=", {myport: {data: [1,'abc']}})
+        expect(@job.send("#{type}put", :myport).read).to eq 1
+        expect(@job.send("#{type}put", :myport).read).to eq 'abc'
+      end
+
+      it 'can clear port data' do
+        @job.send("#{type}ports=", {myport: {}})
+        @job.send("#{type}put", :myport).write 'data'
+        expect(@job.send("#{type}put", :myport).size).to eq 1
+        @job.send("#{type}ports=", {myport: {data: []}})
+        expect(@job.send("#{type}put", :myport).size).to eq 0
+      end
+
+      it 'overwrites existing data' do
+        @job.send("#{type}ports=", {myport: {}})
+        @job.send("#{type}put", :myport).write 'data'
+        expect(@job.send("#{type}put", :myport).size).to eq 1
+        @job.send("#{type}ports=", {myport: {data: [1,'abc']}})
+        expect(@job.send("#{type}put", :myport).size).to eq 2
+        expect(@job.send("#{type}put", :myport).read).to eq 1
+        expect(@job.send("#{type}put", :myport).read).to eq 'abc'
+      end
+
+      it 'groups logs' do
+        now = Time.now
+        allow(Time).to receive(:now) { now }
+        @job.send("#{type}ports=", {myport: {data: [1,'abc']}})
+        expect(SideJob.logs).to eq [{'timestamp' => SideJob.timestamp, 'read' => [], 'write' => [{'job' => @job.id, "#{type}port" => 'myport', 'data' => [1,'abc']}]}]
+      end
     end
   end
 
