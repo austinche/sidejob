@@ -219,7 +219,7 @@ describe SideJob::Port do
         @port1.write 'abc'
         @port1.write 123
       end
-      expect(SideJob.logs).to eq [{'timestamp' => SideJob.timestamp, 'read' => [],
+      expect(SideJob.logs).to eq [{'timestamp' => SideJob.timestamp, 'job' => @job.id, 'read' => [],
                                    'write' => ['job' => @job.id, 'inport' => 'port1', 'data' => ['abc', 123]]}]
     end
 
@@ -304,7 +304,7 @@ describe SideJob::Port do
         expect(@port1.read).to eq('abc')
         expect(@port1.read).to eq(123)
       end
-      expect(SideJob.logs).to eq [{'timestamp' => SideJob.timestamp,
+      expect(SideJob.logs).to eq [{'timestamp' => SideJob.timestamp, 'job' => @job.id,
                                    'read' => ['job' => @job.id, 'inport' => 'port1', 'data' => ['abc', 123]],
                                    'write' => []}]
     end

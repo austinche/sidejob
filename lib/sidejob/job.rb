@@ -34,6 +34,7 @@ module SideJob
     # If a job logger is defined, call the log method on it with the log entry. Otherwise, call {SideJob.log}.
     # @param entry [Hash] Log entry
     def log(entry)
+      entry[:job] = id unless entry[:job]
       (@logger || SideJob).log(entry)
     end
 
@@ -41,7 +42,7 @@ module SideJob
     # @param metadata [Hash] If provided, the metadata is merged into the final log entry
     def group_port_logs(metadata={}, &block)
       new_group = @logger.nil?
-      @logger ||= GroupPortLogs.new
+      @logger ||= GroupPortLogs.new(self)
       @logger.add_metadata metadata
       yield
     ensure
@@ -352,6 +353,10 @@ module SideJob
   # Logger that groups all port read/writes together.
   # @see {JobMethods#group_port_logs}
   class GroupPortLogs
+    def initialize(job)
+      @metadata = {job: job.id}
+    end
+
     # If entry is not a port log, send it on to {SideJob.log}. Otherwise, collect the log until {#done} is called.
     # @param entry [Hash] Log entry
     def log(entry)
@@ -388,8 +393,7 @@ module SideJob
     # Add metadata fields to the final log entry.
     # @param metadata [Hash] Data to be merged with the existing metadata and final log entry
     def add_metadata(metadata)
-      @metadata ||= {}
-      @metadata.merge!(metadata)
+      @metadata.merge!(metadata.symbolize_keys)
     end
   end
 end
