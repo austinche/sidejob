@@ -25,17 +25,28 @@ module SideJob
 
     # @return [Boolean] Returns true if the port exists.
     def exists?
-      ! mode.nil?
+      SideJob.redis.hexists("#{@job.redis_key}:#{type}ports:mode", @name)
+    end
+
+    # Returns the port options. Currently supported options are mode and default.
+    # @return [Hash] Port options
+    def options
+      opts = {mode: mode}
+
+      default = SideJob.redis.hget("#{@job.redis_key}:#{type}ports:default", @name)
+      opts[:default] = parse_json(default) if default
+
+      opts
     end
 
     # Reset the port options. Currently supported options are mode and default.
     # @param options [Hash] New port options
     def options=(options)
-      options = options.stringify_keys
+      options = options.symbolize_keys
       SideJob.redis.multi do |multi|
-        multi.hset "#{@job.redis_key}:#{type}ports:mode", @name, options['mode'] || 'queue'
-        if options.has_key?('default')
-          multi.hset "#{@job.redis_key}:#{type}ports:default", @name, options['default'].to_json
+        multi.hset "#{@job.redis_key}:#{type}ports:mode", @name, options[:mode] || :queue
+        if options.has_key?(:default)
+          multi.hset "#{@job.redis_key}:#{type}ports:default", @name, options[:default].to_json
         else
           multi.hdel "#{@job.redis_key}:#{type}ports:default", @name
         end
@@ -61,16 +72,10 @@ module SideJob
       size > 0 || default?
     end
 
-    # Returns the port default value. To distinguish a null default value vs no default, use json: true or {#default?}.
-    # @param json [Boolean] If true, returns the default value as a JSON encoded string (default false)
-    # @return [String, Object, nil] The default value on the port or nil if none
-    def default(json: false)
-      default = SideJob.redis.hget("#{@job.redis_key}:#{type}ports:default", @name)
-      if json
-        default
-      else
-        parse_json default
-      end
+    # Returns the port default value. To distinguish a null default value vs no default, use {#default?}.
+    # @return [Object, nil] The default value on the port or nil if none
+    def default
+      parse_json SideJob.redis.hget("#{@job.redis_key}:#{type}ports:default", @name)
     end
 
     # Returns if the port has a default value.
@@ -101,9 +106,14 @@ module SideJob
     # @return [Object] First data from port
     # @raise [EOFError] Error raised if no data to be read
     def read
-      data = SideJob.redis.lpop(redis_key) || default(json: true)
-      raise EOFError unless data
-      data = parse_json(data)
+      data = SideJob.redis.lpop(redis_key)
+      if data
+        data = parse_json(data)
+      elsif default?
+        data = default
+      else
+        raise EOFError unless data
+      end
 
       @job.log({read: [log_port_data(self, [data])], write: []})
 
@@ -120,7 +130,7 @@ module SideJob
       ports = [ports] unless ports.is_a?(Array)
       ports_by_mode = ports.group_by {|port| port.mode}
 
-      default = default(json: true)
+      default = SideJob.redis.hget("#{@job.redis_key}:#{type}ports:default", @name)
 
       # empty the port of all data
       data = SideJob.redis.multi do |multi|

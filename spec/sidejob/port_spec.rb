@@ -68,6 +68,14 @@ describe SideJob::Port do
     end
   end
 
+  describe '#options' do
+    it 'returns port options' do
+      expect(@port1.options).to eq({mode: :queue})
+      expect(@memory.options).to eq({mode: :memory})
+      expect(@default.options).to eq({mode: :queue, default: 'default'})
+    end
+  end
+
   describe '#options=' do
     it 'can change mode to memory' do
       expect(@port1.mode).to eq :queue
@@ -160,19 +168,13 @@ describe SideJob::Port do
       expect(@port1.default).to be nil
     end
 
-    it 'returns parsed object by default' do
+    it 'returns default value' do
       @port1.options = {default: [1,2]}
       expect(@port1.default).to eq [1,2]
     end
 
-    it 'can return default as json' do
-      @port1.options = {default: [1,2]}
-      expect(@port1.default(json: true)).to eq '[1,2]'
-    end
-
     it 'can return null default value' do
       @port1.options = {default: nil}
-      expect(@port1.default(json: true)).to eq 'null'
       expect(@port1.default).to be nil
       expect(@port1.default?).to be true
     end
