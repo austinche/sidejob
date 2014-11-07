@@ -101,8 +101,7 @@ The keys used by Sidekiq:
 Additional keys used by SideJob:
 
 * workers:<queue> - Hash mapping class name to worker configuration. A worker should define
-  the inports and outports hashes that map port names to port options. Options under the worker key
-  modify the running of the worker by {SideJob::ServerMiddleware}.
+  the inports and outports hashes that map port names to port options.
 * jobs:last_id - Stores the last job ID (we use incrementing integers from 1)
 * jobs:logs - List with JSON encoded logs.
     * { timestamp: <date>, job: <id>, read: [{ job: <id>, <in|out>port: <port>, data: [<data>] }, ...], write: [{ job: <id>, <in|out>port: <port>, data: [<data>] }, ...] }

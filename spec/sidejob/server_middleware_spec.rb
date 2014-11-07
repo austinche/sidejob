@@ -129,7 +129,7 @@ describe SideJob::ServerMiddleware do
       now = Time.now
       allow(Time).to receive(:now) { now }
       key = "#{@job.redis_key}:rate:#{Time.now.to_i/60}"
-      SideJob.redis.set key, SideJob::ServerMiddleware::DEFAULT_CONFIGURATION['max_runs_per_minute']
+      SideJob.redis.set key, SideJob::ServerMiddleware::CONFIGURATION[:max_runs_per_minute]
       @run = false
       process(@job) { @run = true }
       expect(@run).to be false
@@ -140,7 +140,7 @@ describe SideJob::ServerMiddleware do
       now = Time.now
       allow(Time).to receive(:now) { now }
       key = "#{@job.redis_key}:rate:#{Time.now.to_i/60}"
-      SideJob.redis.set key, SideJob::ServerMiddleware::DEFAULT_CONFIGURATION['max_runs_per_minute']-1
+      SideJob.redis.set key, SideJob::ServerMiddleware::CONFIGURATION[:max_runs_per_minute]-1
       @run = false
       process(@job) { @run = true }
       expect(@run).to be true
@@ -148,7 +148,7 @@ describe SideJob::ServerMiddleware do
     end
 
     it 'does not run if job is too deep' do
-      (SideJob::ServerMiddleware::DEFAULT_CONFIGURATION['max_depth']+1).times do |i|
+      (SideJob::ServerMiddleware::CONFIGURATION[:max_depth]+1).times do |i|
         @job = SideJob.queue(@queue, 'TestWorker', parent: @job, name: 'child')
       end
       @run = false
@@ -158,7 +158,7 @@ describe SideJob::ServerMiddleware do
     end
 
     it 'does run if job is not too deep' do
-      SideJob::ServerMiddleware::DEFAULT_CONFIGURATION['max_depth'].times do |i|
+      SideJob::ServerMiddleware::CONFIGURATION[:max_depth].times do |i|
         @job = SideJob.queue(@queue, 'TestWorker', parent: @job, name: 'child')
       end
       @run = false
