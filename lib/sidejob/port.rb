@@ -10,7 +10,7 @@ module SideJob
       @job = job
       @type = type.to_sym
       @name = name.to_sym
-      raise "Invalid port name: #{@name}" if @name !~ /^[a-zA-Z0-9_]+$/
+      raise "Invalid port name: #{@name}" if @name !~ /^[a-zA-Z0-9_]+$/ && name != '*'
     end
 
     # @return [Boolean] True if two ports are equal
@@ -21,11 +21,6 @@ module SideJob
     # @see #==
     def eql?(other)
       self == other
-    end
-
-    # @return [Boolean] Returns true if the port exists.
-    def exists?
-      SideJob.redis.hexists("#{@job.redis_key}:#{type}ports:mode", @name)
     end
 
     # Returns the port options. Currently supported options are mode and default.

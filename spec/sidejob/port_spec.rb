@@ -58,16 +58,6 @@ describe SideJob::Port do
     end
   end
 
-  describe '#exists?' do
-    it 'returns true if port exists' do
-      expect(@port1.exists?).to be true
-    end
-    
-    it 'returns false if port does not exist' do
-      expect(SideJob::Port.new(@job, :in, 'missing').exists?).to be false
-    end
-  end
-
   describe '#options' do
     it 'returns port options' do
       expect(@port1.options).to eq({mode: :queue})

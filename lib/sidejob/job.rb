@@ -192,7 +192,8 @@ module SideJob
     # Gets all input ports.
     # @return [Array<SideJob::Port>] Input ports
     def inports
-      SideJob.redis.hkeys("#{redis_key}:inports:mode").map {|name| SideJob::Port.new(self, :in, name)}
+      load_ports if ! @ports
+      @ports[:in].values
     end
 
     # Sets the input ports for the job.
@@ -206,7 +207,8 @@ module SideJob
     # Gets all output ports.
     # @return [Array<SideJob::Port>] Output ports
     def outports
-      SideJob.redis.hkeys("#{redis_key}:outports:mode").map {|name| SideJob::Port.new(self, :out, name)}
+      load_ports if ! @ports
+      @ports[:out].values
     end
 
     # Sets the input ports for the job.
@@ -258,14 +260,39 @@ module SideJob
       Sidekiq::Client.push(item)
     end
 
+    # Caches all inports and outports.
+    def load_ports
+      @ports = {}
+      %i{in out}.each do |type|
+        @ports[type] = {}
+        SideJob.redis.hkeys("#{redis_key}:#{type}ports:mode").each do |name|
+          if name == '*'
+            @ports["#{type}*"] = SideJob::Port.new(self, type, name)
+          else
+            @ports[type][name] = SideJob::Port.new(self, type, name)
+          end
+        end
+      end
+    end
+
     # Returns an input or output port.
     # @param type [:in, :out] Input or output port
     # @param name [Symbol,String] Name of the port
     # @return [SideJob::Port]
     def get_port(type, name)
-      port = SideJob::Port.new(self, type, name)
-      raise "Unknown #{type}put port: #{name}" unless port.exists?
-      port
+      load_ports if ! @ports
+      name = name.to_s
+      return @ports[type][name] if @ports[type][name]
+
+      if @ports["#{type}*"]
+        # create port with default port options for dynamic ports
+        port = SideJob::Port.new(self, type, name)
+        port.options = @ports["#{type}*"].options
+        @ports[type][name] = port
+        return port
+      else
+        raise "Unknown #{type}put port: #{name}"
+      end
     end
 
     # Sets the input/outputs ports for the job and overwrites all current options.
@@ -277,14 +304,11 @@ module SideJob
       current = SideJob.redis.hkeys("#{redis_key}:#{type}ports:mode") || []
 
       replace_port_data = []
-      if ports
-        ports = (ports || {}).stringify_keys
-        ports.each_key do |port|
-          ports[port] = ports[port].stringify_keys
-          replace_port_data << port if ports[port]['data']
-        end
-      else
-        ports = config["#{type}ports"] || {}
+      ports = (ports || {}).stringify_keys
+      ports = (config["#{type}ports"] || {}).merge(ports)
+      ports.each_key do |port|
+        ports[port] = ports[port].stringify_keys
+        replace_port_data << port if ports[port]['data']
       end
 
       SideJob.redis.multi do |multi|
@@ -311,6 +335,8 @@ module SideJob
         multi.del "#{redis_key}:#{type}ports:default"
         multi.hmset "#{redis_key}:#{type}ports:default", *defaults if defaults.length > 0
       end
+
+      @ports = nil
 
       group_port_logs do
         ports.each_pair do |port, options|

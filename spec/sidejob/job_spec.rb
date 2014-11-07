@@ -364,16 +364,28 @@ describe SideJob::Job do
   # Tests are identical for input and output port methods
   %i{in out}.each do |type|
     describe "##{type}put" do
-      it "returns an #{type}put port" do
+      it "returns a cached #{type}put port" do
         spec = {}
         spec[:"#{type}ports"] = {port: {}}
         @job = SideJob.queue('testq', 'TestWorker', **spec)
         expect(@job.send("#{type}put", :port)).to eq(SideJob::Port.new(@job, type, :port))
+        expect(@job.send("#{type}put", :port)).to be(@job.send("#{type}put", :port))
       end
 
       it 'raises error on unknown port' do
         @job = SideJob.queue('testq', 'TestWorker')
         expect { @job.send("#{type}put", :unknown) }.to raise_error
+      end
+
+      it 'can dynamically create ports' do
+        spec = {}
+        spec[:"#{type}ports"] = {'*' => {mode: :memory, default: 123}}
+        @job = SideJob.queue('testq', 'TestWorker', **spec)
+        expect(@job.send("#{type}ports").size).to eq 0
+        port = @job.send("#{type}put", :newport)
+        expect(@job.send("#{type}ports").size).to eq 1
+        expect(port.mode).to eq :memory
+        expect(port.default).to eq 123
       end
     end
 
@@ -396,6 +408,13 @@ describe SideJob::Job do
         expect(@job.send("#{type}ports").map(&:name)).to include(:myport)
         expect(@job.send("#{type}put", :myport).mode).to eq :memory
         expect(@job.send("#{type}put", :myport).default).to eq 'def'
+      end
+
+      it 'merges ports with the worker configuration' do
+        allow(@job).to receive(:config) { {"#{type}ports" => {'port1' => {}, 'port2' => {'mode' => 'memory'}}}}
+        @job.send("#{type}ports=", {port2: {mode: :queue}, port3: {}})
+        expect(@job.send("#{type}ports").size).to eq 3
+        expect(@job.send("#{type}ports").all? {|port| port.options == {mode: :queue}}).to be true
       end
 
       it 'can change existing port mode while keeping data intact' do
