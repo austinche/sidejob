@@ -102,13 +102,6 @@ describe SideJob::ServerMiddleware do
       expect(SideJob.redis.get("#{@job.redis_key}:lock").to_f).to eq now.to_f
     end
 
-    it 'does not do anything if the enqueued_at time is before the ran_at' do
-      process(@job) {|worker| worker.set ran_at: SideJob.timestamp}
-      @run = false
-      process(@job) {@run = true}
-      expect(@run).to be false
-    end
-
     it 'does not restart the worker unless another worker was locked out during the run' do
       expect {
         process(@job) {}
@@ -133,7 +126,7 @@ describe SideJob::ServerMiddleware do
       @run = false
       process(@job) { @run = true }
       expect(@run).to be false
-      expect(@job.status).to eq 'terminated'
+      expect(@job.status).to eq 'terminating'
     end
 
     it 'does run if not called too many times in a minute' do
@@ -154,7 +147,7 @@ describe SideJob::ServerMiddleware do
       @run = false
       process(@job) { @run = true }
       expect(@run).to be false
-      expect(@job.status).to eq 'terminated'
+      expect(@job.status).to eq 'terminating'
     end
 
     it 'does run if job is not too deep' do

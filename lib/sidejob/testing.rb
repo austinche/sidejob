@@ -33,7 +33,7 @@ module SideJob
 
       worker = get(:class).constantize.new
       worker.jid = id
-      SideJob::ServerMiddleware.new.call(worker, {'enqueued_at' => Time.now.to_f}, get(:queue)) do
+      SideJob::ServerMiddleware.new.call(worker, {}, get(:queue)) do
         worker.perform(*args)
       end
 
