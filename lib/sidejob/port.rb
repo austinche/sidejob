@@ -87,13 +87,13 @@ module SideJob
       case mode
         when :queue
           SideJob.redis.rpush redis_key, data.to_json
-          @job.run if type == :in
         when :memory
           SideJob.redis.hset "#{@job.redis_key}:#{type}ports:default", @name, data.to_json
         else
           raise "Missing port #{@name} or invalid mode #{mode}"
       end
 
+      @job.run if type == :in
       @job.log({read: [], write: [log_port_data(self, [data])]})
     end
 
@@ -139,7 +139,6 @@ module SideJob
         if data.length > 0
           (ports_by_mode[:queue] || []).each do |port|
             multi.rpush port.redis_key, data
-            to_run.add port.job if port.type == :in
           end
           if ! default
             (ports_by_mode[:memory] || []).each do |port|
@@ -160,7 +159,10 @@ module SideJob
         SideJob.log metadata.merge({read: [log_port_data(self, data)], write: ports.map { |port| log_port_data(port, data)}})
       end
 
-      to_run.each { |job| job.run }
+      if data.length > 0 || default
+        ports.each { |port| port.job.run if port.type == :in }
+      end
+
       data
     end
 

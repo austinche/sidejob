@@ -226,17 +226,14 @@ describe SideJob::Port do
 
     it 'runs the job if it is an input port' do
       expect(@port1.job).to receive(:run)
+      expect(@memory.job).to receive(:run)
       @port1.write 3
+      @memory.write 3
     end
 
     it 'does not run the job if it is an output port' do
       expect(@out1.job).not_to receive(:run)
       @out1.write 3
-    end
-
-    it 'does not run the job if it is a memory port' do
-      expect(@memory.job).not_to receive(:run)
-      @memory.write 3
     end
   end
 
@@ -354,15 +351,15 @@ describe SideJob::Port do
       @out1.connect_to @port1
     end
 
+    it 'runs job for memory input port' do
+      expect(@memory.job).to receive(:run)
+      @out1.write true
+      @out1.connect_to @memory
+    end
+
     it 'does not run job if no data sent' do
       expect(@port1.job).not_to receive(:run)
       @out1.connect_to @port1
-    end
-
-    it 'does not run job for memory port' do
-      expect(@memory.job).not_to receive(:run)
-      @out1.write true
-      @out1.connect_to @memory
     end
 
     it 'logs data' do
