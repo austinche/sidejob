@@ -9,7 +9,7 @@ module SideJob
     CONFIGURATION = {
         lock_expiration: 86400, # the worker should not run longer than this number of seconds
         max_depth: 20, # the job should not be nested more than this number of levels
-        max_runs_per_minute: 60, # generate error if the job is run more often than this
+        max_runs_per_minute: 120, # generate error if the job is run more often than this
     }
 
     # Called by sidekiq as a server middleware to handle running a worker
@@ -43,24 +43,6 @@ module SideJob
     end
 
     def run_worker(&block)
-      # limit each job to being called too many times per minute
-      # or too deep of a job tree
-      # this is to help prevent bad coding that leads to recursive busy loops
-      # Uses Rate limiter 1 pattern from http://redis.io/commands/INCR
-      rate_key = "#{@worker.redis_key}:rate:#{Time.now.to_i / 60}"
-      rate = SideJob.redis.multi do |multi|
-        multi.incr rate_key
-        multi.expire rate_key, 300 # 5 minutes
-      end[0]
-
-      if rate.to_i > CONFIGURATION[:max_runs_per_minute]
-        SideJob.log({ job: @worker.id, error: 'Job was terminated due to being called too rapidly' })
-        return @worker.terminate
-      elsif SideJob.redis.llen("#{@worker.redis_key}:ancestors") > CONFIGURATION[:max_depth]
-        SideJob.log({ job: @worker.id, error: 'Job was terminated due to being too deep' })
-        return @worker.terminate
-      end
-
       # if another thread is already running this job, we don't run the job now
       # this simplifies workers from having to deal with thread safety
       # we will requeue the job in the other thread
@@ -74,10 +56,29 @@ module SideJob
       return if val # only run if lock key was not set
 
       begin
-        @worker.set ran_at: SideJob.timestamp
-        @worker.status = 'running'
-        yield
-        @worker.status = 'completed' if @worker.status == 'running'
+        # limit each job to being called too many times per minute
+        # or too deep of a job tree
+        # this is to help prevent bad coding that leads to recursive busy loops
+        # Uses Rate limiter 1 pattern from http://redis.io/commands/INCR
+        rate_key = "#{@worker.redis_key}:rate:#{Time.now.to_i / 60}"
+        rate = SideJob.redis.multi do |multi|
+          multi.incr rate_key
+          multi.expire rate_key, 300 # 5 minutes
+        end[0]
+
+        if rate.to_i > CONFIGURATION[:max_runs_per_minute]
+          SideJob.log({ job: @worker.id, error: 'Job was terminated due to being called too rapidly' })
+          @worker.terminate
+        elsif SideJob.redis.llen("#{@worker.redis_key}:ancestors") > CONFIGURATION[:max_depth]
+          SideJob.log({ job: @worker.id, error: 'Job was terminated due to being too deep' })
+          @worker.terminate
+        else
+          # normal run
+          @worker.set ran_at: SideJob.timestamp
+          @worker.status = 'running'
+          yield
+          @worker.status = 'completed' if @worker.status == 'running'
+        end
       rescue SideJob::Worker::Suspended
         @worker.status = 'suspended' if @worker.status == 'running'
       rescue => e
