@@ -76,6 +76,13 @@ describe SideJob do
       }.to change {Sidekiq::Stats.new.enqueued}.by(2)
     end
 
+    it 'raises an error if job tree is too deep' do
+      (SideJob::CONFIGURATION[:max_depth]).times do |i|
+        job = SideJob.queue('testq', 'TestWorker', parent: job, name: 'child')
+      end
+      expect { SideJob.queue('testq', 'TestWorker', parent: job, name: 'child') }.to raise_error
+    end
+
     it 'raises an error if name: option not specified with parent' do
       parent = SideJob.queue('testq', 'TestWorker')
       expect { SideJob.queue('testq', 'TestWorker', parent: parent) }.to raise_error

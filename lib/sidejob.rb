@@ -7,6 +7,13 @@ require 'sidejob/server_middleware'
 require 'time' # for iso8601 method
 
 module SideJob
+  # Configuration parameters
+  CONFIGURATION = {
+      lock_expiration: 86400, # workers should not run longer than this number of seconds
+      max_depth: 20, # jobs should not be nested more than this number of levels
+      max_runs_per_minute: 120, # terminate jobs that run too often
+  }
+
   # Returns redis connection
   # If block is given, yields the redis connection
   # Otherwise, just returns the redis connection
@@ -44,6 +51,10 @@ module SideJob
       raise 'Missing name option for job with a parent' unless name
       raise "Parent already has child job with name #{name}" if parent.child(name)
       ancestry = [parent.id] + SideJob.redis.lrange("#{parent.redis_key}:ancestors", 0, -1)
+
+      # prevent too deep of a job tree which may be a sign of a coding problem
+      raise "Job tree depth > #{CONFIGURATION[:max_depth]}" if ancestry.length > CONFIGURATION[:max_depth]
+
       log_options = {job: parent.id}
     end
 

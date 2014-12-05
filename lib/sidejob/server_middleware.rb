@@ -5,13 +5,6 @@ module SideJob
   # For simplicity, a job is allowed to be queued multiple times in the Sidekiq queue
   # Only when it gets pulled out to be run, i.e. here, we decide if we want to actually run it
   class ServerMiddleware
-    # Configuration parameters for running workers
-    CONFIGURATION = {
-        lock_expiration: 86400, # the worker should not run longer than this number of seconds
-        max_depth: 20, # the job should not be nested more than this number of levels
-        max_runs_per_minute: 120, # generate error if the job is run more often than this
-    }
-
     # Called by sidekiq as a server middleware to handle running a worker
     # @param worker [SideJob::Worker]
     # @param msg [Hash] Sidekiq message format
@@ -57,8 +50,7 @@ module SideJob
 
       begin
         # limit each job to being called too many times per minute
-        # or too deep of a job tree
-        # this is to help prevent bad coding that leads to recursive busy loops
+        # this is to help prevent bad coding that leads to infinite looping
         # Uses Rate limiter 1 pattern from http://redis.io/commands/INCR
         rate_key = "#{@worker.redis_key}:rate:#{Time.now.to_i / 60}"
         rate = SideJob.redis.multi do |multi|
@@ -68,9 +60,6 @@ module SideJob
 
         if rate.to_i > CONFIGURATION[:max_runs_per_minute]
           SideJob.log({ job: @worker.id, error: 'Job was terminated due to being called too rapidly' })
-          @worker.terminate
-        elsif SideJob.redis.llen("#{@worker.redis_key}:ancestors") > CONFIGURATION[:max_depth]
-          SideJob.log({ job: @worker.id, error: 'Job was terminated due to being too deep' })
           @worker.terminate
         else
           # normal run
