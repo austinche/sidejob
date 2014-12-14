@@ -303,17 +303,15 @@ module SideJob
     def set_ports(type, ports)
       current = SideJob.redis.hkeys("#{redis_key}:#{type}ports:mode") || []
 
-      replace_port_data = []
       ports = (ports || {}).stringify_keys
       ports = (config["#{type}ports"] || {}).merge(ports)
       ports.each_key do |port|
         ports[port] = ports[port].stringify_keys
-        replace_port_data << port if ports[port]['data']
       end
 
       SideJob.redis.multi do |multi|
         # remove data from old ports
-        ((current - ports.keys) | replace_port_data).each do |port|
+        (current - ports.keys).each do |port|
           multi.del "#{redis_key}:#{type}:#{port}"
         end
 
@@ -337,17 +335,6 @@ module SideJob
       end
 
       @ports = nil
-
-      group_port_logs do
-        ports.each_pair do |port, options|
-          if options['data']
-            port = get_port(type, port)
-            options['data'].each do |x|
-              port.write x
-            end
-          end
-        end
-      end
     end
 
     # @raise [RuntimeError] Error raised if job no longer exists

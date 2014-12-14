@@ -76,17 +76,6 @@ describe SideJob::Worker do
       child = @worker.queue('testq', 'TestWorker', name: 'child')
       expect(child.get(:created_by)).to eq "job:#{@worker.id}"
     end
-
-    it 'groups initial port data' do
-      now = Time.now
-      allow(Time).to receive(:now) { now }
-      child = @worker.queue('testq', 'TestWorker', name: 'child', inports: {'inport1' => {data: [1,2]}}, outports: {'outport1' => {data: [3,4]}})
-      expect(SideJob.logs).to eq [{'timestamp' => SideJob.timestamp, 'job' => @worker.id,
-                                   'read' => [],
-                                   'write' => [{'job' => child.id, 'inport' => 'inport1', 'data' => [1,2]},
-                                               {'job' => child.id, 'outport' => 'outport1', 'data' => [3,4]},
-                                   ]}]
-    end
   end
 
   describe '#for_inputs' do
