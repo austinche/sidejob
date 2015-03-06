@@ -89,7 +89,7 @@ module SideJob
       return unless inputs.length > 0
       ports = inputs.map {|name| input(name)}
       loop do
-        group_port_logs(job: id) do
+        SideJob::Port.log_group do
           # error if ports all have defaults, complete if no non-default port inputs, suspend if partial inputs
           data = ports.map {|port| [ port.data?, port.default? ] }
           raise "One of these input ports should not have a default value: #{inputs.join(',')}" if data.all? {|x| x[1]}

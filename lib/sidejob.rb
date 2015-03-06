@@ -73,10 +73,8 @@ module SideJob
     end
 
     # initialize ports
-    job.group_port_logs(log_options) do
-      job.inports = inports
-      job.outports = outports
-    end
+    job.inports = inports
+    job.outports = outports
 
     job.run(at: at)
   end
@@ -99,17 +97,28 @@ module SideJob
   # Adds a log entry to redis with current timestamp.
   # @param entry [Hash] Log entry
   def self.log(entry)
-    SideJob.redis.rpush 'jobs:logs', entry.merge(timestamp: SideJob.timestamp).to_json
+    context = (Thread.current[:sidejob_log_context] || {}).merge(timestamp: SideJob.timestamp)
+    SideJob.redis.rpush 'jobs:logs', context.merge(entry).to_json
   end
 
   # Return all job logs and optionally clears them.
   # @param clear [Boolean] If true, delete logs after returning them (default true)
-  # @return [Array<Hash>] All logs for the job with the oldest first
+  # @return [Array<Hash>] All logs with the oldest first
   def self.logs(clear: true)
     SideJob.redis.multi do |multi|
       multi.lrange 'jobs:logs', 0, -1
       multi.del 'jobs:logs' if clear
     end[0].map {|log| JSON.parse(log)}
+  end
+
+  # Adds the given metadata to all {SideJob.log} calls within the block.
+  # @param metadata [Hash] Metadata to be merged with each log entry
+  def self.log_context(metadata, &block)
+    previous = Thread.current[:sidejob_log_context]
+    Thread.current[:sidejob_log_context] = (previous || {}).merge(metadata.symbolize_keys)
+    yield
+  ensure
+    Thread.current[:sidejob_log_context] = previous
   end
 end
 

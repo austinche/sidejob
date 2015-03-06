@@ -94,7 +94,7 @@ module SideJob
       end
 
       @job.run if type == :in
-      @job.log({read: [], write: [log_port_data(self, [data])]})
+      log(write: [ { port: self, data: [data] } ])
     end
 
     # Reads the oldest data from the port. Returns the default value if no data and there is a default.
@@ -110,7 +110,7 @@ module SideJob
         raise EOFError unless data
       end
 
-      @job.log({read: [log_port_data(self, [data])], write: []})
+      log(read: [ { port: self, data: [data] } ])
 
       data
     end
@@ -119,9 +119,8 @@ module SideJob
     # All data is read from the current port and written to the destination ports.
     # If the current port has a default value, the default is copied to all destination ports.
     # @param ports [Array<SideJob::Port>, SideJob::Port] Destination port(s)
-    # @param metadata [Hash] If provided, the metadata is merged into the log entry
     # @return [Array<Object>] Returns all data on current port
-    def connect_to(ports, metadata={})
+    def connect_to(ports)
       ports = [ports] unless ports.is_a?(Array)
       ports_by_mode = ports.group_by {|port| port.mode}
 
@@ -156,7 +155,7 @@ module SideJob
 
       data.map! {|x| parse_json x}
       if data.length > 0
-        SideJob.log metadata.merge({read: [log_port_data(self, data)], write: ports.map { |port| log_port_data(port, data)}})
+        log(read: [{ port: self, data: data }], write: ports.map { |port| {port: port, data: data} })
       end
 
       if data.length > 0 || default
@@ -188,12 +187,46 @@ module SideJob
       redis_key.hash
     end
 
+    # Groups all port reads and writes within the block into a single logged event.
+    def self.log_group(&block)
+      outermost = ! Thread.current[:sidejob_port_group]
+      Thread.current[:sidejob_port_group] ||= {read: {}, write: {}} # port -> [data]
+      yield
+    ensure
+      if outermost
+        self._really_log Thread.current[:sidejob_port_group]
+        Thread.current[:sidejob_port_group] = nil
+      end
+    end
+
     private
 
-    def log_port_data(port, data)
-      x = {job: port.job.id, data: data}
-      x[:"#{port.type}port"] = port.name
-      x
+    def self._really_log(entry)
+      return unless entry && (entry[:read].length > 0 || entry[:write].length > 0)
+
+      log_entry = {}
+      %i{read write}.each do |type|
+        log_entry[type] = entry[type].map do |port, data|
+          x = {job: port.job.id, data: data}
+          x[:"#{port.type}port"] = port.name
+          x
+        end
+      end
+
+      SideJob.log log_entry
+    end
+
+    def log(data)
+      entry = Thread.current[:sidejob_port_group] ? Thread.current[:sidejob_port_group] : {read: {}, write: {}}
+      %i{read write}.each do |type|
+        (data[type] || []).each do |x|
+          entry[type][x[:port]] ||= []
+          entry[type][x[:port]].concat JSON.parse(x[:data].to_json) # serialize/deserialize to do a deep copy
+        end
+      end
+      if ! Thread.current[:sidejob_port_group]
+        self.class._really_log(entry)
+      end
     end
 
     # Wrapper around JSON.parse to also handle primitive types.

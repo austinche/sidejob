@@ -207,11 +207,11 @@ describe SideJob::Port do
     it 'logs writes' do
       now = Time.now
       allow(Time).to receive(:now) { now }
-      @job.group_port_logs do
+      SideJob::Port.log_group do
         @port1.write 'abc'
         @port1.write 123
       end
-      expect(SideJob.logs).to eq [{'timestamp' => SideJob.timestamp, 'job' => @job.id, 'read' => [],
+      expect(SideJob.logs).to eq [{'timestamp' => SideJob.timestamp, 'read' => [],
                                    'write' => ['job' => @job.id, 'inport' => 'port1', 'data' => ['abc', 123]]}]
     end
 
@@ -289,11 +289,11 @@ describe SideJob::Port do
       allow(Time).to receive(:now) { now }
       ['abc', 123].each {|x| @port1.write x}
       SideJob.logs
-      @job.group_port_logs do
+      SideJob::Port.log_group do
         expect(@port1.read).to eq('abc')
         expect(@port1.read).to eq(123)
       end
-      expect(SideJob.logs).to eq [{'timestamp' => SideJob.timestamp, 'job' => @job.id,
+      expect(SideJob.logs).to eq [{'timestamp' => SideJob.timestamp,
                                    'read' => ['job' => @job.id, 'inport' => 'port1', 'data' => ['abc', 123]],
                                    'write' => []}]
     end
@@ -374,21 +374,21 @@ describe SideJob::Port do
                                    'write' => [{'job' => @job.id, 'inport' => 'port1', 'data' => [1,[2,3]]}] }])
     end
 
-    it 'can specify additional metadata to add to log' do
+    it 'can use SideJob.log_context to specify additional metadata' do
       now = Time.now
       allow(Time).to receive(:now) { now }
-      job2 = SideJob.queue('testq', 'TestWorker')
       @out1.write 1
       @out1.write [2,3]
       SideJob.logs(clear: true)
-      @out1.connect_to(@port1, user: 'test')
+      SideJob.log_context(user: 'test') do
+        @out1.connect_to(@port1)
+      end
       expect(SideJob.logs).to eq([{'timestamp' => SideJob.timestamp, 'user' => 'test',
                                    'read' => [{'job' => @job.id, 'outport' => 'out1', 'data' => [1,[2,3]]}],
                                    'write' => [{'job' => @job.id, 'inport' => 'port1', 'data' => [1,[2,3]]}] }])
     end
 
     it 'does not log if no data on port' do
-      job2 = SideJob.queue('testq', 'TestWorker')
       @out1.connect_to(@port1)
       expect(SideJob.logs).to eq([])
     end
@@ -444,6 +444,70 @@ describe SideJob::Port do
       h[port2] = 3
       expect(h.keys.length).to be(1)
       expect(h[@port1]).to be(3)
+    end
+  end
+
+  describe '.log_group' do
+    before do
+      now = Time.now
+      allow(Time).to receive(:now) { now }
+    end
+
+    it 'does not log anything if no port operations occur within the block' do
+      SideJob::Port.log_group {}
+      expect(SideJob.logs.length).to eq 0
+    end
+
+    it 'groups all port logs within the block' do
+      SideJob::Port.log_group do
+        @port1.write 'abc'
+        @port1.read
+        @port1.write 'def'
+        @out1.write 'xyz'
+      end
+      expect(SideJob.logs).to eq [{'timestamp' => SideJob.timestamp,
+                                    'read' => [{'job' => @port1.job.id, 'inport' => 'port1', 'data' => ['abc']}],
+                                    'write' => [{'job' => @port1.job.id, 'inport' => 'port1', 'data' => ['abc', 'def']}, {'job' => @out1.job.id, 'outport' => 'out1', 'data' => ['xyz']} ]}]
+    end
+
+    it 'does not write out log until the end of outermost group' do
+      SideJob::Port.log_group do
+        @port1.write 'hello'
+        SideJob::Port.log_group do
+          @port1.write 2
+        end
+        expect(SideJob.logs.length).to eq 0
+      end
+      expect(SideJob.logs).to eq [{'timestamp' => SideJob.timestamp,
+                                   'read' => [],
+                                   'write' => [{'job' => @port1.job.id, 'inport' => 'port1', 'data' => ['hello', 2]}]}]
+    end
+
+    it 'works with SideJob.log_context' do
+      SideJob.log_context(user: 'foo') do
+        SideJob::Port.log_group do
+          @port1.write 'abc'
+          @port1.read
+        end
+      end
+      expect(SideJob.logs).to eq [{'timestamp' => SideJob.timestamp, 'user' => 'foo',
+                                    'read' => [{'job' => @port1.job.id, 'inport' => 'port1', 'data' => ['abc']}],
+                                    'write' => [{'job' => @port1.job.id, 'inport' => 'port1', 'data' => ['abc']}]}]
+    end
+
+    it 'logs correctly even if data is changed' do
+      data = {'x' => [1,2]}
+      SideJob::Port.log_group do
+        @port1.write data
+        expect(@port1.read).to eq data
+        data['x'].push 3
+        @port1.write data
+        expect(@port1.read).to eq data
+      end
+      expect(SideJob.logs).to eq [{'timestamp' => SideJob.timestamp,
+                                   'read' => [{'job' => @port1.job.id, 'inport' => 'port1', 'data' => [{'x' => [1,2]},{'x' => [1,2,3]}]}],
+                                   'write' => [{'job' => @port1.job.id, 'inport' => 'port1', 'data' => [{'x' => [1,2]},{'x' => [1,2,3]}]}],
+                                 }]
     end
   end
 end

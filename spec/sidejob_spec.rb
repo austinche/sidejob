@@ -186,4 +186,41 @@ describe SideJob do
                                                 {'xyz' => 456, 'timestamp' => SideJob.timestamp},])
     end
   end
+
+  describe '.log_context' do
+    before do
+      now = Time.now
+      allow(Time).to receive(:now) { now }
+    end
+
+    it 'adds metadata to logs within the group' do
+      SideJob.log_context(data1: 1, data2: 2) do
+        SideJob.log({abc: 123})
+        expect(SideJob.logs).to eq([{'data1' => 1, 'data2' => 2, 'abc' => 123, 'timestamp' => SideJob.timestamp}])
+      end
+    end
+
+    it 'does not add metadata to logs outside of the group' do
+      SideJob.log_context(data1: 1, data2: 2) {}
+      SideJob.log({abc: 123})
+      expect(SideJob.logs).to eq([{'abc' => 123, 'timestamp' => SideJob.timestamp}])
+    end
+
+    it 'can be nested' do
+      SideJob.log_context(data1: 1) do
+        SideJob.log({x: 1})
+        SideJob.log_context(data2: 2) do
+          SideJob.log({x: 2})
+        end
+        SideJob.log({x: 3})
+      end
+      SideJob.log({x: 4})
+
+      expect(SideJob.logs).to eq([{'data1' => 1, 'timestamp' => SideJob.timestamp, 'x' => 1},
+                                  {'data1' => 1, 'data2' => 2, 'timestamp' => SideJob.timestamp, 'x' => 2},
+                                  {'data1' => 1, 'timestamp' => SideJob.timestamp, 'x' => 3},
+                                  {'timestamp' => SideJob.timestamp, 'x' => 4},
+                                 ])
+    end
+  end
 end

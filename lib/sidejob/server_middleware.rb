@@ -13,12 +13,14 @@ module SideJob
       @worker = worker
       return unless @worker.exists? # make sure the job has not been deleted
 
-      case @worker.status
-        when 'queued'
-          run_worker { yield }
-        when 'terminating'
-          terminate_worker
-        # for any other status, we assume this worker does not need to be run
+      SideJob.log_context(job: @worker.id) do
+        case @worker.status
+          when 'queued'
+            run_worker { yield }
+          when 'terminating'
+            terminate_worker
+          # for any other status, we assume this worker does not need to be run
+        end
       end
     end
 
@@ -59,7 +61,7 @@ module SideJob
         end[0]
 
         if rate.to_i > CONFIGURATION[:max_runs_per_minute]
-          SideJob.log({ job: @worker.id, error: 'Job was terminated due to being called too rapidly' })
+          SideJob.log({ error: 'Job was terminated due to being called too rapidly' })
           @worker.terminate
         else
           # normal run
@@ -86,7 +88,7 @@ module SideJob
 
     def add_exception(exception)
       # only store the backtrace until the first sidekiq line
-      SideJob.log({ job: @worker.id, error: exception.message, backtrace: exception.backtrace.take_while {|l| l !~ /sidekiq/}.join("\n") })
+      SideJob.log({ error: exception.message, backtrace: exception.backtrace.take_while {|l| l !~ /sidekiq/}.join("\n") })
     end
   end
 end

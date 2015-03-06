@@ -102,8 +102,8 @@ describe SideJob::Worker do
       @worker.for_inputs(:in1, :in2) do |in1, in2|
         @worker.output(:out1).write [in1, in2[0]]
       end
-      expect(SideJob.logs).to eq([{'timestamp' => SideJob.timestamp, 'job' => @job.id, 'read' => [{'job' => @job.id, 'inport' => 'in1', 'data' => [1]}, {'job' => @job.id, 'inport' => 'in2', 'data' => [['a', 'b']]}], 'write' => [{'job' => @job.id, 'outport' => 'out1', 'data' => [[1, 'a']]}]},
-                                  {'timestamp' => SideJob.timestamp, 'job' => @job.id, 'read' => [{'job' => @job.id, 'inport' => 'in1', 'data' => [2]}, {'job' => @job.id, 'inport' => 'in2', 'data' => [['c', 'd']]}], 'write' => [{'job' => @job.id, 'outport' => 'out1', 'data' => [[2, 'c']]}]},
+      expect(SideJob.logs).to eq([{'timestamp' => SideJob.timestamp, 'read' => [{'job' => @job.id, 'inport' => 'in1', 'data' => [1]}, {'job' => @job.id, 'inport' => 'in2', 'data' => [['a', 'b']]}], 'write' => [{'job' => @job.id, 'outport' => 'out1', 'data' => [[1, 'a']]}]},
+                                  {'timestamp' => SideJob.timestamp, 'read' => [{'job' => @job.id, 'inport' => 'in1', 'data' => [2]}, {'job' => @job.id, 'inport' => 'in2', 'data' => [['c', 'd']]}], 'write' => [{'job' => @job.id, 'outport' => 'out1', 'data' => [[2, 'c']]}]},
                                  ])
     end
 

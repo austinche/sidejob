@@ -2,7 +2,6 @@ module SideJob
   # Methods shared between {SideJob::Job} and {SideJob::Worker}.
   module JobMethods
     attr_reader :id
-    attr_accessor :logger
 
     # @return [Boolean] True if two jobs or workers have the same id
     def ==(other)
@@ -29,27 +28,6 @@ module SideJob
     # @return [Boolean] Returns true if this job exists and has not been deleted
     def exists?
       SideJob.redis.hexists 'jobs', id
-    end
-
-    # If a job logger is defined, call the log method on it with the log entry. Otherwise, call {SideJob.log}.
-    # @param entry [Hash] Log entry
-    def log(entry)
-      entry[:job] = id unless entry[:job]
-      (@logger || SideJob).log(entry)
-    end
-
-    # Groups all port reads and writes within the block into a single logged event.
-    # @param metadata [Hash] If provided, the metadata is merged into the final log entry
-    def group_port_logs(metadata={}, &block)
-      new_group = @logger.nil?
-      @logger ||= GroupPortLogs.new(self)
-      @logger.add_metadata metadata
-      yield
-    ensure
-      if new_group
-        @logger.done
-        @logger = nil
-      end
     end
 
     # Retrieve the job's status.
@@ -360,53 +338,6 @@ module SideJob
     # @param id [String] Job id
     def initialize(id)
       @id = id
-    end
-  end
-
-  # Logger that groups all port read/writes together.
-  # @see {JobMethods#group_port_logs}
-  class GroupPortLogs
-    def initialize(job)
-      @metadata = {job: job.id}
-    end
-
-    # If entry is not a port log, send it on to {SideJob.log}. Otherwise, collect the log until {#done} is called.
-    # @param entry [Hash] Log entry
-    def log(entry)
-      if entry[:read] && entry[:write]
-        # collect reads and writes by port and group data together
-        @port_events ||= {read: {}, write: {}} # {job: id, <in|out>port: port} -> data array
-        %i{read write}.each do |type|
-          entry[type].each do |event|
-            data = event.delete(:data)
-            @port_events[type][event] ||= []
-            @port_events[type][event].concat data
-          end
-        end
-      else
-        SideJob.log(entry)
-      end
-    end
-
-    # Merges the collected port read and writes and send logs to {SideJob.log}.
-    def done
-      return unless @port_events && (@port_events[:read].length > 0 || @port_events[:write].length > 0)
-
-      entry = {}
-      %i{read write}.each do |type|
-        entry[type] = @port_events[type].map do |port, data|
-          port.merge({data: data})
-        end
-      end
-
-      SideJob.log @metadata.merge(entry)
-      @port_events = nil
-    end
-
-    # Add metadata fields to the final log entry.
-    # @param metadata [Hash] Data to be merged with the existing metadata and final log entry
-    def add_metadata(metadata)
-      @metadata.merge!(metadata.symbolize_keys)
     end
   end
 end
