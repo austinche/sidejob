@@ -46,30 +46,16 @@ module SideJob
   def self.queue(queue, klass, args: nil, parent: nil, name: nil, at: nil, by: nil, inports: nil, outports: nil)
     raise "No worker registered for #{klass} in queue #{queue}" unless SideJob::Worker.config(queue, klass)
 
-    log_options = {}
-    if parent
-      raise 'Missing name option for job with a parent' unless name
-      raise "Parent already has child job with name #{name}" if parent.child(name)
-      ancestry = [parent.id] + SideJob.redis.lrange("#{parent.redis_key}:ancestors", 0, -1)
-
-      # prevent too deep of a job tree which may be a sign of a coding problem
-      raise "Job tree depth > #{CONFIGURATION[:max_depth]}" if ancestry.length > CONFIGURATION[:max_depth]
-
-      log_options = {job: parent.id}
-    end
-
     # To prevent race conditions, we generate the id and set all data in redis before queuing the job to sidekiq
     # Otherwise, sidekiq may start the job too quickly
     id = SideJob.redis.incr('jobs:last_id').to_s
     job = SideJob::Job.new(id)
 
-    SideJob.redis.multi do |multi|
-      multi.hset 'jobs', id, {queue: queue, class: klass, args: args, created_by: by, created_at: SideJob.timestamp}.to_json
+    SideJob.redis.hset 'jobs', id, {queue: queue, class: klass, args: args, created_by: by, created_at: SideJob.timestamp}.to_json
 
-      if parent
-        multi.rpush "#{job.redis_key}:ancestors", ancestry # we need to rpush to get the right order
-        multi.hset "#{parent.redis_key}:children", name, id
-      end
+    if parent
+      raise 'Missing name option for job with a parent' unless name
+      parent.adopt(job, name)
     end
 
     # initialize ports

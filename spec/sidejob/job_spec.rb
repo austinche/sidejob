@@ -209,6 +209,61 @@ describe SideJob::Job do
     end
   end
 
+  describe '#disown' do
+    it 'raises error if child cannot be found' do
+      parent = SideJob.queue('testq', 'TestWorker')
+      expect { parent.disown('child') }.to raise_error
+    end
+
+    it 'disassociates a child job from the parent' do
+      parent = SideJob.queue('testq', 'TestWorker')
+      child = SideJob.queue('testq', 'TestWorker', parent: parent, name: 'child')
+      expect(child.parent).to eq(parent)
+      expect(parent.child('child')).to eq child
+      parent.disown('child')
+      expect(child.parent).to be nil
+      expect(parent.child('child')).to be nil
+    end
+  end
+
+  describe '#adopt' do
+    it 'can adopt an orphan job' do
+      job = SideJob.queue('testq', 'TestWorker')
+      child = SideJob.queue('testq', 'TestWorker')
+      expect(child.parent).to be nil
+      job.adopt(child, 'child')
+      expect(child.parent).to eq(job)
+    end
+
+    it 'raises error when adopting self' do
+      job = SideJob.queue('testq', 'TestWorker')
+      expect(job.parent).to be nil
+      expect { job.adopt(job, 'self') }.to raise_error
+    end
+
+    it 'raises error if job already has a parent' do
+      job = SideJob.queue('testq', 'TestWorker')
+      job2 = SideJob.queue('testq', 'TestWorker')
+      child = SideJob.queue('testq', 'TestWorker')
+      job.adopt(child, 'child')
+      expect { job2.adopt(child, 'mine') }.to raise_error
+    end
+
+    it 'raises error if no name is given' do
+      job = SideJob.queue('testq', 'TestWorker')
+      child = SideJob.queue('testq', 'TestWorker')
+      expect { job.adopt(child, nil) }.to raise_error
+    end
+
+    it 'raises error if name is not unique' do
+      job = SideJob.queue('testq', 'TestWorker')
+      child = SideJob.queue('testq', 'TestWorker')
+      child2 = SideJob.queue('testq', 'TestWorker')
+      job.adopt(child, 'child')
+      expect { job.adopt(child2, 'child') }.to raise_error
+    end
+  end
+
   describe '#terminated?' do
     before do
       @job = SideJob.queue('testq', 'TestWorker')

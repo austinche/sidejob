@@ -121,6 +121,36 @@ module SideJob
       parent
     end
 
+    # Disown a child job so that it no longer has a parent.
+    # @param name [String] Name of child job to disown
+    def disown(name)
+      job = child(name)
+      raise "Job #{id} cannot disown non-existent child #{name}" unless job
+      SideJob.redis.multi do |multi|
+        multi.del "#{job.redis_key}:ancestors"
+        multi.hdel "#{redis_key}:children", name
+      end
+    end
+
+    # Adopt a parent-less job as a child of this job.
+    # @param orphan [SideJob::Job] Job that has no parent
+    # @param name [String] Name of child job (must be unique among children)
+    def adopt(orphan, name)
+      raise "Job #{id} cannot adopt itself as a child" if orphan == self
+      raise "Job #{id} cannot adopt job #{orphan.id} as it already has a parent" unless orphan.parent.nil?
+      raise "Job #{id} cannot adopt job #{orphan.id} as child name #{name} is not unique" if name.nil? || ! child(name).nil?
+
+      ancestry = [id] + SideJob.redis.lrange("#{redis_key}:ancestors", 0, -1)
+
+      # prevent too deep of a job tree which may be a sign of a coding problem
+      raise "Job #{id} cannot adopt job #{orphan.id} as tree depth > #{CONFIGURATION[:max_depth]}" if ancestry.length > CONFIGURATION[:max_depth]
+
+      SideJob.redis.multi do |multi|
+        multi.rpush "#{orphan.redis_key}:ancestors", ancestry # we need to rpush to get the right order
+        multi.hset "#{redis_key}:children", name, orphan.id
+      end
+    end
+
     # Returns if job and all children are terminated.
     # @return [Boolean] True if this job and all children recursively are terminated
     def terminated?
