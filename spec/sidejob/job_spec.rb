@@ -354,6 +354,25 @@ describe SideJob::Job do
     end
   end
 
+  describe '#state' do
+    before do
+      now = Time.now
+      allow(Time).to receive(:now) { now }
+      @job = SideJob.queue('testq', 'TestWorker')
+    end
+
+    it 'returns job state with common keys' do
+      expect(@job.state).to eq({"queue"=>"testq", "class"=>"TestWorker", "args"=>nil, "created_by"=>nil, "created_at"=>SideJob.timestamp})
+    end
+
+    it 'returns job state with custom keys' do
+      x = { 'field1' => 'value1', 'field2' => [1,2], 'field3' => 123 }
+      SideJob.redis.hset 'jobs', @job.id, x.to_json
+      @job.reload
+      expect(@job.state).to eq(x)
+    end
+  end
+
   describe '#get' do
     before do
       @job = SideJob.queue('testq', 'TestWorker')

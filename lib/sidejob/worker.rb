@@ -106,8 +106,7 @@ module SideJob
     # @raise [RuntimeError] Error raised if job no longer exists
     def set(data)
       return unless data.size > 0
-      load_state
-      data.each_pair { |key, val| @state[key.to_s] = val }
+      data.each_pair { |key, val| state[key.to_s] = val }
       save_state
     end
 
@@ -116,8 +115,7 @@ module SideJob
     # @raise [RuntimeError] Error raised if job no longer exists
     def unset(*fields)
       return unless fields.length > 0
-      load_state
-      fields.each { |field| @state.delete(field.to_s) }
+      fields.each { |field| state.delete(field.to_s) }
       save_state
     end
 

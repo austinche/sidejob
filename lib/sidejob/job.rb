@@ -197,13 +197,24 @@ module SideJob
       set_ports :out, ports
     end
 
+    # Returns the entirety of the job's state with both standard and custom keys.
+    # @return [Hash{String => Object}] Job state
+    def state
+      if ! @state
+        state = SideJob.redis.hget('jobs', id)
+        raise "Job #{id} no longer exists!" if ! state
+        @state = JSON.parse(state)
+      end
+      @state
+    end
+
     # Returns some data from the job's state.
     # The job state is cached for the lifetime of the job object. Call {#reload} if the state may have changed.
     # @param key [Symbol,String] Retrieve value for the given key
     # @return [Object,nil] Value from the job state or nil if key does not exist
     # @raise [RuntimeError] Error raised if job no longer exists
     def get(key)
-      load_state
+      state
       @state[key.to_s]
     end
 
@@ -318,15 +329,6 @@ module SideJob
     # @raise [RuntimeError] Error raised if job no longer exists
     def check_exists
       raise "Job #{id} no longer exists!" unless exists?
-    end
-
-    def load_state
-      if ! @state
-        state = SideJob.redis.hget('jobs', id)
-        raise "Job #{id} no longer exists!" if ! state
-        @state = JSON.parse(state)
-      end
-      @state
     end
   end
 
