@@ -72,15 +72,7 @@ describe SideJob do
         expect(job.status).to eq 'queued'
         expect(job.parent).to eq(parent)
         expect(parent.child('child1')).to eq job
-        expect(SideJob.redis.lrange("#{job.redis_key}:ancestors", 0, -1)).to eq([parent.id])
       }.to change {Sidekiq::Stats.new.enqueued}.by(2)
-    end
-
-    it 'raises an error if job tree is too deep' do
-      (SideJob::CONFIGURATION[:max_depth]).times do |i|
-        job = SideJob.queue('testq', 'TestWorker', parent: job, name: 'child')
-      end
-      expect { SideJob.queue('testq', 'TestWorker', parent: job, name: 'child') }.to raise_error
     end
 
     it 'raises an error if name: option not specified with parent' do
@@ -92,13 +84,6 @@ describe SideJob do
       parent = SideJob.queue('testq', 'TestWorker')
       SideJob.queue('testq', 'TestWorker', parent: parent, name: 'child')
       expect { SideJob.queue('testq', 'TestWorker', parent: parent, name: 'child') }.to raise_error
-    end
-
-    it 'sets ancestor tree correctly' do
-      j1 = SideJob.queue('testq', 'TestWorker')
-      j2 = SideJob.queue('testq', 'TestWorker', parent: j1, name: 'child1')
-      j3 = SideJob.queue('testq', 'TestWorker', parent: j2, name: 'child1')
-      expect(SideJob.redis.lrange("#{j3.redis_key}:ancestors", 0, -1)).to eq([j2.id, j1.id])
     end
 
     it 'can add a port via inports configuration' do

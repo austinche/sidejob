@@ -58,12 +58,6 @@ module SideJob
       base.extend(ClassMethods)
     end
 
-    # Queues a child job, setting parent and by to self.
-    # @see SideJob.queue
-    def queue(queue, klass, **options)
-      SideJob.queue(queue, klass, options.merge({parent: self, by: "job:#{id}"}))
-    end
-
     # Exception raised by {#suspend}
     class Suspended < StandardError; end
 
@@ -98,33 +92,6 @@ module SideJob
 
           yield *ports.map(&:read)
         end
-      end
-    end
-
-    # Sets values in the job's internal state.
-    # @param data [Hash{String,Symbol => Object}] Data to update: objects should be JSON encodable
-    # @raise [RuntimeError] Error raised if job no longer exists
-    def set(data)
-      return unless data.size > 0
-      data.each_pair { |key, val| state[key.to_s] = val }
-      save_state
-    end
-
-    # Unsets some fields in the job's internal state
-    # @param fields [Array<String,Symbol>] Fields to unset
-    # @raise [RuntimeError] Error raised if job no longer exists
-    def unset(*fields)
-      return unless fields.length > 0
-      fields.each { |field| state.delete(field.to_s) }
-      save_state
-    end
-
-    private
-
-    def save_state
-      check_exists
-      if @state
-        SideJob.redis.hset 'jobs', id, @state.to_json
       end
     end
   end

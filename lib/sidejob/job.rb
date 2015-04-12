@@ -27,19 +27,19 @@ module SideJob
     # Returns if the job still exists.
     # @return [Boolean] Returns true if this job exists and has not been deleted
     def exists?
-      SideJob.redis.hexists 'jobs', id
+      SideJob.redis.sismember 'jobs', id
     end
 
     # Retrieve the job's status.
     # @return [String] Job status
     def status
-      SideJob.redis.get "#{redis_key}:status"
+      get(:status)
     end
 
     # Set the job status.
     # @param status [String] The new job status
     def status=(status)
-      SideJob.redis.set "#{redis_key}:status", status
+      set({status: status})
     end
 
     # Prepare to terminate the job. Sets status to 'terminating'.
@@ -94,6 +94,12 @@ module SideJob
       self
     end
 
+    # Queues a child job, setting parent and by to self.
+    # @see SideJob.queue
+    def queue(queue, klass, **options)
+      SideJob.queue(queue, klass, options.merge({parent: self, by: "job:#{id}"}))
+    end
+
     # Returns a child job by name.
     # @param name [Symbol, String] Child job name to look up
     # @return [SideJob::Job, nil] Child job or nil if not found
@@ -107,16 +113,10 @@ module SideJob
       SideJob.redis.hgetall("#{redis_key}:children").each_with_object({}) {|child, hash| hash[child[0]] = SideJob.find(child[1])}
     end
 
-    # Returns all ancestor jobs.
-    # @return [Array<SideJob::Job>] Ancestors (parent will be first and root job will be last)
-    def ancestors
-      SideJob.redis.lrange("#{redis_key}:ancestors", 0, -1).map { |id| SideJob.find(id) }
-    end
-
     # Returns the parent job.
     # @return [SideJob::Job, nil] Parent job or nil if none
     def parent
-      parent = SideJob.redis.lindex("#{redis_key}:ancestors", 0)
+      parent = get(:parent)
       parent = SideJob.find(parent) if parent
       parent
     end
@@ -127,7 +127,7 @@ module SideJob
       job = child(name)
       raise "Job #{id} cannot disown non-existent child #{name}" unless job
       SideJob.redis.multi do |multi|
-        multi.del "#{job.redis_key}:ancestors"
+        multi.hdel job.redis_key, 'parent'
         multi.hdel "#{redis_key}:children", name
       end
     end
@@ -140,13 +140,8 @@ module SideJob
       raise "Job #{id} cannot adopt job #{orphan.id} as it already has a parent" unless orphan.parent.nil?
       raise "Job #{id} cannot adopt job #{orphan.id} as child name #{name} is not unique" if name.nil? || ! child(name).nil?
 
-      ancestry = [id] + SideJob.redis.lrange("#{redis_key}:ancestors", 0, -1)
-
-      # prevent too deep of a job tree which may be a sign of a coding problem
-      raise "Job #{id} cannot adopt job #{orphan.id} as tree depth > #{CONFIGURATION[:max_depth]}" if ancestry.length > CONFIGURATION[:max_depth]
-
       SideJob.redis.multi do |multi|
-        multi.rpush "#{orphan.redis_key}:ancestors", ancestry # we need to rpush to get the right order
+        multi.hset orphan.redis_key, 'parent', id.to_json
         multi.hset "#{redis_key}:children", name, orphan.id
       end
     end
@@ -174,34 +169,32 @@ module SideJob
       # delete all SideJob keys
       ports = inports.map(&:redis_key) + outports.map(&:redis_key)
       SideJob.redis.multi do |multi|
-        multi.hdel 'jobs', id
-        multi.del ports + %w{status children ancestors inports:mode outports:mode inports:default outports:default}.map {|x| "#{redis_key}:#{x}" }
+        multi.srem 'jobs', id
+        multi.del redis_key
+        multi.del ports + %w{children inports:mode outports:mode inports:default outports:default}.map {|x| "#{redis_key}:#{x}" }
       end
-      reload
+
       return true
     end
 
     # Returns an input port.
     # @param name [Symbol,String] Name of the port
     # @return [SideJob::Port]
-    # @raise [RuntimeError] Error raised if port does not exist
     def input(name)
-      get_port :in, name
+      SideJob::Port.new(self, :in, name)
     end
 
     # Returns an output port
     # @param name [Symbol,String] Name of the port
     # @return [SideJob::Port]
-    # @raise [RuntimeError] Error raised if port does not exist
     def output(name)
-      get_port :out, name
+      SideJob::Port.new(self, :out, name)
     end
 
     # Gets all input ports.
     # @return [Array<SideJob::Port>] Input ports
     def inports
-      load_ports if ! @ports
-      @ports[:in].values
+      all_ports :in
     end
 
     # Sets the input ports for the job.
@@ -215,8 +208,7 @@ module SideJob
     # Gets all output ports.
     # @return [Array<SideJob::Port>] Output ports
     def outports
-      load_ports if ! @ports
-      @ports[:out].values
+      all_ports :out
     end
 
     # Sets the input ports for the job.
@@ -230,35 +222,35 @@ module SideJob
     # Returns the entirety of the job's state with both standard and custom keys.
     # @return [Hash{String => Object}] Job state
     def state
-      if ! @state
-        state = SideJob.redis.hget('jobs', id)
-        raise "Job #{id} no longer exists!" if ! state
-        @state = JSON.parse(state)
-      end
-      @state
+      state = SideJob.redis.hgetall(redis_key)
+      raise "Job #{id} does not exist!" if ! state
+      state.update(state) {|k,v| JSON.parse("[#{v}]")[0]}
+      state
     end
 
     # Returns some data from the job's state.
-    # The job state is cached for the lifetime of the job object. Call {#reload} if the state may have changed.
     # @param key [Symbol,String] Retrieve value for the given key
     # @return [Object,nil] Value from the job state or nil if key does not exist
-    # @raise [RuntimeError] Error raised if job no longer exists
     def get(key)
-      state
-      @state[key.to_s]
+      val = SideJob.redis.hget(redis_key, key)
+      val ? JSON.parse("[#{val}]")[0] : nil
     end
 
-    # Clears the state and ports cache.
-    def reload
-      @state = nil
-      @ports = nil
-      @config = nil
+    # Sets values in the job's internal state.
+    # @param data [Hash{String,Symbol => Object}] Data to update: objects should be JSON encodable
+    # @raise [RuntimeError] Error raised if job no longer exists
+    def set(data)
+      check_exists
+      return unless data.size > 0
+      SideJob.redis.hmset redis_key, *(data.map {|k,v| [k, v.to_json]}.flatten)
     end
 
-    # Returns the worker configuration for the job.
-    # @see SideJob::Worker.config
-    def config
-      @config ||= SideJob::Worker.config(get(:queue), get(:class))
+    # Unsets some fields in the job's internal state
+    # @param fields [Array<String,Symbol>] Fields to unset
+    # @raise [RuntimeError] Error raised if job no longer exists
+    def unset(*fields)
+      return unless fields.length > 0
+      SideJob.redis.hdel redis_key, fields
     end
 
     private
@@ -279,39 +271,9 @@ module SideJob
       Sidekiq::Client.push(item)
     end
 
-    # Caches all inports and outports.
-    def load_ports
-      @ports = {}
-      %i{in out}.each do |type|
-        @ports[type] = {}
-        SideJob.redis.hkeys("#{redis_key}:#{type}ports:mode").each do |name|
-          if name == '*'
-            @ports["#{type}*"] = SideJob::Port.new(self, type, name)
-          else
-            @ports[type][name] = SideJob::Port.new(self, type, name)
-          end
-        end
-      end
-    end
-
-    # Returns an input or output port.
-    # @param type [:in, :out] Input or output port
-    # @param name [Symbol,String] Name of the port
-    # @return [SideJob::Port]
-    def get_port(type, name)
-      load_ports if ! @ports
-      name = name.to_s
-      return @ports[type][name] if @ports[type][name]
-
-      if @ports["#{type}*"]
-        # create port with default port options for dynamic ports
-        port = SideJob::Port.new(self, type, name)
-        port.options = @ports["#{type}*"].options
-        @ports[type][name] = port
-        return port
-      else
-        raise "Unknown #{type}put port: #{name}"
-      end
+    # Return all ports of the given type
+    def all_ports(type)
+      SideJob.redis.hkeys("#{redis_key}:#{type}ports:mode").reject {|name| name == '*'}.map {|name| SideJob::Port.new(self, type, name)}
     end
 
     # Sets the input/outputs ports for the job and overwrites all current options.
@@ -321,6 +283,7 @@ module SideJob
     # @param ports [Hash{Symbol,String => Hash}] Port configuration. Port name to options.
     def set_ports(type, ports)
       current = SideJob.redis.hkeys("#{redis_key}:#{type}ports:mode") || []
+      config = SideJob::Worker.config(get(:queue), get(:class))
 
       ports = (ports || {}).stringify_keys
       ports = (config["#{type}ports"] || {}).merge(ports)
@@ -352,13 +315,11 @@ module SideJob
         multi.del "#{redis_key}:#{type}ports:default"
         multi.hmset "#{redis_key}:#{type}ports:default", *defaults if defaults.length > 0
       end
-
-      @ports = nil
     end
 
     # @raise [RuntimeError] Error raised if job no longer exists
     def check_exists
-      raise "Job #{id} no longer exists!" unless exists?
+      raise "Job #{id} does not exist!" unless exists?
     end
   end
 
@@ -370,6 +331,7 @@ module SideJob
     # @param id [String] Job id
     def initialize(id)
       @id = id
+      check_exists
     end
   end
 end

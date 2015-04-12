@@ -32,9 +32,25 @@ describe SideJob::Port do
     it 'raises error if name is empty' do
       expect { SideJob::Port.new(@job, :in, '')}.to raise_error
     end
+
+    it 'raises error on non-existent port' do
+      expect { SideJob::Port.new(@job, :in, 'missing')}.to raise_error
+    end
+
+    it 'can dynamically create a port' do
+      @job.inports = {
+          '*' => { mode: :memory, default: 123 },
+      }
+      expect(@job.input('abc').mode).to eq :memory
+      expect(@job.input('abc').default).to eq 123
+    end
   end
 
   describe '#==, #eql?' do
+    before do
+      @job.inports = { '*' => {}}
+    end
+
     it 'two ports with the same job, type, and name are eq' do
       expect(SideJob::Port.new(@job, :in, :port1)).to eq(@port1)
       expect(SideJob::Port.new(@job, :in, 'port1')).to eq(@port1)
@@ -94,10 +110,6 @@ describe SideJob::Port do
   end
 
   describe '#mode' do
-    it 'returns nil for non-existent ports' do
-      expect(SideJob::Port.new(@job, :in, 'missing').mode).to be nil
-    end
-
     it 'returns the port mode for queue ports' do
       expect(@port1.mode).to eq :queue
       expect(@default.mode).to eq :queue

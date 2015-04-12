@@ -37,8 +37,6 @@ module SideJob
         worker.perform(*args)
       end
 
-      reload
-
       if errors && status == 'failed'
         SideJob.logs.each do |event|
           if event['error']

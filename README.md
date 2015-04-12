@@ -103,20 +103,20 @@ Additional keys used by SideJob:
 * jobs:logs - List with JSON encoded logs.
     * { timestamp: (date), job: (id), read: [{ job: (id), (in|out)port: (port), data: [...] }, ...], write: [{ job: (id), (in|out)port: (port), data: [...] }, ...] }
     * { timestamp: (date), job: (id), error: (message), backtrace: (exception backtrace) }
-* jobs - Hash mapping active job IDs to JSON encoded job state.
+* jobs - Set with all job ids
+* job:(id) - Hash containing job state. Each value is JSON encoded.
+    * status - job status
     * queue - queue name
     * class - name of class
     * args - array of arguments passed to worker's perform method
+    * parent - parent job ID
     * created_at - timestamp that the job was first queued
     * created_by - string indicating the entity that created the job. SideJob uses job:(id) for jobs created by another job.
     * ran_at - timestamp of the start of the last run
-    * Any additional keys used by the worker to track internal state
-* job:(id):status - Job status as string.
+    * Any additional keys used by the worker to track internal job state
 * job:(id):in:(inport) and job:(id):out:(outport) - List with unread port data. New data is pushed on the right.
 * job:(id):inports:mode and job:(id):outports:mode - Hash mapping port name to port mode. All existing ports must be here.
 * job:(id):inports:default and job:(id):outports:default - Hash mapping port name to JSON encoded default value for port.
-* job:(id):ancestors - List with parent job IDs up to the root job that has no parent.
-    Newer jobs are pushed on the left so the immediate parent is on the left and the root job is on the right.
 * job:(id):children - Hash mapping child job name to child job ID
 * job:(id):rate:(timestamp) - Rate limiter used to prevent run away executing of a job.
     Keys are automatically expired.

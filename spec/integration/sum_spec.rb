@@ -32,7 +32,6 @@ describe TestSumFlow do
   it 'calls child job to sum numbers' do
     job = SideJob.queue('testq', 'TestSumFlow')
     SideJob::Worker.drain_queue
-    job.reload
     expect(job.status).to eq 'completed'
     expect(job.output(:out).read).to eq(11)
   end

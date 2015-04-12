@@ -10,7 +10,6 @@ module SideJob
   # Configuration parameters
   CONFIGURATION = {
       lock_expiration: 86400, # workers should not run longer than this number of seconds
-      max_depth: 20, # jobs should not be nested more than this number of levels
       max_runs_per_minute: 120, # terminate jobs that run too often
   }
 
@@ -49,9 +48,10 @@ module SideJob
     # To prevent race conditions, we generate the id and set all data in redis before queuing the job to sidekiq
     # Otherwise, sidekiq may start the job too quickly
     id = SideJob.redis.incr('jobs:last_id').to_s
+    SideJob.redis.sadd 'jobs', id
     job = SideJob::Job.new(id)
 
-    SideJob.redis.hset 'jobs', id, {queue: queue, class: klass, args: args, created_by: by, created_at: SideJob.timestamp}.to_json
+    job.set({queue: queue, class: klass, args: args, created_by: by, created_at: SideJob.timestamp})
 
     if parent
       raise 'Missing name option for job with a parent' unless name
@@ -70,8 +70,7 @@ module SideJob
   # @return [SideJob::Job, nil] Job object or nil if it doesn't exist
   def self.find(job_id)
     return nil unless job_id
-    job = SideJob::Job.new(job_id)
-    return job.exists? ? job : nil
+    job = SideJob::Job.new(job_id) rescue nil
   end
 
   # Returns the current timestamp as a iso8601 string

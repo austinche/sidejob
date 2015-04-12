@@ -10,7 +10,8 @@ module SideJob
       @job = job
       @type = type.to_sym
       @name = name.to_sym
-      raise "Invalid port name: #{@name}" if @name !~ /^[a-zA-Z0-9_]+$/ && name != '*'
+      raise "Invalid port name: #{@name}" if @name !~ /^[a-zA-Z0-9_]+$/
+      check_exists
     end
 
     # @return [Boolean] True if two ports are equal
@@ -27,10 +28,7 @@ module SideJob
     # @return [Hash] Port options
     def options
       opts = {mode: mode}
-
-      default = SideJob.redis.hget("#{@job.redis_key}:#{type}ports:default", @name)
-      opts[:default] = parse_json(default) if default
-
+      opts[:default] = default if default?
       opts
     end
 
@@ -51,8 +49,7 @@ module SideJob
     # @return [Symbol, nil] The port mode or nil if the port is invalid
     def mode
       mode = SideJob.redis.hget("#{@job.redis_key}:#{type}ports:mode", @name)
-      mode = mode.to_sym if mode
-      mode
+      mode ? mode.to_sym : nil
     end
 
     # Returns the number of items waiting on this port.
@@ -70,7 +67,8 @@ module SideJob
     # Returns the port default value. To distinguish a null default value vs no default, use {#default?}.
     # @return [Object, nil] The default value on the port or nil if none
     def default
-      parse_json SideJob.redis.hget("#{@job.redis_key}:#{type}ports:default", @name)
+      val = SideJob.redis.hget("#{@job.redis_key}:#{type}ports:default", @name)
+      val ? parse_json(val) : nil
     end
 
     # Returns if the port has a default value.
@@ -230,12 +228,25 @@ module SideJob
     end
 
     # Wrapper around JSON.parse to also handle primitive types.
-    # @param data [String, nil] Data to parse
+    # @param data [String] Data to parse
     # @return [Object, nil]
     def parse_json(data)
-      raise "Invalid json #{data}" if data && ! data.is_a?(String)
-      data = JSON.parse("[#{data}]")[0] if data
-      data
+      JSON.parse("[#{data}]")[0]
+    end
+
+    # Check if the port exists, dynamically creating it if it does not exist and a * port exists for the job
+    # @raise [RuntimeError] Error raised if port does not exist
+    def check_exists
+      return if SideJob.redis.hexists "#{@job.redis_key}:#{type}ports:mode", @name
+      dynamic_mode = SideJob.redis.hget("#{@job.redis_key}:#{type}ports:mode", '*')
+      raise "Job #{@job.id} does not have #{@type}port #{@name}!" unless dynamic_mode
+      dynamic_default = SideJob.redis.hget("#{@job.redis_key}:#{type}ports:default", '*')
+      SideJob.redis.multi do |multi|
+        multi.hset "#{@job.redis_key}:#{type}ports:mode", @name, dynamic_mode
+        if dynamic_default
+          multi.hset "#{@job.redis_key}:#{type}ports:default", @name, dynamic_default
+        end
+      end
     end
   end
 end

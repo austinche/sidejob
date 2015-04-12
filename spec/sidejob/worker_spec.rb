@@ -62,22 +62,6 @@ describe SideJob::Worker do
     expect { @worker.suspend }.to raise_error(SideJob::Worker::Suspended)
   end
 
-  describe '#queue' do
-    it 'can queue child jobs' do
-      expect(SideJob).to receive(:queue).with('testq', 'TestWorker', args: [1,2], inports: {'myport' => {'mode' => 'memory'}}, parent: @job, name: 'child', by: "job:#{@worker.id}").and_call_original
-      expect {
-        child = @worker.queue('testq', 'TestWorker', args: [1,2], inports: {'myport' => {'mode' => 'memory'}}, name: 'child')
-        expect(child.parent).to eq(@job)
-        expect(@job.children).to eq('child' => child)
-      }.to change {Sidekiq::Stats.new.enqueued}.by(1)
-    end
-
-    it 'queues with by string set to self' do
-      child = @worker.queue('testq', 'TestWorker', name: 'child')
-      expect(child.get(:created_by)).to eq "job:#{@worker.id}"
-    end
-  end
-
   describe '#for_inputs' do
     it 'does nothing if no ports provided' do
       expect {|block| @worker.for_inputs(&block)}.not_to yield_control
@@ -138,53 +122,6 @@ describe SideJob::Worker do
     it 'raises error if all ports have defaults' do
       @job.input(:memory).write true
       expect {|block| @worker.for_inputs(:memory, :default, &block)}.to raise_error
-    end
-  end
-
-  describe '#set' do
-    it 'can save state in redis' do
-      @worker.set(test: 'data', test2: 123)
-      state = JSON.parse(SideJob.redis.hget('jobs', @worker.id))
-      expect(state['test']).to eq 'data'
-      expect(state['test2']).to eq 123
-
-      # test updating
-      @worker.set(test: 'data2')
-      state = JSON.parse(SideJob.redis.hget('jobs', @worker.id))
-      expect(state['test']).to eq 'data2'
-    end
-
-    it 'can update values' do
-      3.times do |i|
-        @worker.set key: i
-        @worker.reload
-        expect(@worker.get(:key)).to eq i
-        state = JSON.parse(SideJob.redis.hget('jobs', @worker.id))
-        expect(state['key']).to eq i
-      end
-    end
-
-    it 'raises error if job no longer exists' do
-      @worker.status = 'terminated'
-      SideJob.find(@worker.id).delete
-      expect { @worker.set key: 123 }.to raise_error
-    end
-  end
-
-  describe '#unset' do
-    it 'unsets fields' do
-      @worker.set(a: 123, b: 456, c: 789)
-      @worker.unset('a', :b)
-      expect(@worker.get(:a)).to eq nil
-      expect(@worker.get(:b)).to eq nil
-      expect(@worker.get(:c)).to eq 789
-    end
-
-    it 'raises error if job no longer exists' do
-      @worker.status = 'terminated'
-      @worker.set a: 123
-      SideJob.find(@worker.id).delete
-      expect { @worker.unset(:a) }.to raise_error
     end
   end
 end
