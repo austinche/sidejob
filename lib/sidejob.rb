@@ -66,7 +66,7 @@ module SideJob
   end
 
   # Finds a job by id
-  # @param job_id [String, nil] Job Id
+  # @param job_id [Integer, nil] Job Id
   # @return [SideJob::Job, nil] Job object or nil if it doesn't exist
   def self.find(job_id)
     return nil unless job_id

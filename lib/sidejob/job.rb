@@ -328,9 +328,9 @@ module SideJob
   class Job
     include JobMethods
 
-    # @param id [String] Job id
+    # @param id [Integer] Job id
     def initialize(id)
-      @id = id
+      @id = id.to_i
       check_exists
     end
   end

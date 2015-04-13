@@ -45,9 +45,9 @@ describe SideJob do
 
     it 'generates an incrementing job id from 1' do
       job = SideJob.queue('testq', 'TestWorker')
-      expect(job.id).to eq('1')
+      expect(job.id).to be 1
       job = SideJob.queue('testq', 'TestWorker')
-      expect(job.id).to eq('2')
+      expect(job.id).to be 2
     end
 
     it 'stores created at timestamp' do

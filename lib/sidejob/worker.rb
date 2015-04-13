@@ -42,9 +42,9 @@ module SideJob
     # Methods loaded last to override other included methods
     module OverrideMethods
       # Returns the jid set by sidekiq as the job id
-      # @return [String] Job id
+      # @return [Integer] Job id
       def id
-        jid
+        jid.to_i
       end
     end
 
