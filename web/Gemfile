@@ -1,0 +1,6 @@
+source 'https://rubygems.org'
+
+gem 'sidejob', path: '..'
+gem 'sinatra'
+gem 'rack-cors'
+gem 'puma'
