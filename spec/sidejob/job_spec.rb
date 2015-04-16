@@ -125,7 +125,7 @@ describe SideJob::Job do
       it "queues the job if status is #{status}" do
         expect {
           @job.status = status
-          @job.run
+          expect(@job.run).to eq @job
           expect(@job.status).to eq 'queued'
         }.to change {Sidekiq::Stats.new.enqueued}.by(1)
       end
@@ -135,7 +135,7 @@ describe SideJob::Job do
       it "does not queue the job if status is #{status}" do
         expect {
           @job.status = status
-          @job.run
+          expect(@job.run).to be nil
           expect(@job.status).to eq status
         }.to change {Sidekiq::Stats.new.enqueued}.by(0)
       end
@@ -143,10 +143,30 @@ describe SideJob::Job do
       it "queues the job if status is #{status} and force=true" do
         expect {
           @job.status = status
-          @job.run(force: true)
+          expect(@job.run(force: true)).to eq @job
           expect(@job.status).to eq 'queued'
         }.to change {Sidekiq::Stats.new.enqueued}.by(1)
       end
+    end
+
+    it 'does nothing if no parent job and parent=true' do
+      @job.status = 'completed'
+      expect {
+        expect(@job.run(parent: true)).to be nil
+        expect(@job.status).to eq 'completed'
+      }.to change {Sidekiq::Stats.new.enqueued}.by(0)
+    end
+
+    it 'runs parent job if parent=true' do
+      parent = SideJob.queue('testq', 'TestWorker')
+      parent.adopt(@job, 'child')
+      @job.status = 'completed'
+      parent.status = 'completed'
+      expect {
+        expect(@job.run(parent: true)).to eq parent
+        expect(@job.status).to eq 'completed'
+        expect(parent.status).to eq 'queued'
+      }.to change {Sidekiq::Stats.new.enqueued}.by(1)
     end
 
     it 'throws error and immediately sets status to terminated if job class is unregistered' do

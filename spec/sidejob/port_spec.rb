@@ -237,15 +237,24 @@ describe SideJob::Port do
     end
 
     it 'runs the job if it is an input port' do
-      expect(@port1.job).to receive(:run)
-      expect(@memory.job).to receive(:run)
+      parent = SideJob.queue('testq', 'TestWorker')
+      parent.adopt(@job, 'child')
+      parent.status = 'completed'
+      @job.status = 'completed'
       @port1.write 3
       @memory.write 3
+      expect(@job.status).to eq 'queued'
+      expect(parent.status).to eq 'completed'
     end
 
-    it 'does not run the job if it is an output port' do
-      expect(@out1.job).not_to receive(:run)
+    it 'runs the parent job if it is an output port' do
+      parent = SideJob.queue('testq', 'TestWorker')
+      parent.adopt(@job, 'child')
+      parent.status = 'completed'
+      @job.status = 'completed'
       @out1.write 3
+      expect(@job.status).to eq 'completed'
+      expect(parent.status).to eq 'queued'
     end
   end
 
@@ -358,15 +367,27 @@ describe SideJob::Port do
     end
 
     it 'runs job for normal input port' do
-      expect(@port1.job).to receive(:run)
       @out1.write true
+      expect(@port1.job).to receive(:run)
       @out1.connect_to @port1
     end
 
     it 'runs job for memory input port' do
-      expect(@memory.job).to receive(:run)
       @out1.write true
+      expect(@memory.job).to receive(:run)
       @out1.connect_to @memory
+    end
+
+    it 'runs parent job for outport' do
+      parent = SideJob.queue('testq', 'TestWorker')
+      parent.adopt(@job, 'child')
+      parent.status = 'completed'
+      @job.status = 'completed'
+      j2 = SideJob.queue('testq', 'TestWorker', inports: {in: {}})
+      j2.input(:in).write true
+      j2.input(:in).connect_to @out1
+      expect(@job.status).to eq 'completed'
+      expect(parent.status).to eq 'queued'
     end
 
     it 'does not run job if no data sent' do

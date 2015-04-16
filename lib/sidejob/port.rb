@@ -91,7 +91,8 @@ module SideJob
           raise "Missing port #{@name} or invalid mode #{mode}"
       end
 
-      @job.run if type == :in
+      @job.run(parent: type != :in) # run job if inport otherwise run parent
+
       log(write: [ { port: self, data: [data] } ])
     end
 
@@ -105,7 +106,7 @@ module SideJob
       elsif default?
         data = default
       else
-        raise EOFError unless data
+        raise EOFError
       end
 
       log(read: [ { port: self, data: [data] } ])
@@ -157,7 +158,7 @@ module SideJob
       end
 
       if data.length > 0 || default
-        ports.each { |port| port.job.run if port.type == :in }
+        ports.each { |port| port.job.run(parent: port.type != :in) }
       end
 
       data

@@ -82,7 +82,7 @@ module SideJob
         end[0]
 
         @worker.run if val && val.to_f != now # run it again if the lock key changed
-        @worker.parent.run if @worker.parent
+        @worker.run(parent: true) # run the parent
       end
     end
 

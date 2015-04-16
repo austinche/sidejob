@@ -68,16 +68,22 @@ module SideJob
     # If the job is currently running, it will run again.
     # Just like sidekiq, we make no guarantees that the job will not be run more than once.
     # Unless force is set, if the status is terminating or terminated, the job will not be run.
+    # @param parent [Boolean] Whether to run parent job instead of this one
     # @param force [Boolean] Whether to run if job is terminated (default false)
     # @param at [Time, Float] Time to schedule the job, otherwise queue immediately
     # @param wait [Float] Run in the specified number of seconds
-    # @return [SideJob::Job] self
-    def run(force: false, at: nil, wait: nil)
+    # @return [SideJob::Job, nil] The job that was run or nil if no job was run
+    def run(parent: false, force: false, at: nil, wait: nil)
       check_exists
+
+      if parent
+        pj = self.parent
+        return pj ? pj.run(force: force, at: at, wait: wait) : nil
+      end
 
       case status
         when 'terminating', 'terminated'
-          return unless force
+          return nil unless force
       end
 
       self.status = 'queued'
