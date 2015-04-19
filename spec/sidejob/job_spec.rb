@@ -418,6 +418,11 @@ describe SideJob::Job do
         expect(@job.send("#{type}put", :myport).default).to eq 'def'
       end
 
+      it 'does not modify passed in port options' do
+        options = {myport: {mode: :memory}}.freeze
+        expect { @job.send("#{type}ports=", options) }.to_not raise_error
+      end
+
       it 'merges ports with the worker configuration' do
         allow(SideJob::Worker).to receive(:config) { {"#{type}ports" => {'port1' => {}, 'port2' => {'mode' => 'memory'}}}}
         @job.send("#{type}ports=", {port2: {mode: :queue}, port3: {}})

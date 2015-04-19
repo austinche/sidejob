@@ -291,8 +291,8 @@ module SideJob
       current = SideJob.redis.hkeys("#{redis_key}:#{type}ports:mode") || []
       config = SideJob::Worker.config(get(:queue), get(:class))
 
-      ports = (ports || {}).stringify_keys
-      ports = (config["#{type}ports"] || {}).merge(ports)
+      ports ||= {}
+      ports = (config["#{type}ports"] || {}).merge(ports.dup.stringify_keys)
       ports.each_key do |port|
         ports[port] = ports[port].stringify_keys
       end
