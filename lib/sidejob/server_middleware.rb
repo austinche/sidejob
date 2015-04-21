@@ -13,13 +13,44 @@ module SideJob
       @worker = worker
       return unless @worker.exists? # make sure the job has not been deleted
 
-      SideJob.log_context(job: @worker.id) do
+      # only run if status is queued or terminating
+      case @worker.status
+        when 'queued', 'terminating'
+        else
+          return
+      end
+
+      # We use the presence of this lock:worker key to indicate that a worker is trying to the get the job lock.
+      # No other worker needs to also wait and no calls to {SideJob::Job#run} need to queue a new run.
+      return unless SideJob.redis.set("#{@worker.redis_key}:lock:worker", 1, {nx: true, ex: 2})
+
+      # Obtain a lock to allow only one worker to run at a time to simplify workers from having to deal with concurrency
+      token = @worker.lock(CONFIGURATION[:lock_expiration])
+      if token
+        begin
+          SideJob.redis.del "#{@worker.redis_key}:lock:worker"
+          SideJob.log_context(job: @worker.id) do
+            case @worker.status
+              when 'queued'
+                run_worker { yield }
+              when 'terminating'
+                terminate_worker
+              # else no longer need running
+            end
+          end
+        ensure
+          @worker.unlock(token)
+          @worker.run(parent: true) # run the parent every time worker runs
+        end
+      else
+        SideJob.redis.del "#{@worker.redis_key}:lock:worker"
+        # Unable to obtain job lock which may indicate another worker thread is running
+        # Schedule another run
+        # Note that the actual time before requeue depends on sidekiq poll_interval (default 15 seconds)
         case @worker.status
-          when 'queued'
-            run_worker { yield }
-          when 'terminating'
-            terminate_worker
-          # for any other status, we assume this worker does not need to be run
+          when 'queued', 'terminating'
+            @worker.run(wait: 1)
+          # else no longer need running
         end
       end
     end
@@ -34,56 +65,33 @@ module SideJob
       add_exception e
     ensure
       @worker.status = 'terminated'
-      @worker.parent.run if @worker.parent
     end
 
     def run_worker(&block)
-      # if another thread is already running this job, we don't run the job now
-      # this simplifies workers from having to deal with thread safety
-      # we will requeue the job in the other thread
-      lock = "#{@worker.redis_key}:lock"
-      now = Time.now.to_f
-      val = SideJob.redis.multi do |multi|
-        multi.get(lock)
-        multi.set(lock, now, {ex: CONFIGURATION[:lock_expiration]}) # add an expiration just in case the lock becomes stale
+      # limit each job to being called too many times per minute
+      # this is to help prevent bad coding that leads to infinite looping
+      # Uses Rate limiter 1 pattern from http://redis.io/commands/INCR
+      rate_key = "#{@worker.redis_key}:rate:#{Time.now.to_i / 60}"
+      rate = SideJob.redis.multi do |multi|
+        multi.incr rate_key
+        multi.expire rate_key, 300 # 5 minutes
       end[0]
 
-      return if val # only run if lock key was not set
-
-      begin
-        # limit each job to being called too many times per minute
-        # this is to help prevent bad coding that leads to infinite looping
-        # Uses Rate limiter 1 pattern from http://redis.io/commands/INCR
-        rate_key = "#{@worker.redis_key}:rate:#{Time.now.to_i / 60}"
-        rate = SideJob.redis.multi do |multi|
-          multi.incr rate_key
-          multi.expire rate_key, 300 # 5 minutes
-        end[0]
-
-        if rate.to_i > CONFIGURATION[:max_runs_per_minute]
-          SideJob.log({ error: 'Job was terminated due to being called too rapidly' })
-          @worker.terminate
-        else
-          # normal run
-          @worker.set ran_at: SideJob.timestamp
-          @worker.status = 'running'
-          yield
-          @worker.status = 'completed' if @worker.status == 'running'
-        end
-      rescue SideJob::Worker::Suspended
-        @worker.status = 'suspended' if @worker.status == 'running'
-      rescue => e
-        @worker.status = 'failed' if @worker.status == 'running'
-        add_exception e
-      ensure
-        val = SideJob.redis.multi do |multi|
-          multi.get lock
-          multi.del lock
-        end[0]
-
-        @worker.run if val && val.to_f != now # run it again if the lock key changed
-        @worker.run(parent: true) # run the parent
+      if rate.to_i > CONFIGURATION[:max_runs_per_minute]
+        SideJob.log({ error: 'Job was terminated due to being called too rapidly' })
+        @worker.terminate
+      else
+        # normal run
+        @worker.set ran_at: SideJob.timestamp
+        @worker.status = 'running'
+        yield
+        @worker.status = 'completed' if @worker.status == 'running'
       end
+    rescue SideJob::Worker::Suspended
+      @worker.status = 'suspended' if @worker.status == 'running'
+    rescue => e
+      @worker.status = 'failed' if @worker.status == 'running'
+      add_exception e
     end
 
     def add_exception(exception)

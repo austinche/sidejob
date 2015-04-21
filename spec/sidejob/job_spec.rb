@@ -72,9 +72,135 @@ describe SideJob::Job do
     end
   end
 
+  describe '#run' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+      Sidekiq::Queue.new('testq').find_job(@job.id).delete
+      @job.status = 'completed'
+    end
+
+    %w{queued running suspended completed failed}.each do |status|
+      it "queues the job if status is #{status}" do
+        expect {
+          @job.status = status
+          expect(@job.run).to eq @job
+          expect(@job.status).to eq 'queued'
+        }.to change {Sidekiq::Stats.new.enqueued}.by(1)
+      end
+    end
+
+    %w{terminating terminated}.each do |status|
+      it "does not queue the job if status is #{status}" do
+        expect {
+          @job.status = status
+          expect(@job.run).to be nil
+          expect(@job.status).to eq status
+        }.to change {Sidekiq::Stats.new.enqueued}.by(0)
+      end
+
+      it "queues the job if status is #{status} and force=true" do
+        expect {
+          @job.status = status
+          expect(@job.run(force: true)).to eq @job
+          expect(@job.status).to eq 'queued'
+        }.to change {Sidekiq::Stats.new.enqueued}.by(1)
+      end
+    end
+
+    it "does not queue the job if it is already queued" do
+      @job.run
+      expect {
+        expect(@job.run).to eq @job
+      }.to change {Sidekiq::Stats.new.enqueued}.by(0)
+    end
+
+    it 'does nothing if no parent job and parent=true' do
+      @job.status = 'completed'
+      expect {
+        expect(@job.run(parent: true)).to be nil
+        expect(@job.status).to eq 'completed'
+      }.to change {Sidekiq::Stats.new.enqueued}.by(0)
+    end
+
+    it 'runs parent job if parent=true' do
+      parent = SideJob.queue('testq', 'TestWorker')
+      parent.adopt(@job, 'child')
+      @job.status = 'completed'
+      parent.status = 'completed'
+      expect(@job.run(parent: true)).to eq parent
+      expect(@job.status).to eq 'completed'
+      expect(parent.status).to eq 'queued'
+    end
+
+    it 'throws error and immediately sets status to terminated if job class is unregistered' do
+      SideJob.redis.del "workers:#{@job.get(:queue)}"
+      expect { @job.run }.to raise_error
+      expect(@job.status).to eq 'terminated'
+    end
+
+    it 'can schedule a job to run at a specific time using a float' do
+      time = Time.now.to_f + 10000
+      expect { @job.run(at: time) }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
+      expect(Sidekiq::ScheduledSet.new.find_job(@job.id).at).to eq(Time.at(time))
+      expect(@job.status).to eq 'queued'
+    end
+
+    it 'can schedule a job to run at a specific time using a Time' do
+      time = Time.now + 1000
+      expect { @job.run(at: time) }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
+      expect(Sidekiq::ScheduledSet.new.find_job(@job.id).at).to eq(Time.at(time.to_f))
+      expect(@job.status).to eq 'queued'
+    end
+
+    it 'can schedule a job to run in a specific time' do
+      now = Time.now
+      allow(Time).to receive(:now) { now }
+      expect { @job.run(wait: 100) }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
+      expect(Sidekiq::ScheduledSet.new.find_job(@job.id).at).to eq(Time.at(now.to_f + 100))
+      expect(@job.status).to eq 'queued'
+    end
+
+    it 'raises error if job no longer exists' do
+      job2 = SideJob.find(@job.id)
+      job2.status = 'terminated'
+      expect(job2.delete).to be true
+      expect { @job.run }.to raise_error
+    end
+  end
+
+  describe '#terminated?' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+    end
+
+    it 'returns false if job status is not terminated' do
+      expect(@job.terminated?).to be false
+    end
+
+    it 'returns true if job status is terminated' do
+      @job.status = 'terminated'
+      expect(@job.terminated?).to be true
+    end
+
+    it 'returns false if child job is not terminated' do
+      @job.status = 'terminated'
+      SideJob.queue('testq', 'TestWorker', parent: @job, name: 'child')
+      expect(@job.terminated?).to be false
+    end
+
+    it 'returns true if child job is terminated' do
+      @job.status = 'terminated'
+      child = SideJob.queue('testq', 'TestWorker', parent: @job, name: 'child')
+      child.status = 'terminated'
+      expect(@job.terminated?).to be true
+    end
+  end
+
   describe '#terminate' do
     before do
       @job = SideJob.queue('testq', 'TestWorker')
+      Sidekiq::Queue.new('testq').find_job(@job.id).delete
+      @job.status = 'completed'
     end
 
     it 'sets the status to terminating' do
@@ -113,95 +239,6 @@ describe SideJob::Job do
       @job.children.each_value do |child|
         expect(child.status).to eq 'terminating'
       end
-    end
-  end
-
-  describe '#run' do
-    before do
-      @job = SideJob.queue('testq', 'TestWorker')
-    end
-
-    %w{queued running suspended completed failed}.each do |status|
-      it "queues the job if status is #{status}" do
-        expect {
-          @job.status = status
-          expect(@job.run).to eq @job
-          expect(@job.status).to eq 'queued'
-        }.to change {Sidekiq::Stats.new.enqueued}.by(1)
-      end
-    end
-
-    %w{terminating terminated}.each do |status|
-      it "does not queue the job if status is #{status}" do
-        expect {
-          @job.status = status
-          expect(@job.run).to be nil
-          expect(@job.status).to eq status
-        }.to change {Sidekiq::Stats.new.enqueued}.by(0)
-      end
-
-      it "queues the job if status is #{status} and force=true" do
-        expect {
-          @job.status = status
-          expect(@job.run(force: true)).to eq @job
-          expect(@job.status).to eq 'queued'
-        }.to change {Sidekiq::Stats.new.enqueued}.by(1)
-      end
-    end
-
-    it 'does nothing if no parent job and parent=true' do
-      @job.status = 'completed'
-      expect {
-        expect(@job.run(parent: true)).to be nil
-        expect(@job.status).to eq 'completed'
-      }.to change {Sidekiq::Stats.new.enqueued}.by(0)
-    end
-
-    it 'runs parent job if parent=true' do
-      parent = SideJob.queue('testq', 'TestWorker')
-      parent.adopt(@job, 'child')
-      @job.status = 'completed'
-      parent.status = 'completed'
-      expect {
-        expect(@job.run(parent: true)).to eq parent
-        expect(@job.status).to eq 'completed'
-        expect(parent.status).to eq 'queued'
-      }.to change {Sidekiq::Stats.new.enqueued}.by(1)
-    end
-
-    it 'throws error and immediately sets status to terminated if job class is unregistered' do
-      SideJob.redis.del "workers:#{@job.get(:queue)}"
-      expect { @job.run }.to raise_error
-      expect(@job.status).to eq 'terminated'
-    end
-
-    it 'can schedule a job to run at a specific time using a float' do
-      time = Time.now.to_f + 10000
-      expect { @job.run(at: time) }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
-      expect(Sidekiq::ScheduledSet.new.find_job(@job.id).at).to eq(Time.at(time))
-      expect(@job.status).to eq 'queued'
-    end
-
-    it 'can schedule a job to run at a specific time using a Time' do
-      time = Time.now + 1000
-      expect { @job.run(at: time) }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
-      expect(Sidekiq::ScheduledSet.new.find_job(@job.id).at).to eq(Time.at(time.to_f))
-      expect(@job.status).to eq 'queued'
-    end
-
-    it 'can schedule a job to run in a specific time' do
-      now = Time.now
-      allow(Time).to receive(:now) { now }
-      expect { @job.run(wait: 100) }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
-      expect(Sidekiq::ScheduledSet.new.find_job(@job.id).at).to eq(Time.at(now.to_f + 100))
-      expect(@job.status).to eq 'queued'
-    end
-
-    it 'raises error if job no longer exists' do
-      job2 = SideJob.find(@job.id)
-      job2.status = 'terminated'
-      expect(job2.delete).to be true
-      expect { @job.run }.to raise_error
     end
   end
 
@@ -299,34 +336,6 @@ describe SideJob::Job do
       child2 = SideJob.queue('testq', 'TestWorker')
       job.adopt(child, 'child')
       expect { job.adopt(child2, 'child') }.to raise_error
-    end
-  end
-
-  describe '#terminated?' do
-    before do
-      @job = SideJob.queue('testq', 'TestWorker')
-    end
-
-    it 'returns false if job status is not terminated' do
-      expect(@job.terminated?).to be false
-    end
-
-    it 'returns true if job status is terminated' do
-      @job.status = 'terminated'
-      expect(@job.terminated?).to be true
-    end
-
-    it 'returns false if child job is not terminated' do
-      @job.status = 'terminated'
-      SideJob.queue('testq', 'TestWorker', parent: @job, name: 'child')
-      expect(@job.terminated?).to be false
-    end
-
-    it 'returns true if child job is terminated' do
-      @job.status = 'terminated'
-      child = SideJob.queue('testq', 'TestWorker', parent: @job, name: 'child')
-      child.status = 'terminated'
-      expect(@job.terminated?).to be true
     end
   end
 
@@ -535,6 +544,61 @@ describe SideJob::Job do
       expect(@job.get(:a)).to eq nil
       expect(@job.get(:b)).to eq nil
       expect(@job.get(:c)).to eq 789
+    end
+  end
+
+  describe '#lock' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+    end
+
+    it 'sets the ttl on the lock expiration' do
+      @job.lock(123)
+      expect(SideJob.redis.ttl("#{@job.redis_key}:lock")).to be_within(1).of(123)
+    end
+
+    it 'returns a random token when lock is acquired' do
+      allow(SecureRandom).to receive(:uuid) { 'abcde' }
+      expect(SideJob.redis.exists("#{@job.redis_key}:lock")).to be false
+      expect(@job.lock(100)).to eq('abcde')
+      expect(SideJob.redis.get("#{@job.redis_key}:lock")).to eq 'abcde'
+    end
+
+    it 'returns nil if job is locked' do
+      expect(SideJob.redis.exists("#{@job.redis_key}:lock")).to be false
+      expect(@job.lock(100)).to_not be nil
+      expect(@job.lock(100, retries: 1)).to be nil
+    end
+  end
+
+  describe '#refresh_lock' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+    end
+
+    it 'resets the lock expiration' do
+      @job.lock(100)
+      expect(SideJob.redis.ttl("#{@job.redis_key}:lock")).to be_within(1).of(100)
+      @job.refresh_lock(200)
+      expect(SideJob.redis.ttl("#{@job.redis_key}:lock")).to be_within(1).of(200)
+    end
+  end
+
+  describe '#unlock' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+    end
+
+    it 'unlocks when the token matches' do
+      token = @job.lock(100)
+      expect(@job.unlock(token)).to be true
+      expect(SideJob.redis.exists("#{@job.redis_key}:lock")).to be false
+    end
+
+    it 'does not unlock when the token does not match' do
+      token = @job.lock(100)
+      expect(@job.unlock("#{token}x")).to be false
+      expect(SideJob.redis.exists("#{@job.redis_key}:lock")).to be true
     end
   end
 end

@@ -120,5 +120,7 @@ Additional keys used by SideJob:
 * job:(id):children - Hash mapping child job name to child job ID
 * job:(id):rate:(timestamp) - Rate limiter used to prevent run away executing of a job.
     Keys are automatically expired.
-* job:(id):lock - Used to prevent multiple worker threads from running a job.
+* job:(id):lock - Used to control concurrent writes to a job.
+    Auto expired to prevent stale locks.
+* job:(id):lock:worker - Used to indicate a worker is attempting to acquire the job lock.
     Auto expired to prevent stale locks.

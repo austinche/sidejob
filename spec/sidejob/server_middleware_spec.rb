@@ -66,9 +66,7 @@ describe SideJob::ServerMiddleware do
       @job.status = 'suspended'
       child = SideJob.queue(@queue, 'TestWorker', parent: @job, name: 'child')
       expect(@job.status).to eq 'suspended'
-      expect {
-        child.run_inline
-      }.to change {Sidekiq::Stats.new.enqueued}.by(1)
+      child.run_inline
       expect(@job.status).to eq 'queued'
     end
 
@@ -82,22 +80,27 @@ describe SideJob::ServerMiddleware do
   end
 
   describe 'prevents multiple threads running the same job' do
-    it 'sets the job lock to the current time' do
-      now = Time.now
-      allow(Time).to receive(:now) { now }
-      process(@job) { @lock = SideJob.redis.get("#{@job.redis_key}:lock").to_f }
-      expect(@lock).to eq(now.to_f)
+    it 'does not run if the worker lock is set' do
+      SideJob.redis.set "#{@job.redis_key}:lock:worker", 1
+      @run = false
+      process(@job) { @run = true }
+      expect(@run).to be false
+      expect(SideJob.redis.exists("#{@job.redis_key}:lock:worker"))
+    end
+
+    it 'obtains and releases a lock' do
+      process(@job) { @lock = SideJob.redis.get("#{@job.redis_key}:lock") }
+      expect(@lock).to_not be nil
       expect(SideJob.redis.exists("#{@job.redis_key}:lock")).to be false
     end
 
-    it 'sets the job lock to the current time and does not run if already locked' do
-      now = Time.now
-      allow(Time).to receive(:now) { now }
+    it 'does not run if the job is locked' do
+      token = @job.lock(100)
       @run = false
-      SideJob.redis.set "#{@job.redis_key}:lock", (now-10).to_f
       process(@job) { @run = true }
       expect(@run).to be false
-      expect(SideJob.redis.get("#{@job.redis_key}:lock").to_f).to eq now.to_f
+      expect(SideJob.redis.exists("#{@job.redis_key}:lock"))
+      expect(@job.unlock(token)).to be true
     end
 
     it 'does not restart the worker unless another worker was locked out during the run' do
@@ -107,10 +110,11 @@ describe SideJob::ServerMiddleware do
       expect(@job.status).to eq 'completed'
     end
 
-    it 'restarts the worker if another worker was locked out during the run' do
+    it 'requeues the worker if it was locked out during the run' do
+      token = @job.lock(100)
       expect {
-        process(@job) { SideJob.redis.set "#{@job.redis_key}:lock", Time.now.to_f }
-      }.to change {Sidekiq::Stats.new.enqueued}.by(1)
+        process(@job) { }
+      }.to change {Sidekiq::Stats.new.scheduled_size}.by(1)
       expect(@job.status).to eq 'queued'
     end
   end
@@ -165,9 +169,8 @@ describe SideJob::ServerMiddleware do
     it 'runs the parent job' do
       @job.status = 'suspended'
       child = SideJob.queue(@queue, 'TestWorker', parent: @job, name: 'child')
-      expect {
-        process(child) { raise 'oops' }
-      }.to change {Sidekiq::Stats.new.enqueued}.by(1)
+      expect(@job.status).to eq 'suspended'
+      process(child) { raise 'oops' }
       expect(@job.status).to eq 'queued'
     end
   end

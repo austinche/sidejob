@@ -42,27 +42,6 @@ module SideJob
       set({status: status})
     end
 
-    # Prepare to terminate the job. Sets status to 'terminating'.
-    # Then queues the job so that its shutdown method if it exists can be run.
-    # After shutdown, the status will be 'terminated'.
-    # If the job is currently running, it will finish running first.
-    # If the job is already terminated, it does nothing.
-    # To start the job after termination, call {#run} with force: true.
-    # @param recursive [Boolean] If true, recursively terminate all children (default false)
-    # @return [SideJob::Job] self
-    def terminate(recursive: false)
-      if status != 'terminated'
-        self.status = 'terminating'
-        sidekiq_queue
-      end
-      if recursive
-        children.each_value do |child|
-          child.terminate(recursive: true)
-        end
-      end
-      self
-    end
-
     # Run the job.
     # This method ensures that the job runs at least once from the beginning.
     # If the job is currently running, it will run again.
@@ -97,6 +76,37 @@ module SideJob
       end
       sidekiq_queue(time)
 
+      self
+    end
+
+    # Returns if job and all children are terminated.
+    # @return [Boolean] True if this job and all children recursively are terminated
+    def terminated?
+      return false if status != 'terminated'
+      children.each_value do |child|
+        return false unless child.terminated?
+      end
+      return true
+    end
+
+    # Prepare to terminate the job. Sets status to 'terminating'.
+    # Then queues the job so that its shutdown method if it exists can be run.
+    # After shutdown, the status will be 'terminated'.
+    # If the job is currently running, it will finish running first.
+    # If the job is already terminated, it does nothing.
+    # To start the job after termination, call {#run} with force: true.
+    # @param recursive [Boolean] If true, recursively terminate all children (default false)
+    # @return [SideJob::Job] self
+    def terminate(recursive: false)
+      if status != 'terminated'
+        self.status = 'terminating'
+        sidekiq_queue
+      end
+      if recursive
+        children.each_value do |child|
+          child.terminate(recursive: true)
+        end
+      end
       self
     end
 
@@ -150,16 +160,6 @@ module SideJob
         multi.hset orphan.redis_key, 'parent', id.to_json
         multi.hset "#{redis_key}:children", name, orphan.id
       end
-    end
-
-    # Returns if job and all children are terminated.
-    # @return [Boolean] True if this job and all children recursively are terminated
-    def terminated?
-      return false if status != 'terminated'
-      children.each_value do |child|
-        return false unless child.terminated?
-      end
-      return true
     end
 
     # Deletes the job and all children jobs (recursively) if all are terminated.
@@ -251,7 +251,7 @@ module SideJob
       SideJob.redis.hmset redis_key, *(data.map {|k,v| [k, v.to_json]}.flatten)
     end
 
-    # Unsets some fields in the job's internal state
+    # Unsets some fields in the job's internal state.
     # @param fields [Array<String,Symbol>] Fields to unset
     # @raise [RuntimeError] Error raised if job no longer exists
     def unset(*fields)
@@ -259,12 +259,57 @@ module SideJob
       SideJob.redis.hdel redis_key, fields
     end
 
+    # Acquire a lock on the job with a given expiration time.
+    # @param ttl [Fixnum] Lock expiration in seconds
+    # @param retries [Fixnum] Number of attempts to retry getting lock
+    # @param retry_delay [Float] Maximum seconds to wait (actual will be randomized) before retry getting lock
+    # @return [String, nil] Lock token that should be passed to {#unlock} or nil if lock was not acquired
+    def lock(ttl, retries: 3, retry_delay: 0.2)
+      retries.times do
+        token = SecureRandom.uuid
+        if SideJob.redis.set("#{redis_key}:lock", token, {nx: true, ex: ttl})
+          return token # lock acquired
+        else
+          sleep Random.rand(retry_delay)
+        end
+      end
+      return nil # lock not acquired
+    end
+
+    # Refresh the lock expiration.
+    # @param ttl [Fixnum] Refresh lock expiration for the given time in seconds
+    # @return [Boolean] Whether the timeout was set
+    def refresh_lock(ttl)
+      SideJob.redis.expire "#{redis_key}:lock", ttl
+    end
+
+    # Unlock job by deleting the lock only if it equals the lock token.
+    # @param token [String] Token returned by {#lock}
+    # @return [Boolean] Whether the job was unlocked
+    def unlock(token)
+      return SideJob.redis.eval('
+        if redis.call("get",KEYS[1]) == ARGV[1] then
+          return redis.call("del",KEYS[1])
+        else
+          return 0
+        end', { keys: ["#{redis_key}:lock"], argv: [token] }) == 1
+    end
+
     private
 
     # Queue or schedule this job using sidekiq.
     # @param time [Time, Float, nil] Time to schedule the job if specified
     def sidekiq_queue(time=nil)
+      # Don't need to queue if a worker is already in process of running
+      return if SideJob.redis.exists "#{redis_key}:lock:worker"
+
       queue = get(:queue)
+
+      # Don't need to queue if the job is already in the queue (this does not include scheduled jobs)
+      # When Sidekiq pulls job out from scheduled set, we can still get the same job queued multiple times
+      # but the server middleware handles it
+      return if Sidekiq::Queue.new(queue).find_job(@id)
+
       klass = get(:class)
       args = get(:args)
 

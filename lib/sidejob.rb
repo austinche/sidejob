@@ -5,11 +5,12 @@ require 'sidejob/job'
 require 'sidejob/worker'
 require 'sidejob/server_middleware'
 require 'time' # for iso8601 method
+require 'securerandom'
 
 module SideJob
   # Configuration parameters
   CONFIGURATION = {
-      lock_expiration: 86400, # workers should not run longer than this number of seconds
+      lock_expiration: 60, # workers should not run longer than this number of seconds
       max_runs_per_minute: 120, # terminate jobs that run too often
   }
 
