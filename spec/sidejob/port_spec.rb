@@ -366,6 +366,17 @@ describe SideJob::Port do
       expect(@out1.default).to eq 'default'
     end
 
+    it 'runs job if the default value has changed' do
+      expect(@port1.job).to receive(:run)
+      @default.connect_to @port1
+    end
+
+    it 'does not run job if the default value has not changed' do
+      @default.connect_to @port1
+      expect(@port1.job).not_to receive(:run)
+      @default.connect_to @port1
+    end
+
     it 'runs job for normal input port' do
       @out1.write true
       expect(@port1.job).to receive(:run)

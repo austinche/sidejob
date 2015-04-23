@@ -121,33 +121,48 @@ module SideJob
     # @return [Array<Object>] Returns all data on current port
     def connect_to(ports)
       ports = [ports] unless ports.is_a?(Array)
-      ports_by_mode = ports.group_by {|port| port.mode}
 
-      default = SideJob.redis.hget("#{@job.redis_key}:#{type}ports:default", @name)
-
-      # empty the port of all data
-      data = SideJob.redis.multi do |multi|
+      # Get source port data and default
+      (default, data, trash) = result = SideJob.redis.multi do |multi|
+        multi.hget("#{@job.redis_key}:#{@type}ports:default", @name)
+        # get all and empty the port of all data
         multi.lrange redis_key, 0, -1
         multi.del redis_key
-      end[0]
+      end
 
-      to_run = Set.new
+      default = result[0]
+      data = result[1]
+
+      return data unless data.length > 0 || default
+
+      # Get destination port options
+      port_options = SideJob.redis.multi do |multi|
+        # port defaults
+        ports.each { |port| multi.hget("#{port.job.redis_key}:#{port.type}ports:default", port.name) }
+        # port modes
+        ports.each { |port| multi.hget("#{port.job.redis_key}:#{port.type}ports:mode", port.name) }
+      end
+
+      port_defaults = port_options.slice(0, ports.length)
+      port_modes = port_options.slice(ports.length, ports.length)
 
       SideJob.redis.multi do |multi|
         if data.length > 0
-          (ports_by_mode[:queue] || []).each do |port|
-            multi.rpush port.redis_key, data
-          end
-          if ! default
-            (ports_by_mode[:memory] || []).each do |port|
-              multi.hset "#{port.job.redis_key}:#{port.type}ports:default", port.name, data.last
+          ports.each_with_index do |port, i|
+            case port_modes[i]
+              when 'queue'
+                multi.rpush port.redis_key, data
+              when 'memory'
+                multi.hset "#{port.job.redis_key}:#{port.type}ports:default", port.name, data.last unless default
             end
           end
         end
 
         if default
-          ports.each do |port|
-            multi.hset "#{port.job.redis_key}:#{port.type}ports:default", port.name, default
+          ports.each_with_index do |port, i|
+            if default != port_defaults[i]
+              multi.hset "#{port.job.redis_key}:#{port.type}ports:default", port.name, default
+            end
           end
         end
       end
@@ -157,8 +172,11 @@ module SideJob
         log(read: [{ port: self, data: data }], write: ports.map { |port| {port: port, data: data} })
       end
 
-      if data.length > 0 || default
-        ports.each { |port| port.job.run(parent: port.type != :in) }
+      # Run the port job or parent only if something was changed
+      ports.each_with_index do |port, i|
+        if data.length > 0 || default != port_defaults[i]
+          port.job.run(parent: port.type != :in)
+        end
       end
 
       data
