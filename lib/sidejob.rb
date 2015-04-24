@@ -52,7 +52,7 @@ module SideJob
     SideJob.redis.sadd 'jobs', id
     job = SideJob::Job.new(id)
 
-    job.set({queue: queue, class: klass, args: args, created_by: by, created_at: SideJob.timestamp})
+    job.set({queue: queue, class: klass, args: args, status: 'completed', created_by: by, created_at: SideJob.timestamp})
 
     if parent
       raise 'Missing name option for job with a parent' unless name

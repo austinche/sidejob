@@ -90,7 +90,13 @@ module SideJob
     rescue SideJob::Worker::Suspended
       @worker.status = 'suspended' if @worker.status == 'running'
     rescue => e
-      @worker.status = 'failed' if @worker.status == 'running'
+      # only set failed if not terminating/terminated
+      case @worker.status
+        when 'terminating', 'terminated'
+        else
+          @worker.status = 'failed'
+      end
+
       add_exception e
     end
 

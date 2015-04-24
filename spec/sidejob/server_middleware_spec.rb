@@ -158,12 +158,12 @@ describe SideJob::ServerMiddleware do
       expect(log[0]['backtrace']).to_not match(/sidekiq/)
     end
 
-    it 'does not set status to failed if status is not running' do
+    it 'does not set status to failed if status is terminating' do
       process(@job) do |worker|
-        worker.run
+        worker.terminate
         raise 'oops'
       end
-      expect(@job.status).to eq 'queued'
+      expect(@job.status).to eq 'terminating'
     end
 
     it 'runs the parent job' do

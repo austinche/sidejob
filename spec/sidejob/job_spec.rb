@@ -79,7 +79,7 @@ describe SideJob::Job do
       @job.status = 'completed'
     end
 
-    %w{queued running suspended completed failed}.each do |status|
+    %w{queued running suspended completed}.each do |status|
       it "queues the job if status is #{status}" do
         expect {
           @job.status = status
@@ -89,7 +89,7 @@ describe SideJob::Job do
       end
     end
 
-    %w{terminating terminated}.each do |status|
+    %w{failed terminating terminated}.each do |status|
       it "does not queue the job if status is #{status}" do
         expect {
           @job.status = status
