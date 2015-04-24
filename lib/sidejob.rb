@@ -11,7 +11,7 @@ module SideJob
   # Configuration parameters
   CONFIGURATION = {
       lock_expiration: 60, # workers should not run longer than this number of seconds
-      max_runs_per_minute: 120, # terminate jobs that run too often
+      max_runs_per_minute: 600, # terminate jobs that run too often
   }
 
   # Returns redis connection

@@ -74,7 +74,7 @@ module SideJob
       rate_key = "#{@worker.redis_key}:rate:#{Time.now.to_i / 60}"
       rate = SideJob.redis.multi do |multi|
         multi.incr rate_key
-        multi.expire rate_key, 300 # 5 minutes
+        multi.expire rate_key, 60
       end[0]
 
       if rate.to_i > CONFIGURATION[:max_runs_per_minute]
