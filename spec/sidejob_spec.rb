@@ -92,12 +92,6 @@ describe SideJob do
       expect(job.input(:myport).read).to eq [1, 2]
     end
 
-    it 'can set the port mode via inports configuration' do
-      job = SideJob.queue('testq', 'TestWorker', inports: {queue: {mode: 'queue'}})
-      expect(job.status).to eq 'queued'
-      expect(job.input(:queue).mode).to be :queue
-    end
-
     it 'can add a port via outports configuration' do
       job = SideJob.queue('testq', 'TestWorker', outports: {myport: {}})
       expect(job.status).to eq 'queued'

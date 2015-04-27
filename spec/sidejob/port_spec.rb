@@ -4,23 +4,19 @@ describe SideJob::Port do
   before do
     @job = SideJob.queue('testq', 'TestWorker', inports: {
         port1: {},
-        memory: { mode: :memory },
         default: { default: 'default' },
         default_null: { default: nil },
         default_false: { default: false},
-        memory_with_default: { mode: :memory, default: 'memory default' },
     }, outports: {
         out1: {},
     })
     @port1 = @job.input(:port1)
     @out1 = @job.output(:out1)
-    @memory = @job.input(:memory)
     @default = @job.input(:default)
     @defaults = [
         @default,
         @job.input(:default_null),
         @job.input(:default_false),
-        @job.input(:memory_with_default)
     ]
   end
 
@@ -39,9 +35,8 @@ describe SideJob::Port do
 
     it 'can dynamically create a port' do
       @job.inports = {
-          '*' => { mode: :memory, default: 123 },
+          '*' => { default: 123 },
       }
-      expect(@job.input('abc').mode).to eq :memory
       expect(@job.input('abc').default).to eq 123
     end
   end
@@ -71,53 +66,6 @@ describe SideJob::Port do
   describe '#to_s' do
     it 'returns the redis key' do
       expect(SideJob::Port.new(@job, :in, :port1).to_s).to eq "job:#{@job.id}:in:port1"
-    end
-  end
-
-  describe '#options' do
-    it 'returns port options' do
-      expect(@port1.options).to eq({mode: :queue})
-      expect(@memory.options).to eq({mode: :memory})
-      expect(@default.options).to eq({mode: :queue, default: 'default'})
-    end
-  end
-
-  describe '#options=' do
-    it 'can change mode to memory' do
-      expect(@port1.mode).to eq :queue
-      @port1.options = { mode: :memory }
-      expect(@port1.mode).to eq :memory
-    end
-
-    it 'can change mode to queue' do
-      expect(@memory.mode).to eq :memory
-      @memory.options = { mode: :queue }
-      expect(@memory.mode).to eq :queue
-    end
-
-    it 'can set default value' do
-      expect(@port1.default?).to be false
-      @port1.options = { default: [1,2] }
-      expect(@port1.default).to eq [1,2]
-      expect(@port1.read).to eq [1,2]
-    end
-
-    it 'can remove default value' do
-      expect(@default.default?).to be true
-      @default.options = { }
-      expect(@default.default?).to be false
-    end
-  end
-
-  describe '#mode' do
-    it 'returns the port mode for queue ports' do
-      expect(@port1.mode).to eq :queue
-      expect(@default.mode).to eq :queue
-    end
-
-    it 'returns the port mode for memory ports' do
-      expect(@memory.mode).to eq :memory
-      expect(@job.input(:memory_with_default).mode).to eq :memory
     end
   end
 
@@ -154,29 +102,23 @@ describe SideJob::Port do
       expect(@port1.data?).to be true
     end
 
-    it 'works for memory ports' do
-      expect(@memory.data?).to be false
-      @memory.write 1
-      expect(@memory.data?).to be true
-    end
-
-    it 'works when there is a default value on the port' do
+    it 'returns true when there is a default value on the port' do
       @defaults.each {|port| expect(port.data?).to be true }
     end
   end
 
   describe '#default' do
-    it 'returns nil for no default' do
-      expect(@port1.default).to be nil
-    end
-
     it 'returns default value' do
-      @port1.options = {default: [1,2]}
+      @port1.default = [1,2]
       expect(@port1.default).to eq [1,2]
     end
 
+    it 'returns None for no default' do
+      expect(@port1.default).to be SideJob::Port::None
+    end
+
     it 'can return null default value' do
-      @port1.options = {default: nil}
+      @port1.default = nil
       expect(@port1.default).to be nil
       expect(@port1.default?).to be true
     end
@@ -187,17 +129,24 @@ describe SideJob::Port do
       expect(@port1.default?).to be false
     end
 
-    it 'returns false for memory port with no data written' do
-      expect(@memory.default?).to be false
-    end
-
-    it 'returns true for memory port after writing data' do
-      @memory.write 1
-      expect(@memory.default?).to be true
-    end
-
     it 'returns true for port with default value' do
       @defaults.each {|port| expect(port.default?).to be true }
+    end
+  end
+
+  describe '#default=' do
+    it 'can set and overwrite the default' do
+      [true, false, nil, 123, 'abc', {'xyz' => [1,2]}, [5,6]].each do |val|
+        @port1.default = val
+        expect(@port1.default).to eq(val)
+      end
+    end
+
+    it 'can clear the default' do
+      @port1.default = 1234
+      expect(@port1.default?).to be true
+      @port1.default = SideJob::Port::None
+      expect(@port1.default?).to be false
     end
   end
 
@@ -206,14 +155,6 @@ describe SideJob::Port do
       ['abc', 123, true, false, nil, {abc: 123}, [1, {foo: true}]].each {|x| @port1.write x}
       data = SideJob.redis.lrange(@port1.redis_key, 0, -1)
       expect(data).to eq(['"abc"', '123', 'true', 'false', 'null', '{"abc":123}', '[1,{"foo":true}]'])
-    end
-
-    it 'writing to a memory port should only set default value to latest value' do
-      @memory.write 'abc'
-      @memory.write [1, {foo: true}]
-      @memory.write 'latest'
-      expect(@memory.size).to eq 0
-      expect(@memory.default).to eq 'latest'
     end
 
     it 'logs writes' do
@@ -231,18 +172,12 @@ describe SideJob::Port do
       expect { SideJob::Port.new(@job, :in, 'foo').write true }.to raise_error
     end
 
-    it 'raises error if port mode is unknown ' do
-      SideJob.redis.hset "#{@job.redis_key}:inports:mode", 'foo', '???'
-      expect { SideJob::Port.new(@job, :in, 'foo').write true }.to raise_error
-    end
-
     it 'runs the job if it is an input port' do
       parent = SideJob.queue('testq', 'TestWorker')
       parent.adopt(@job, 'child')
       parent.status = 'completed'
       @job.status = 'completed'
       @port1.write 3
-      @memory.write 3
       expect(@job.status).to eq 'queued'
       expect(parent.status).to eq 'completed'
     end
@@ -280,18 +215,12 @@ describe SideJob::Port do
       expect(@port1.size).to be(0)
     end
 
-    it 'can read data from a memory port' do
-      expect { @memory.read }.to raise_error(EOFError)
-      5.times {|i| @memory.write i }
-      3.times { expect(@memory.read).to eq(4) }
-    end
-
     it 'can use default value' do
       @defaults.each do |port|
         3.times { expect(port.read).to eq port.default }
         port.write 'mydata'
         expect(port.read).to eq 'mydata'
-        3.times { expect(port.read).to eq port.mode == :memory ? 'mydata' : port.default }
+        3.times { expect(port.read).to eq port.default }
       end
     end
 
@@ -337,30 +266,26 @@ describe SideJob::Port do
     end
 
     it 'sends data to all destination ports' do
-      dest = [@port1, @memory, @default]
+      dest = [@port1, @default]
       @out1.write 1
       @out1.write [2,3]
       @out1.connect_to dest
       expect(@port1.read).to eq 1
       expect(@port1.read).to eq [2,3]
       expect(@port1.data?).to be false
-      expect(@memory.size).to eq 0
-      expect(@memory.read).to eq [2,3]
       expect(@default.read).to eq 1
       expect(@default.read).to eq [2,3]
       expect(@default.read).to eq 'default'
     end
 
     it 'passes port default values to all destinations' do
-      dest = [@port1, @memory, @out1]
+      dest = [@port1, @out1]
       @default.write 1
       @default.write [2,3]
       @default.connect_to dest
       expect(@port1.read).to eq 1
       expect(@port1.read).to eq [2,3]
       expect(@port1.default).to eq 'default'
-      expect(@memory.size).to eq 0
-      expect(@memory.default).to eq 'default'
       expect(@out1.read).to eq 1
       expect(@out1.read).to eq [2,3]
       expect(@out1.default).to eq 'default'
@@ -381,12 +306,6 @@ describe SideJob::Port do
       @out1.write true
       expect(@port1.job).to receive(:run)
       @out1.connect_to @port1
-    end
-
-    it 'runs job for memory input port' do
-      @out1.write true
-      expect(@memory.job).to receive(:run)
-      @out1.connect_to @memory
     end
 
     it 'runs parent job for outport' do
@@ -460,11 +379,7 @@ describe SideJob::Port do
       @defaults.each do |port|
         expect(port.entries).to eq []
         port.write 'mydata'
-        if port.mode == :memory
-          expect(port.entries).to eq []
-        else
-          expect(port.entries).to eq ['mydata']
-        end
+        expect(port.entries).to eq ['mydata']
       end
     end
   end

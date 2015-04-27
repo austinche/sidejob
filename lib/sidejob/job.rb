@@ -174,7 +174,7 @@ module SideJob
       SideJob.redis.multi do |multi|
         multi.srem 'jobs', id
         multi.del redis_key
-        multi.del ports + %w{children inports:mode outports:mode inports:default outports:default}.map {|x| "#{redis_key}:#{x}" }
+        multi.del ports + %w{children inports outports inports:default outports:default}.map {|x| "#{redis_key}:#{x}" }
       end
 
       return true
@@ -321,7 +321,7 @@ module SideJob
 
     # Return all ports of the given type
     def all_ports(type)
-      SideJob.redis.hkeys("#{redis_key}:#{type}ports:mode").reject {|name| name == '*'}.map {|name| SideJob::Port.new(self, type, name)}
+      SideJob.redis.smembers("#{redis_key}:#{type}ports").reject {|name| name == '*'}.map {|name| SideJob::Port.new(self, type, name)}
     end
 
     # Sets the input/outputs ports for the job and overwrites all current options.
@@ -330,7 +330,7 @@ module SideJob
     # @param type [:in, :out] Input or output ports
     # @param ports [Hash{Symbol,String => Hash}] Port configuration. Port name to options.
     def set_ports(type, ports)
-      current = SideJob.redis.hkeys("#{redis_key}:#{type}ports:mode") || []
+      current = SideJob.redis.smembers("#{redis_key}:#{type}ports") || []
       config = SideJob::Worker.config(get(:queue), get(:class))
 
       ports ||= {}
@@ -345,14 +345,10 @@ module SideJob
           multi.del "#{redis_key}:#{type}:#{port}"
         end
 
-        # completely replace the mode and default keys
+        multi.del "#{redis_key}:#{type}ports"
+        multi.sadd "#{redis_key}:#{type}ports", ports.keys if ports.length > 0
 
-        multi.del "#{redis_key}:#{type}ports:mode"
-        modes = ports.map do |port, options|
-          [port, options['mode'] || 'queue']
-        end.flatten(1)
-        multi.hmset "#{redis_key}:#{type}ports:mode", *modes if modes.length > 0
-
+        # replace port defaults
         defaults = ports.map do |port, options|
           if options.has_key?('default')
             [port, options['default'].to_json]

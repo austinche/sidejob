@@ -248,9 +248,9 @@ describe SideJob::Job do
     end
 
     it 'can queue child jobs' do
-      expect(SideJob).to receive(:queue).with('testq', 'TestWorker', args: [1,2], inports: {'myport' => {'mode' => 'memory'}}, parent: @job, name: 'child', by: "job:#{@job.id}").and_call_original
+      expect(SideJob).to receive(:queue).with('testq', 'TestWorker', args: [1,2], inports: {'myport' => {}}, parent: @job, name: 'child', by: "job:#{@job.id}").and_call_original
       expect {
-        child = @job.queue('testq', 'TestWorker', args: [1,2], inports: {'myport' => {'mode' => 'memory'}}, name: 'child')
+        child = @job.queue('testq', 'TestWorker', args: [1,2], inports: {'myport' => {}}, name: 'child')
         expect(child.parent).to eq(@job)
         expect(@job.children).to eq('child' => child)
       }.to change {Sidekiq::Stats.new.enqueued}.by(1)
@@ -396,12 +396,11 @@ describe SideJob::Job do
 
       it 'can dynamically create ports' do
         spec = {}
-        spec[:"#{type}ports"] = {'*' => {mode: :memory, default: 123}}
+        spec[:"#{type}ports"] = {'*' => {default: 123}}
         @job = SideJob.queue('testq', 'TestWorker', **spec)
         expect(@job.send("#{type}ports").size).to eq 0
         port = @job.send("#{type}put", :newport)
         expect(@job.send("#{type}ports").size).to eq 1
-        expect(port.mode).to eq :memory
         expect(port.default).to eq 123
       end
     end
@@ -420,34 +419,32 @@ describe SideJob::Job do
 
       it 'can specify ports with options' do
         expect(@job.send("#{type}ports").size).to eq 0
-        @job.send("#{type}ports=", {myport: {mode: :memory, default: 'def'}})
+        @job.send("#{type}ports=", {myport: {default: 'def'}})
         expect(@job.send("#{type}ports").size).to eq 1
         expect(@job.send("#{type}ports").map(&:name)).to include(:myport)
-        expect(@job.send("#{type}put", :myport).mode).to eq :memory
         expect(@job.send("#{type}put", :myport).default).to eq 'def'
       end
 
       it 'does not modify passed in port options' do
-        options = {myport: {mode: :memory}}.freeze
-        expect { @job.send("#{type}ports=", options) }.to_not raise_error
+        ports = {myport: {default: [1,2]}}.freeze
+        expect { @job.send("#{type}ports=", ports) }.to_not raise_error
       end
 
       it 'merges ports with the worker configuration' do
-        allow(SideJob::Worker).to receive(:config) { {"#{type}ports" => {'port1' => {}, 'port2' => {'mode' => 'memory'}}}}
-        @job.send("#{type}ports=", {port2: {mode: :queue}, port3: {}})
-        expect(@job.send("#{type}ports").size).to eq 3
-        expect(@job.send("#{type}ports").all? {|port| port.options == {mode: :queue}}).to be true
+        allow(SideJob::Worker).to receive(:config) { {"#{type}ports" => {'port1' => {}, 'port2' => {default: 'worker'}}}}
+        @job.send("#{type}ports=", {port2: {default: 'new'}})
+        expect(@job.send("#{type}ports").size).to eq 2
+        expect(@job.send("#{type}put", :port2).default).to eq 'new'
       end
 
-      it 'can change existing port mode while keeping data intact' do
-        @job.send("#{type}ports=", {myport: {}})
+      it 'can change existing port default while keeping data intact' do
+        @job.send("#{type}ports=", {myport: {default: 'orig'}})
         @job.send("#{type}put", :myport).write 'data'
-        @job.send("#{type}ports=", {myport: {mode: :memory, default: 'def'}})
+        @job.send("#{type}ports=", {myport: {default: 'new'}})
         expect(@job.send("#{type}ports").size).to eq 1
-        expect(@job.send("#{type}put", :myport).mode).to eq :memory
-        expect(@job.send("#{type}put", :myport).default).to eq 'def'
+        expect(@job.send("#{type}put", :myport).default).to eq 'new'
         expect(@job.send("#{type}put", :myport).read).to eq 'data'
-        expect(@job.send("#{type}put", :myport).read).to eq 'def'
+        expect(@job.send("#{type}put", :myport).read).to eq 'new'
       end
 
       it 'deletes no longer used ports' do

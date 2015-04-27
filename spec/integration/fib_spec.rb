@@ -5,15 +5,20 @@ class TestFib
   include SideJob::Worker
   register(
       inports: {
-          n: {mode: :memory}
+          n: {}
       },
       outports: {
           num: {}
       }
   )
   def perform
-    suspend unless input(:n).data?
-    n = input(:n).read
+    if input(:n).data?
+      n = input(:n).read
+    else
+      n = get(:n)
+    end
+    suspend unless n
+    set({n: n})
 
     if n <= 2
       output(:num).write 1

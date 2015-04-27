@@ -5,7 +5,6 @@ describe SideJob::Worker do
     @job = SideJob.queue('testq', 'TestWorker', inports: {
         in1: {},
         in2: {},
-        memory: { mode: :memory },
         default: { default: 'default' },
         default_null: { default: nil },
     }, outports: {out1: {}})
@@ -100,16 +99,14 @@ describe SideJob::Worker do
       }.to raise_error(SideJob::Worker::Suspended)
     end
 
-    it 'returns data from memory input ports' do
-      @job.input(:memory).write 1
+    it 'returns default values from ports' do
       @job.input(:in2).write [2, 3]
       @job.input(:in2).write 3
-      expect {|block| @worker.for_inputs(:memory, :in2, &block)}.to yield_successive_args([1, [2,3]], [1, 3])
+      expect {|block| @worker.for_inputs(:default, :in2, &block)}.to yield_successive_args(['default', [2,3]], ['default', 3])
     end
 
-    it 'does not suspend if there is only data on memory port' do
-      @job.input(:memory).write 1
-      expect {|block| @worker.for_inputs(:memory, :in2, &block)}.not_to yield_control
+    it 'does not suspend if there is only default values' do
+      expect {|block| @worker.for_inputs(:default, :in2, &block)}.not_to yield_control
     end
 
     it 'allows for null default values' do
@@ -120,8 +117,7 @@ describe SideJob::Worker do
     end
 
     it 'raises error if all ports have defaults' do
-      @job.input(:memory).write true
-      expect {|block| @worker.for_inputs(:memory, :default, &block)}.to raise_error
+      expect {|block| @worker.for_inputs(:default, :default_null, &block)}.to raise_error
     end
   end
 end

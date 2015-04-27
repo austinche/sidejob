@@ -46,13 +46,7 @@ Ports
 * Any object that can be JSON encoded can be written or read from any input or output port.
 * Ports must be explicitly specified for each job either by the worker configuration or when queuing new jobs unless
   a port named `*` exists in which case new ports are dynamically created and inherit its options.
-
-Port options:
-
-* mode
-    * Queue - This is the default operation mode. All data written is read in a first in first out manner.
-    * Memory - No data is stored on the port. The most recent value sets the port default value.
-* default - Default value when a read is done on the port with no data
+* Currently, the only port option is a default value which is returned when a read is done on the port when its empty.
 
 Workers
 -------
@@ -115,7 +109,7 @@ Additional keys used by SideJob:
     * ran_at - timestamp of the start of the last run
     * Any additional keys used by the worker to track internal job state
 * job:(id):in:(inport) and job:(id):out:(outport) - List with unread port data. New data is pushed on the right.
-* job:(id):inports:mode and job:(id):outports:mode - Hash mapping port name to port mode. All existing ports must be here.
+* job:(id):inports and job:(id):outports - Set containing all existing port names.
 * job:(id):inports:default and job:(id):outports:default - Hash mapping port name to JSON encoded default value for port.
 * job:(id):children - Hash mapping child job name to child job ID
 * job:(id):rate:(timestamp) - Rate limiter used to prevent run away executing of a job.

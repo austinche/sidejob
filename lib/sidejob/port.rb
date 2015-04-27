@@ -1,6 +1,8 @@
 module SideJob
   # Represents an input or output port from a Job
   class Port
+    None = Object.new # Returned by {#read} and {#default} to distinguish no value from nil
+
     attr_reader :job, :type, :name
 
     # @param job [SideJob::Job, SideJob::Worker]
@@ -24,34 +26,6 @@ module SideJob
       self == other
     end
 
-    # Returns the port options. Currently supported options are mode and default.
-    # @return [Hash] Port options
-    def options
-      opts = {mode: mode}
-      opts[:default] = default if default?
-      opts
-    end
-
-    # Reset the port options. Currently supported options are mode and default.
-    # @param options [Hash] New port options
-    def options=(options)
-      options = options.symbolize_keys
-      SideJob.redis.multi do |multi|
-        multi.hset "#{@job.redis_key}:#{type}ports:mode", @name, options[:mode] || :queue
-        if options.has_key?(:default)
-          multi.hset "#{@job.redis_key}:#{type}ports:default", @name, options[:default].to_json
-        else
-          multi.hdel "#{@job.redis_key}:#{type}ports:default", @name
-        end
-      end
-    end
-
-    # @return [Symbol, nil] The port mode or nil if the port is invalid
-    def mode
-      mode = SideJob.redis.hget("#{@job.redis_key}:#{type}ports:mode", @name)
-      mode ? mode.to_sym : nil
-    end
-
     # Returns the number of items waiting on this port.
     # @return [Fixnum]
     def size
@@ -65,10 +39,10 @@ module SideJob
     end
 
     # Returns the port default value. To distinguish a null default value vs no default, use {#default?}.
-    # @return [Object, nil] The default value on the port or nil if none
+    # @return [Object, None] The default value on the port or {SideJob::Port::None} if none
     def default
       val = SideJob.redis.hget("#{@job.redis_key}:#{type}ports:default", @name)
-      val ? parse_json(val) : nil
+      val ? parse_json(val) : None
     end
 
     # Returns if the port has a default value.
@@ -77,22 +51,21 @@ module SideJob
       SideJob.redis.hexists("#{@job.redis_key}:#{type}ports:default", @name)
     end
 
+    # Sets the port default value.
+    # @param val [Object, None] New JSON encodable default value or None to clear the default
+    def default=(val)
+      if val == None
+        SideJob.redis.hdel "#{@job.redis_key}:#{type}ports:default", @name
+      else
+        SideJob.redis.hset "#{@job.redis_key}:#{type}ports:default", @name, val.to_json
+      end
+    end
+
     # Write data to the port. If port in an input port, runs the job.
-    # The default operating mode for a port is :queue which means packets are read/written as a FIFO queue.
-    # In :memory mode, writes do not enter the queue and instead overwrite the default port value.
     # @param data [Object] JSON encodable data to write to the port
     def write(data)
-      case mode
-        when :queue
-          SideJob.redis.rpush redis_key, data.to_json
-        when :memory
-          SideJob.redis.hset "#{@job.redis_key}:#{type}ports:default", @name, data.to_json
-        else
-          raise "Missing port #{@name} or invalid mode #{mode}"
-      end
-
+      SideJob.redis.rpush redis_key, data.to_json
       @job.run(parent: type != :in) # run job if inport otherwise run parent
-
       log(write: [ { port: self, data: [data] } ])
     end
 
@@ -135,26 +108,16 @@ module SideJob
 
       return data unless data.length > 0 || default
 
-      # Get destination port options
-      port_options = SideJob.redis.multi do |multi|
+      # Get destination port defaults
+      port_defaults = SideJob.redis.multi do |multi|
         # port defaults
         ports.each { |port| multi.hget("#{port.job.redis_key}:#{port.type}ports:default", port.name) }
-        # port modes
-        ports.each { |port| multi.hget("#{port.job.redis_key}:#{port.type}ports:mode", port.name) }
       end
-
-      port_defaults = port_options.slice(0, ports.length)
-      port_modes = port_options.slice(ports.length, ports.length)
 
       SideJob.redis.multi do |multi|
         if data.length > 0
           ports.each_with_index do |port, i|
-            case port_modes[i]
-              when 'queue'
-                multi.rpush port.redis_key, data
-              when 'memory'
-                multi.hset "#{port.job.redis_key}:#{port.type}ports:default", port.name, data.last unless default
-            end
+            multi.rpush port.redis_key, data
           end
         end
 
@@ -256,12 +219,12 @@ module SideJob
     # Check if the port exists, dynamically creating it if it does not exist and a * port exists for the job
     # @raise [RuntimeError] Error raised if port does not exist
     def check_exists
-      return if SideJob.redis.hexists "#{@job.redis_key}:#{type}ports:mode", @name
-      dynamic_mode = SideJob.redis.hget("#{@job.redis_key}:#{type}ports:mode", '*')
-      raise "Job #{@job.id} does not have #{@type}port #{@name}!" unless dynamic_mode
+      return if SideJob.redis.sismember "#{@job.redis_key}:#{type}ports", @name
+      dynamic = SideJob.redis.sismember("#{@job.redis_key}:#{type}ports", '*')
+      raise "Job #{@job.id} does not have #{@type}port #{@name}!" unless dynamic
       dynamic_default = SideJob.redis.hget("#{@job.redis_key}:#{type}ports:default", '*')
       SideJob.redis.multi do |multi|
-        multi.hset "#{@job.redis_key}:#{type}ports:mode", @name, dynamic_mode
+        multi.sadd "#{@job.redis_key}:#{type}ports", @name
         if dynamic_default
           multi.hset "#{@job.redis_key}:#{type}ports:default", @name, dynamic_default
         end
