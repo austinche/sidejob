@@ -73,24 +73,41 @@ module SideJob
     # A worker should be idempotent (it can be called multiple times on the same state).
     # Consider reading from a single port with a default value. Each time it is run, it could read the same data
     # from the port. The output of the job then could depend on the number of times it is run.
-    # To prevent this, this method requires that there be at least one input port which does not have a default.
+    # If all input port have defaults, this method remembers the call and will only yield once even over multiple runs.
+    # In addition, any writes to output ports inside the block will instead set the default value of the port.
     # Yields data from the ports until either no ports have data or is suspended due to data on some but not all ports.
     # @param inputs [Array<String>] List of input ports to read
     # @yield [Array] Splat of input data in same order as inputs
     # @raise [SideJob::Worker::Suspended] Raised if an input port without a default has data but not all ports
-    # @raise [RuntimeError] An error is raised if all input ports have default values
     def for_inputs(*inputs, &block)
       return unless inputs.length > 0
       ports = inputs.map {|name| input(name)}
       loop do
         SideJob::Port.log_group do
-          # error if ports all have defaults, complete if no non-default port inputs, suspend if partial inputs
-          data = ports.map {|port| [ port.data?, port.default? ] }
-          raise "One of these input ports should not have a default value: #{inputs.join(',')}" if data.all? {|x| x[1]}
-          return unless data.any? {|x| x[0] && ! x[1] }
-          suspend unless data.all? {|x| x[0] }
+          info = ports.map {|port| [ port.size > 0, port.default? ] }
 
-          yield *ports.map(&:read)
+          return unless info.any? {|x| x[0] || x[1]} # Nothing to do if there's no data to read
+          if info.any? {|x| x[0]}
+            # some port has data, suspend unless every port has data or default
+            suspend unless info.all? {|x| x[0] || x[1] }
+            yield *ports.map(&:read)
+          elsif info.all? {|x| x[1]}
+            # all ports have default and no data
+            defaults = ports.map(&:default)
+            last_default = get(:for_inputs) || []
+            return unless defaults != last_default
+            set({for_inputs: defaults})
+            begin
+              Thread.current[:sidejob_port_write_default] = true
+              yield *defaults
+            ensure
+              Thread.current[:sidejob_port_write_default] = nil
+            end
+            return
+          else
+            # No ports have data and not every port has a default value so nothing to do
+            return
+          end
         end
       end
     end

@@ -65,7 +65,12 @@ module SideJob
     # Write data to the port. If port in an input port, runs the job.
     # @param data [Object] JSON encodable data to write to the port
     def write(data)
-      SideJob.redis.rpush redis_key, data.to_json
+      # For {SideJob::Worker#for_inputs}, if this is set, we instead set the port default on writes
+      if Thread.current[:sidejob_port_write_default]
+        self.default = data
+      else
+        SideJob.redis.rpush redis_key, data.to_json
+      end
       @job.run(parent: type != :in) # run job if inport otherwise run parent
       log(write: [ { port: self, data: [data] } ])
     end

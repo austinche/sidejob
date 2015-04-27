@@ -105,7 +105,7 @@ describe SideJob::Worker do
       expect {|block| @worker.for_inputs(:default, :in2, &block)}.to yield_successive_args(['default', [2,3]], ['default', 3])
     end
 
-    it 'does not suspend if there is only default values' do
+    it 'does not yield if there are only default values' do
       expect {|block| @worker.for_inputs(:default, :in2, &block)}.not_to yield_control
     end
 
@@ -116,8 +116,18 @@ describe SideJob::Worker do
       expect {|block| @worker.for_inputs(:default_null, :in2, &block)}.to yield_successive_args([1, [2,3]], [nil, 3])
     end
 
-    it 'raises error if all ports have defaults' do
-      expect {|block| @worker.for_inputs(:default, :default_null, &block)}.to raise_error
+    it 'sets output default value for ports written in block if all inputs are default' do
+      expect(@job.output(:out1).default).to be SideJob::Port::None
+      @worker.for_inputs(:default, :default_null) { @job.output(:out1).write 1234 }
+      expect(@job.output(:out1).default).to eq 1234
+    end
+
+    it 'yields exactly once until port defaults change' do
+      expect {|block| @worker.for_inputs(:default, :default_null, &block)}.to yield_successive_args(['default', nil])
+      expect {|block| @worker.for_inputs(:default, :default_null, &block)}.not_to yield_control
+      @job.input(:default).default = 'new'
+      expect {|block| @worker.for_inputs(:default, :default_null, &block)}.to yield_successive_args(['new', nil])
+      expect {|block| @worker.for_inputs(:default, :default_null, &block)}.not_to yield_control
     end
   end
 end
