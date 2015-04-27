@@ -194,14 +194,8 @@ describe SideJob::Port do
   end
 
   describe '#read' do
-    it 'can distinguish reading nil data and no data' do
-      expect { @port1.read }.to raise_error(EOFError)
-      @port1.write nil
-      expect(@port1.read).to be nil
-    end
-
-    it 'can read data from a queue port' do
-      expect { @port1.read }.to raise_error(EOFError)
+    it 'can read different kinds of data' do
+      expect(@port1.read).to eq SideJob::Port::None
       ['abc', 123, true, false, nil, {}, ['data1', 1, {key: 'val'}]].each {|x| @port1.write x}
       expect(@port1.size).to be(7)
       expect(@port1.read).to eq('abc')
@@ -211,7 +205,7 @@ describe SideJob::Port do
       expect(@port1.read).to eq(nil)
       expect(@port1.read).to eq({})
       expect(@port1.read).to eq(['data1', 1, {'key' => 'val'}])
-      expect { @port1.read }.to raise_error(EOFError)
+      expect(@port1.read).to eq SideJob::Port::None
       expect(@port1.size).to be(0)
     end
 

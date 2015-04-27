@@ -1,7 +1,8 @@
 module SideJob
   # Represents an input or output port from a Job
   class Port
-    None = Object.new # Returned by {#read} and {#default} to distinguish no value from nil
+    # Returned by {#read} and {#default} to indicate no data
+    class None < Object; end
 
     attr_reader :job, :type, :name
 
@@ -70,8 +71,7 @@ module SideJob
     end
 
     # Reads the oldest data from the port. Returns the default value if no data and there is a default.
-    # @return [Object] First data from port
-    # @raise [EOFError] Error raised if no data to be read
+    # @return [Object, None] First data from port or {SideJob::Port::None} if there is no data and no default.
     def read
       data = SideJob.redis.lpop(redis_key)
       if data
@@ -79,7 +79,7 @@ module SideJob
       elsif default?
         data = default
       else
-        raise EOFError
+        return None
       end
 
       log(read: [ { port: self, data: [data] } ])
@@ -152,7 +152,6 @@ module SideJob
       while size > 0 do
         yield read
       end
-    rescue EOFError
     end
 
     # Returns the redis key used for storing inputs or outputs from a port name
