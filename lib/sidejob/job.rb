@@ -135,10 +135,18 @@ module SideJob
     end
 
     # Disown a child job so that it no longer has a parent.
-    # @param name [String] Name of child job to disown
-    def disown(name)
-      job = child(name)
-      raise "Job #{id} cannot disown non-existent child #{name}" unless job
+    # @param name_or_job [String, SideJob::Job] Name or child job to disown
+    def disown(name_or_job)
+      if name_or_job.is_a?(SideJob::Job)
+        job = name_or_job
+        name = children.rassoc(job)
+        raise "Job #{id} cannot disown job #{job.id} as it is not a child" unless name
+      else
+        name = name_or_job
+        job = child(name)
+        raise "Job #{id} cannot disown non-existent child #{name}" unless job
+      end
+
       SideJob.redis.multi do |multi|
         multi.hdel job.redis_key, 'parent'
         multi.hdel "#{redis_key}:children", name
@@ -164,17 +172,23 @@ module SideJob
     def delete
       return false unless terminated?
 
-      # recursively delete all children first
-      children.each_value do |child|
-        child.delete
-      end
+      parent = self.parent
+      parent.disown(self) if parent
 
-      # delete all SideJob keys
+      children = self.children
+
+      # delete all SideJob keys and disown all children
       ports = inports.map(&:redis_key) + outports.map(&:redis_key)
       SideJob.redis.multi do |multi|
         multi.srem 'jobs', id
         multi.del redis_key
         multi.del ports + %w{children inports outports inports:default outports:default}.map {|x| "#{redis_key}:#{x}" }
+        children.each_value { |child| multi.hdel child.redis_key, 'parent' }
+      end
+
+      # recursively delete all children
+      children.each_value do |child|
+        child.delete
       end
 
       return true

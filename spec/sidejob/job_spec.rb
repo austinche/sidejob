@@ -290,12 +290,28 @@ describe SideJob::Job do
       expect { parent.disown('child') }.to raise_error
     end
 
+    it 'raises error if job is not child' do
+      parent = SideJob.queue('testq', 'TestWorker')
+      job = SideJob.queue('testq', 'TestWorker')
+      expect { parent.disown(job) }.to raise_error
+    end
+
     it 'disassociates a child job from the parent' do
       parent = SideJob.queue('testq', 'TestWorker')
       child = SideJob.queue('testq', 'TestWorker', parent: parent, name: 'child')
       expect(child.parent).to eq(parent)
       expect(parent.child('child')).to eq child
       parent.disown('child')
+      expect(child.parent).to be nil
+      expect(parent.child('child')).to be nil
+    end
+
+    it 'can specify a job' do
+      parent = SideJob.queue('testq', 'TestWorker')
+      child = SideJob.queue('testq', 'TestWorker', parent: parent, name: 'child')
+      expect(child.parent).to eq(parent)
+      expect(parent.child('child')).to eq child
+      parent.disown(child)
       expect(child.parent).to be nil
       expect(parent.child('child')).to be nil
     end
@@ -376,6 +392,14 @@ describe SideJob::Job do
       @job.status = 'terminated'
       @job.delete
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be(0)
+    end
+
+    it 'disowns job from parent' do
+      child = SideJob.queue('testq', 'TestWorker', parent: @job, name: 'child')
+      expect(@job.children.size).to eq 1
+      child.status = 'terminated'
+      child.delete
+      expect(@job.children.size).to eq 0
     end
   end
 
