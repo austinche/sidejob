@@ -5,15 +5,14 @@ Gem::Specification.new do |s|
   s.version     = SideJob::VERSION
   s.authors     = ['Austin Che']
   s.email       = ['austin@ginkgobioworks.com']
-  s.summary     = 'Use SideJob to run sidekiq jobs with a flow-based model'
-
+  s.summary     = 'Run sidekiq jobs with a flow-based programming model'
+  s.homepage    = 'https://github.com/austinche/sidejob'
+  s.license     = 'MIT'
   s.files = `git ls-files`.split($/)
-
   s.require_paths = ['lib']
 
-  s.add_dependency 'sidekiq', '~>3.2.5'
+  s.add_runtime_dependency 'sidekiq'
 
-  # development
   s.add_development_dependency 'pry'
   s.add_development_dependency 'rspec'
   s.add_development_dependency 'simplecov'

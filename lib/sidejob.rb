@@ -1,5 +1,6 @@
 require 'sidekiq'
 require 'sidekiq/api'
+require 'sidejob/version'
 require 'sidejob/port'
 require 'sidejob/job'
 require 'sidejob/worker'
