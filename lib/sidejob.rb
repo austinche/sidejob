@@ -118,5 +118,7 @@ end
 
 if ENV['SIDEJOB_URL']
   SideJob.redis = {url: ENV['SIDEJOB_URL']}
+elsif ENV['SIDEJOB_HOST']
+  SideJob.redis = {host: ENV['SIDEJOB_HOST']}
 end
 # :nocov:

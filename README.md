@@ -67,7 +67,8 @@ Data Structure
 SideJob uses Redis for all job processing and storage. Code using SideJob should use API functions instead of accessing
 redis directly, but this is a description of the current data storage format.
 
-The easiest way to set the redis location is via the environment variable SIDEJOB_URL, e.g. redis://redis.myhost.com:6379/4
+The easiest way to set the redis location is via an environment variable SIDEJOB_HOST=redis.myhost.com or
+SIDEJOB_URL=redis://redis.myhost.com:6379/4
 
 The keys used by Sidekiq:
 
