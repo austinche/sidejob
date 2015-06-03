@@ -17,14 +17,6 @@ describe 'SideJob testing helpers' do
     end
   end
 
-  class TestMysteriousFailure
-    include SideJob::Worker
-    register
-    def perform
-      self.status = 'failed'
-    end
-  end
-
   describe 'SideJob::Worker.drain_queue' do
     it 'runs jobs' do
       job = SideJob.queue('testq', 'TestSum')
@@ -48,11 +40,6 @@ describe 'SideJob testing helpers' do
     it 'raises errors by default' do
       job = SideJob.queue('testq', 'TestFailure')
       expect { SideJob::Worker.drain_queue }.to raise_error(RuntimeError, 'bad error')
-    end
-
-    it 'raises error if worker mysteriously fails' do
-      job = SideJob.queue('testq', 'TestMysteriousFailure')
-      expect { SideJob::Worker.drain_queue }.to raise_error(RuntimeError)
     end
 
     it 'can disable raising of errors' do
@@ -93,11 +80,6 @@ describe 'SideJob testing helpers' do
     it 'raises errors by default' do
       job = SideJob.queue('testq', 'TestFailure')
       expect { job.run_inline }.to raise_error(RuntimeError, 'bad error')
-    end
-
-    it 'raises error if worker mysteriously fails' do
-      job = SideJob.queue('testq', 'TestMysteriousFailure')
-      expect { job.run_inline }.to raise_error(RuntimeError)
     end
 
     it 'can disable raising of errors' do

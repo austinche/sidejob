@@ -62,6 +62,12 @@ Channel names use slashes to indicate hierarchy. Published messages to a channel
 up the hierarchy. For example, a message sent to the channel `/namespace/event` will be sent to the channels
 `/namespace/event`, `/namespace` and `/`.
 
+SideJob uses channels starting with /sidejob. The channels used by sidejob:
+
+* `/sidejob/log` : Log message
+    * { timestamp: (date), job: (id), read: [{ job: (id), (in|out)port: (port), data: [...] }, ...], write: [{ job: (id), (in|out)port: (port), data: [...] }, ...] }
+    * { timestamp: (date), job: (id), error: (message), backtrace: (exception backtrace) }
+
 Workers
 -------
 
@@ -109,9 +115,6 @@ Additional keys used by SideJob:
 * workers:(queue) - Hash mapping class name to worker configuration. A worker should define
   the inports and outports hashes that map port names to port options.
 * jobs:last_id - Stores the last job ID (we use incrementing integers from 1)
-* jobs:logs - List with JSON encoded logs.
-    * { timestamp: (date), job: (id), read: [{ job: (id), (in|out)port: (port), data: [...] }, ...], write: [{ job: (id), (in|out)port: (port), data: [...] }, ...] }
-    * { timestamp: (date), job: (id), error: (message), backtrace: (exception backtrace) }
 * jobs - Set with all job ids
 * job:(id) - Hash containing job state. Each value is JSON encoded.
     * status - job status

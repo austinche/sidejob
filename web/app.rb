@@ -155,13 +155,6 @@ class SideJob::Web < Sinatra::Base
     end
   end
 
-  # return all logs
-  get '/logs' do
-    api_call do |params|
-      SideJob.logs(clear: params['clear'] || false)
-    end
-  end
-
   # add a log entry
   post '/logs' do
     api_call do |params|

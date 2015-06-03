@@ -147,15 +147,14 @@ describe SideJob::ServerMiddleware do
     it 'sets status to failed on exception and logs error' do
       now = Time.now
       allow(Time).to receive(:now) { now }
+      SideJob::ServerMiddleware.raise_errors = false
+      expect(SideJob).to receive(:publish) do |channel, message|
+        expect(channel).to eq '/sidejob/log'
+        expect(message[:job]).to eq @job.id
+        expect(message[:error]).to eq 'oops'
+      end
       process(@job) { raise 'oops' }
       expect(@job.status).to eq 'failed'
-
-      log = SideJob.logs.select {|log| log['error'] }
-      expect(log.size).to eq(1)
-      expect(log[0]['job']).to eq @job.id
-      expect(log[0]['error']).to eq('oops')
-      # check that we trim down backtrace to remove sidekiq lines
-      expect(log[0]['backtrace']).to_not match(/sidekiq/)
     end
 
     it 'does not set status to failed if status is terminating' do
@@ -195,8 +194,6 @@ describe SideJob::ServerMiddleware do
       @job.status = 'terminating'
       process(@job) { raise 'should not be called' }
       expect(@job.status).to eq 'terminated'
-      errors = SideJob.logs.select {|log| log['type'] == 'error'}
-      expect(errors.size).to eq 0
     end
 
     it 'runs parent' do
@@ -217,11 +214,12 @@ describe SideJob::ServerMiddleware do
     it 'logs but ignores exceptions thrown during shutdown' do
       @job = SideJob.queue(@queue, 'TestWorkerShutdownError')
       @job.status = 'terminating'
+      expect(SideJob).to receive(:publish) do |channel, message|
+        expect(channel).to eq '/sidejob/log'
+        expect(message[:job]).to eq @job.id
+        expect(message[:error]).to eq 'shutdown error'
+      end
       worker = process(@job) { raise 'not reached' }
-      logs = SideJob.logs.select {|log| log['error']}
-      expect(logs.size).to eq 1
-      expect(logs[0]['job']).to eq @job.id
-      expect(logs[0]['error']).to eq 'shutdown error'
     end
   end
 end

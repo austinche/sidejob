@@ -139,30 +139,8 @@ describe SideJob do
     it 'adds a timestamp to log entries' do
       now = Time.now
       allow(Time).to receive(:now) { now }
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {abc: 123, timestamp: SideJob.timestamp})
       SideJob.log({abc: 123})
-      log = SideJob.redis.rpop 'jobs:logs'
-      expect(JSON.parse(log)).to eq({'abc' => 123, 'timestamp' => SideJob.timestamp})
-    end
-  end
-
-  describe '.logs' do
-    before do
-      now = Time.now
-      allow(Time).to receive(:now) { now }
-      SideJob.log({abc: 123})
-    end
-
-    it 'returns and clears all logs' do
-      expect(SideJob.logs).to eq([{'abc' => 123, 'timestamp' => SideJob.timestamp}])
-      SideJob.log({xyz: 456})
-      expect(SideJob.logs).to eq([{'xyz' => 456, 'timestamp' => SideJob.timestamp}])
-    end
-
-    it 'returns and leaves logs' do
-      expect(SideJob.logs(clear: false)).to eq([{'abc' => 123, 'timestamp' => SideJob.timestamp}])
-      SideJob.log({xyz: 456})
-      expect(SideJob.logs(clear: false)).to eq([{'abc' => 123, 'timestamp' => SideJob.timestamp},
-                                                {'xyz' => 456, 'timestamp' => SideJob.timestamp},])
     end
   end
 
@@ -173,19 +151,23 @@ describe SideJob do
     end
 
     it 'adds metadata to logs within the group' do
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, data2: 2, abc: 123, timestamp: SideJob.timestamp})
       SideJob.log_context(data1: 1, data2: 2) do
         SideJob.log({abc: 123})
-        expect(SideJob.logs).to eq([{'data1' => 1, 'data2' => 2, 'abc' => 123, 'timestamp' => SideJob.timestamp}])
       end
     end
 
     it 'does not add metadata to logs outside of the group' do
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {abc: 123, timestamp: SideJob.timestamp})
       SideJob.log_context(data1: 1, data2: 2) {}
       SideJob.log({abc: 123})
-      expect(SideJob.logs).to eq([{'abc' => 123, 'timestamp' => SideJob.timestamp}])
     end
 
     it 'can be nested' do
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, timestamp: SideJob.timestamp, x: 1})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, data2: 2, timestamp: SideJob.timestamp, x: 2})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, timestamp: SideJob.timestamp, x: 3})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {timestamp: SideJob.timestamp, x: 4})
       SideJob.log_context(data1: 1) do
         SideJob.log({x: 1})
         SideJob.log_context(data2: 2) do
@@ -194,12 +176,6 @@ describe SideJob do
         SideJob.log({x: 3})
       end
       SideJob.log({x: 4})
-
-      expect(SideJob.logs).to eq([{'data1' => 1, 'timestamp' => SideJob.timestamp, 'x' => 1},
-                                  {'data1' => 1, 'data2' => 2, 'timestamp' => SideJob.timestamp, 'x' => 2},
-                                  {'data1' => 1, 'timestamp' => SideJob.timestamp, 'x' => 3},
-                                  {'timestamp' => SideJob.timestamp, 'x' => 4},
-                                 ])
     end
   end
 

@@ -33,20 +33,12 @@ module SideJob
 
       worker = get(:class).constantize.new
       worker.jid = id
+      SideJob::ServerMiddleware.raise_errors = errors
       SideJob::ServerMiddleware.new.call(worker, {}, get(:queue)) do
         worker.perform(*args)
       end
-
-      if errors && status == 'failed'
-        SideJob.logs.each do |event|
-          if event['error']
-            exception = RuntimeError.exception(event['error'])
-            exception.set_backtrace(event['backtrace'])
-            raise exception
-          end
-        end
-        raise "Job #{id} failed but cannot find error log"
-      end
+    ensure
+      SideJob::ServerMiddleware.raise_errors = false
     end
   end
 end

@@ -82,21 +82,11 @@ module SideJob
     Time.now.utc.iso8601(9)
   end
 
-  # Adds a log entry to redis with current timestamp.
+  # Publishes a log message
   # @param entry [Hash] Log entry
   def self.log(entry)
     context = (Thread.current[:sidejob_log_context] || {}).merge(timestamp: SideJob.timestamp)
-    SideJob.redis.rpush 'jobs:logs', context.merge(entry).to_json
-  end
-
-  # Return all job logs and optionally clears them.
-  # @param clear [Boolean] If true, delete logs after returning them (default true)
-  # @return [Array<Hash>] All logs with the oldest first
-  def self.logs(clear: true)
-    SideJob.redis.multi do |multi|
-      multi.lrange 'jobs:logs', 0, -1
-      multi.del 'jobs:logs' if clear
-    end[0].map {|log| JSON.parse(log)}
+    SideJob.publish '/sidejob/log', context.merge(entry)
   end
 
   # Adds the given metadata to all {SideJob.log} calls within the block.

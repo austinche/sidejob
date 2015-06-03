@@ -81,13 +81,17 @@ describe SideJob::Worker do
       @job.input(:in1).write 2
       @job.input(:in2).write ['a', 'b']
       @job.input(:in2).write ['c', 'd']
-      SideJob.logs(clear: true)
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {
+          timestamp: SideJob.timestamp,
+          read: [{job: @job.id, inport: :in1, data: [1]}, {job: @job.id, inport: :in2, data: [['a', 'b']]}],
+          write: [{job: @job.id, outport: :out1, data: [[1, 'a']]}]})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {
+          timestamp: SideJob.timestamp,
+          read: [{job: @job.id, inport: :in1, data: [2]}, {job: @job.id, inport: :in2, data: [['c', 'd']]}],
+          write: [{job: @job.id, outport: :out1, data: [[2, 'c']]}]})
       @worker.for_inputs(:in1, :in2) do |in1, in2|
         @worker.output(:out1).write [in1, in2[0]]
       end
-      expect(SideJob.logs).to eq([{'timestamp' => SideJob.timestamp, 'read' => [{'job' => @job.id, 'inport' => 'in1', 'data' => [1]}, {'job' => @job.id, 'inport' => 'in2', 'data' => [['a', 'b']]}], 'write' => [{'job' => @job.id, 'outport' => 'out1', 'data' => [[1, 'a']]}]},
-                                  {'timestamp' => SideJob.timestamp, 'read' => [{'job' => @job.id, 'inport' => 'in1', 'data' => [2]}, {'job' => @job.id, 'inport' => 'in2', 'data' => [['c', 'd']]}], 'write' => [{'job' => @job.id, 'outport' => 'out1', 'data' => [[2, 'c']]}]},
-                                 ])
     end
 
     it 'suspends on partial inputs' do

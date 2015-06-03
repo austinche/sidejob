@@ -5,6 +5,11 @@ module SideJob
   # For simplicity, a job is allowed to be queued multiple times in the Sidekiq queue
   # Only when it gets pulled out to be run, i.e. here, we decide if we want to actually run it
   class ServerMiddleware
+    class << self
+      # If true, we do not rescue or log errors and instead propagate errors (useful for testing)
+      attr_accessor :raise_errors
+    end
+
     # Called by sidekiq as a server middleware to handle running a worker
     # @param worker [SideJob::Worker]
     # @param msg [Hash] Sidekiq message format
@@ -101,8 +106,12 @@ module SideJob
     end
 
     def add_exception(exception)
-      # only store the backtrace until the first sidekiq line
-      SideJob.log({ error: exception.message, backtrace: exception.backtrace.take_while {|l| l !~ /sidekiq/}.join("\n") })
+      if SideJob::ServerMiddleware.raise_errors
+        raise exception
+      else
+        # only store the backtrace until the first sidekiq line
+        SideJob.log({ error: exception.message, backtrace: exception.backtrace.take_while {|l| l !~ /sidekiq/}.join("\n") })
+      end
     end
   end
 end
