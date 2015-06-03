@@ -202,4 +202,46 @@ describe SideJob do
                                  ])
     end
   end
+
+  describe '.publish' do
+    it 'publishes message to channel ignoring hierarchy using redis pubsub' do
+      Timeout::timeout(3) do
+        subscribed = false
+        t = Thread.new do
+          redis = SideJob.redis.dup
+          redis.psubscribe('*') do |on|
+            on.psubscribe do |pattern, total|
+              subscribed = true
+            end
+
+            on.pmessage do |pattern, channel, message|
+              expect(JSON.parse(message)).to eq [1,2]
+              expect(channel).to eq '/namespace/mychannel'
+              redis.punsubscribe
+            end
+          end
+        end
+
+        Thread.pass until subscribed
+        SideJob.publish '/namespace/mychannel', [1,2]
+        t.join
+      end
+    end
+
+    it 'writes to subscribed jobs' do
+      job = SideJob.queue('testq', 'TestWorker', inports: {myport: {channels: ['/namespace/mychannel']}, yourport: {channels: ['/namespace']}})
+      SideJob.publish('/namespace/mychannel', [1,2])
+      expect(job.input(:myport).entries).to eq [[1,2]]
+      expect(job.input(:yourport).entries).to eq [[1,2]]
+    end
+
+    it 'removes jobs that are no longer subscribed' do
+      job = SideJob.queue('testq', 'TestWorker', inports: {myport: {channels: ['/namespace/mychannel']}})
+      job.input(:myport).channels = []
+      expect(SideJob.redis.smembers('channel:/namespace/mychannel')).to eq [job.id.to_s]
+      SideJob.publish('/namespace/mychannel', [1,2])
+      expect(SideJob.redis.smembers('channel:/namespace/mychannel')).to eq []
+      expect(job.input(:myport).size).to eq 0
+    end
+  end
 end

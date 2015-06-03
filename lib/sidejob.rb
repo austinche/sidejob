@@ -7,6 +7,7 @@ require 'sidejob/worker'
 require 'sidejob/server_middleware'
 require 'time' # for iso8601 method
 require 'securerandom'
+require 'pathname'
 
 module SideJob
   # Configuration parameters
@@ -106,6 +107,47 @@ module SideJob
     yield
   ensure
     Thread.current[:sidejob_log_context] = previous
+  end
+
+  # Publishes a message up the channel hierarchy to jobs by writing to ports subscribed to the channel.
+  # Also publishes to the destination channel only via normal redis pubsub.
+  # @param channel [String] Channel is path-like, separated by / to indicate hierarchy
+  # @param message [Object] JSON encodable message
+  def self.publish(channel, message)
+    # We don't publish at every level up hierarchy via redis pubsub since a client can use redis psubscribe
+    SideJob.redis.publish channel, message.to_json
+
+    job_subs = {}
+
+    # walk up the channel hierarchy
+    Pathname.new(channel).ascend do |channel|
+      channel = channel.to_s
+      jobs = SideJob.redis.smembers "channel:#{channel}"
+      jobs.each do |id|
+        job = SideJob.find(id)
+        if ! job_subs.has_key?(id)
+          job_subs[id] = {}
+          if job
+            SideJob.redis.hgetall("#{job.redis_key}:inports:channels").each_pair do |port, channels|
+              channels = JSON.parse(channels)
+              channels.each do |ch|
+                job_subs[id][ch] ||= []
+                job_subs[id][ch] << port
+              end
+            end
+          end
+        end
+
+        if job && job_subs[id] && job_subs[id][channel]
+          job_subs[id][channel].each do |port|
+            job.input(port).write message
+          end
+        else
+          # Job is gone or no longer subscribed to this channel
+          SideJob.redis.srem "channel:#{channel}", id
+        end
+      end
+    end
   end
 end
 

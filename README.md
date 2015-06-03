@@ -48,6 +48,20 @@ Ports
   a port named `*` exists in which case new ports are dynamically created and inherit its options.
 * Currently, the only port option is a default value which is returned when a read is done on the port when its empty.
 
+Channels
+--------
+
+Channels provide a global reliable pubsub system. Every port can be associated with some number of channels.
+Writes to output ports will publish the data to the associated channels. Any published messages to a channel
+are written to all input ports that have subscribed to that channel.
+
+The pubsub system is reliable in that the subscribed jobs do not need to be running to receive messages.
+Other clients can also subscribe to channels via standard non-reliable Redis pubsub.
+
+Channel names use slashes to indicate hierarchy. Published messages to a channel are also published to channels
+up the hierarchy. For example, a message sent to the channel `/namespace/event` will be sent to the channels
+`/namespace/event`, `/namespace` and `/`.
+
 Workers
 -------
 
@@ -112,6 +126,7 @@ Additional keys used by SideJob:
 * job:(id):in:(inport) and job:(id):out:(outport) - List with unread port data. New data is pushed on the right.
 * job:(id):inports and job:(id):outports - Set containing all existing port names.
 * job:(id):inports:default and job:(id):outports:default - Hash mapping port name to JSON encoded default value for port.
+* job:(id):inports:channels and job:(id):outports:channels - Hash mapping port name to JSON encoded connected channels.
 * job:(id):children - Hash mapping child job name to child job ID
 * job:(id):rate:(timestamp) - Rate limiter used to prevent run away executing of a job.
     Keys are automatically expired.
@@ -119,3 +134,4 @@ Additional keys used by SideJob:
     Auto expired to prevent stale locks.
 * job:(id):lock:worker - Used to indicate a worker is attempting to acquire the job lock.
     Auto expired to prevent stale locks.
+* channel:(channel) - Set with job ids that may have ports subscribed to the channel.

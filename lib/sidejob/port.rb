@@ -62,6 +62,30 @@ module SideJob
       end
     end
 
+    # Returns the connected port channels.
+    # @return [Array<String>] List of port channels
+    def channels
+      JSON.parse(SideJob.redis.hget("#{@job.redis_key}:#{type}ports:channels", @name)) rescue []
+    end
+
+    # Set the channels connected to the port.
+    # @param channels [Array<String>] Port channels
+    def channels=(channels)
+      SideJob.redis.multi do |multi|
+        if channels && channels.length > 0
+          multi.hset "#{@job.redis_key}:#{type}ports:channels", @name, channels.to_json
+        else
+          multi.hdel "#{@job.redis_key}:#{type}ports:channels", @name
+        end
+
+        if type == :in
+          channels.each do |chan|
+            multi.sadd "channel:#{chan}", @job.id
+          end
+        end
+      end
+    end
+
     # Write data to the port. If port in an input port, runs the job.
     # @param data [Object] JSON encodable data to write to the port
     def write(data)
@@ -73,6 +97,12 @@ module SideJob
       end
       @job.run(parent: type != :in) # run job if inport otherwise run parent
       log(write: [ { port: self, data: [data] } ])
+
+      if type == :out
+        channels.each do |chan|
+          SideJob.publish chan, data
+        end
+      end
     end
 
     # Reads the oldest data from the port. Returns the default value if no data and there is a default.
@@ -138,6 +168,15 @@ module SideJob
       data.map! {|x| parse_json x}
       if data.length > 0
         log(read: [{ port: self, data: data }], write: ports.map { |port| {port: port, data: data} })
+
+        # Publish to destination channels
+        ports.each do |port|
+          if port.type == :out
+            port.channels.each do |chan|
+              data.each { |x| SideJob.publish chan, x }
+            end
+          end
+        end
       end
 
       # Run the port job or parent only if something was changed

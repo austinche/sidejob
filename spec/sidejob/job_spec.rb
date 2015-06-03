@@ -471,6 +471,15 @@ describe SideJob::Job do
         expect(@job.send("#{type}put", :myport).read).to eq 'new'
       end
 
+      it 'sets port channels' do
+        @channels = ['abc', 'xyz']
+        @job.send("#{type}ports=", {myport: {channels: @channels}})
+        expect(@job.send("#{type}put", :myport).channels).to match_array(@channels)
+        @channels.each do |chan|
+          expect(SideJob.redis.smembers("channel:#{chan}")).to eq [@job.id.to_s]
+        end
+      end
+
       it 'deletes no longer used ports' do
         @job.send("#{type}ports=", {myport: {}})
         @job.send("#{type}put", :myport).write 123

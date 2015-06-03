@@ -182,7 +182,7 @@ module SideJob
       SideJob.redis.multi do |multi|
         multi.srem 'jobs', id
         multi.del redis_key
-        multi.del ports + %w{children inports outports inports:default outports:default}.map {|x| "#{redis_key}:#{x}" }
+        multi.del ports + %w{children inports outports inports:default outports:default inports:channels outports:channels}.map {|x| "#{redis_key}:#{x}" }
         children.each_value { |child| multi.hdel child.redis_key, 'parent' }
       end
 
@@ -372,6 +372,20 @@ module SideJob
         end.compact.flatten(1)
         multi.del "#{redis_key}:#{type}ports:default"
         multi.hmset "#{redis_key}:#{type}ports:default", *defaults if defaults.length > 0
+
+        # replace port channels
+        channels = ports.map do |port, options|
+          if options.has_key?('channels')
+            options['channels'].each do |channel|
+              multi.sadd "channel:#{channel}", id
+            end
+            [port, options['channels'].to_json]
+          else
+            nil
+          end
+        end.compact.flatten(1)
+        multi.del "#{redis_key}:#{type}ports:channels"
+        multi.hmset "#{redis_key}:#{type}ports:channels", *channels if channels.length > 0
       end
     end
 

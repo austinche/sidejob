@@ -150,6 +150,44 @@ describe SideJob::Port do
     end
   end
 
+  describe '#channels, #channels=' do
+    before do
+      @channels = ['abc123', 'def456']
+    end
+
+    it 'can set and return channels for inport' do
+      expect(@port1.channels).to eq []
+      @channels.each do |ch|
+        expect(SideJob.redis.smembers("channel:#{ch}")).to eq []
+      end
+      @port1.channels = @channels
+      expect(@port1.channels).to match_array(@channels)
+      @channels.each do |ch|
+        expect(SideJob.redis.smembers("channel:#{ch}")).to eq [@port1.job.id.to_s]
+      end
+      @port1.channels = []
+      expect(@port1.channels).to eq []
+      @channels.each do |ch|
+        # We don't remove old jobs until we publish to the channel
+        expect(SideJob.redis.smembers("channel:#{ch}")).to eq [@port1.job.id.to_s]
+      end
+    end
+
+    it 'can set and return channels for outport' do
+      expect(@out1.channels).to eq []
+      @out1.channels = @channels
+      @channels.each do |ch|
+        expect(SideJob.redis.smembers("channel:#{ch}")).to eq []
+      end
+      expect(@out1.channels).to match_array(@channels)
+      @channels.each do |ch|
+        expect(SideJob.redis.smembers("channel:#{ch}")).to eq []
+      end
+      @out1.channels = []
+      expect(@out1.channels).to eq []
+    end
+  end
+
   describe '#write' do
     it 'can write different types of data to a port' do
       ['abc', 123, true, false, nil, {abc: 123}, [1, {foo: true}]].each {|x| @port1.write x}
@@ -190,6 +228,20 @@ describe SideJob::Port do
       @out1.write 3
       expect(@job.status).to eq 'completed'
       expect(parent.status).to eq 'queued'
+    end
+
+    it 'publishes writes to associated output port channel' do
+      data = {'abc' => [1,2]}
+      @out1.channels = ['mychannel']
+      expect(SideJob).to receive(:publish).with('mychannel', data)
+      @out1.write data
+    end
+
+    it 'does not publish writes to associated input port channel' do
+      data = {'abc' => [1,2]}
+      @port1.channels = ['mychannel']
+      expect(SideJob).not_to receive(:publish).with('mychannel', data)
+      @port1.write data
     end
   end
 
@@ -348,6 +400,19 @@ describe SideJob::Port do
     it 'does not log if no data on port' do
       @out1.connect_to(@port1)
       expect(SideJob.logs).to eq([])
+    end
+
+    it 'publishes to associated outport channels' do
+      dest = [@port1, @out1]
+      @out1.channels = ['channel1']
+      @port1.channels = ['channel2']
+      @default.channels = ['channel3']
+      @default.write 1
+      @default.write [2,3]
+
+      expect(SideJob).to receive(:publish).with('channel1', 1)
+      expect(SideJob).to receive(:publish).with('channel1', [2,3])
+      @default.connect_to dest
     end
   end
 
