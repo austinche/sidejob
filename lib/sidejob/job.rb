@@ -34,13 +34,14 @@ module SideJob
     # @return [String] Job status
     def status
       check_exists
-      get(:status)
+      SideJob.redis.get "#{redis_key}:status"
     end
 
     # Set the job status.
     # @param status [String] The new job status
     def status=(status)
-      set({status: status})
+      check_exists
+      SideJob.redis.set "#{redis_key}:status", status
     end
 
     # Returns all aliases for the job.
@@ -164,7 +165,7 @@ module SideJob
     # Returns the parent job.
     # @return [SideJob::Job, nil] Parent job or nil if none
     def parent
-      SideJob.find(get(:parent))
+      SideJob.find(SideJob.redis.get("#{redis_key}:parent"))
     end
 
     # Disown a child job so that it no longer has a parent.
@@ -181,7 +182,7 @@ module SideJob
       end
 
       SideJob.redis.multi do |multi|
-        multi.hdel job.redis_key, 'parent'
+        multi.del "#{job.redis_key}:parent"
         multi.hdel "#{redis_key}:children", name
       end
     end
@@ -196,7 +197,7 @@ module SideJob
       raise "Job #{id} cannot adopt job #{orphan.id} as child name #{name} is not unique" if name.nil? || ! child(name).nil?
 
       SideJob.redis.multi do |multi|
-        multi.hset orphan.redis_key, 'parent', id.to_json
+        multi.set "#{orphan.redis_key}:parent", id.to_json
         multi.hset "#{redis_key}:children", name, orphan.id
       end
     end
@@ -217,7 +218,7 @@ module SideJob
       SideJob.redis.multi do |multi|
         multi.srem 'jobs', id
         multi.del redis_key
-        multi.del ports + %w{aliases children inports outports inports:default outports:default inports:channels outports:channels}.map {|x| "#{redis_key}:#{x}" }
+        multi.del ports + %w{worker status state aliases parent children inports outports inports:default outports:default inports:channels outports:channels created_at created_by ran_at}.map {|x| "#{redis_key}:#{x}" }
         children.each_value { |child| multi.hdel child.redis_key, 'parent' }
         aliases.each { |name| multi.hdel('jobs:aliases', name) }
       end
@@ -272,20 +273,39 @@ module SideJob
       set_ports :out, ports
     end
 
-    # Returns the entirety of the job's state with both standard and custom keys.
-    # @return [Hash{String => Object}] Job state
+    # Returns
+    # @return [Hash]
+    def info
+      check_exists
+      data = SideJob.redis.multi do |multi|
+        multi.get "#{redis_key}:worker"
+        multi.get "#{redis_key}:created_by"
+        multi.get "#{redis_key}:created_at"
+        multi.get "#{redis_key}:ran_at"
+      end
+
+      worker = JSON.parse(data[0])
+      {
+          queue: worker['queue'], class: worker['class'], args: worker['args'],
+          created_by: data[1], created_at: data[2], ran_at: data[3],
+      }
+    end
+
+    # Returns the entirety of the job's internal state.
+    # @return [Hash{String => Object}] Job internal state
     def state
       check_exists
-      state = SideJob.redis.hgetall(redis_key)
+      state = SideJob.redis.hgetall("#{redis_key}:state")
       state.update(state) {|k,v| JSON.parse("[#{v}]")[0]}
       state
     end
 
-    # Returns some data from the job's state.
+    # Returns some data from the job's internal state.
     # @param key [Symbol,String] Retrieve value for the given key
     # @return [Object,nil] Value from the job state or nil if key does not exist
     def get(key)
-      val = SideJob.redis.hget(redis_key, key)
+      check_exists
+      val = SideJob.redis.hget("#{redis_key}:state", key)
       val ? JSON.parse("[#{val}]")[0] : nil
     end
 
@@ -295,7 +315,7 @@ module SideJob
     def set(data)
       check_exists
       return unless data.size > 0
-      SideJob.redis.hmset redis_key, *(data.map {|k,v| [k, v.to_json]}.flatten)
+      SideJob.redis.hmset "#{redis_key}:state", *(data.map {|k,v| [k, v.to_json]}.flatten)
     end
 
     # Unsets some fields in the job's internal state.
@@ -303,7 +323,7 @@ module SideJob
     # @raise [RuntimeError] Error raised if job no longer exists
     def unset(*fields)
       return unless fields.length > 0
-      SideJob.redis.hdel redis_key, fields
+      SideJob.redis.hdel "#{redis_key}:state", fields
     end
 
     # Acquire a lock on the job with a given expiration time.
@@ -353,21 +373,18 @@ module SideJob
       # Don't need to queue if a worker is already in process of running
       return if SideJob.redis.exists "#{redis_key}:lock:worker"
 
-      queue = get(:queue)
+      worker = JSON.parse(SideJob.redis.get("#{redis_key}:worker"))
 
       # Don't need to queue if the job is already in the queue (this does not include scheduled jobs)
       # When Sidekiq pulls job out from scheduled set, we can still get the same job queued multiple times
       # but the server middleware handles it
-      return if Sidekiq::Queue.new(queue).find_job(@id)
+      return if Sidekiq::Queue.new(worker['queue']).find_job(@id)
 
-      klass = get(:class)
-      args = get(:args)
-
-      if ! SideJob.redis.hexists("workers:#{queue}", klass)
+      if ! SideJob.redis.hexists("workers:#{worker['queue']}", worker['class'])
         self.status = 'terminated'
-        raise "Worker no longer registered for #{klass} in queue #{queue}"
+        raise "Worker no longer registered for #{klass} in queue #{worker['queue']}"
       end
-      item = {'jid' => id, 'queue' => queue, 'class' => klass, 'args' => args || [], 'retry' => false}
+      item = {'jid' => id, 'queue' => worker['queue'], 'class' => worker['class'], 'args' => worker['args'] || [], 'retry' => false}
       item['at'] = time if time && time > Time.now.to_f
       Sidekiq::Client.push(item)
     end
@@ -385,7 +402,8 @@ module SideJob
     def set_ports(type, ports)
       check_exists
       current = SideJob.redis.smembers("#{redis_key}:#{type}ports") || []
-      config = SideJob::Worker.config(get(:queue), get(:class))
+      worker = JSON.parse(SideJob.redis.get("#{redis_key}:worker"))
+      config = SideJob::Worker.config(worker['queue'], worker['class'])
 
       ports ||= {}
       ports = (config["#{type}ports"] || {}).merge(ports.dup.stringify_keys)

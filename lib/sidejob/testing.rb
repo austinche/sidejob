@@ -31,10 +31,11 @@ module SideJob
     def run_inline(errors: true, queue: true, args: [])
       self.status = 'queued' if queue
 
-      worker = get(:class).constantize.new
+      worker_info = JSON.parse(SideJob.redis.get("#{redis_key}:worker"))
+      worker = worker_info['class'].constantize.new
       worker.jid = id
       SideJob::ServerMiddleware.raise_errors = errors
-      SideJob::ServerMiddleware.new.call(worker, {}, get(:queue)) do
+      SideJob::ServerMiddleware.new.call(worker, {}, worker_info['queue']) do
         worker.perform(*args)
       end
     ensure

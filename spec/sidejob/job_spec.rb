@@ -201,7 +201,7 @@ describe SideJob::Job do
     end
 
     it 'throws error and immediately sets status to terminated if job class is unregistered' do
-      SideJob.redis.del "workers:#{@job.get(:queue)}"
+      SideJob.redis.del "workers:#{@job.info[:queue]}"
       expect { @job.run }.to raise_error
       expect(@job.status).to eq 'terminated'
     end
@@ -326,7 +326,7 @@ describe SideJob::Job do
 
     it 'queues with by string set to self' do
       child = @job.queue('testq', 'TestWorker', name: 'child')
-      expect(child.get(:created_by)).to eq "job:#{@job.id}"
+      expect(child.info[:created_by]).to eq "job:#{@job.id}"
     end
   end
 
@@ -569,16 +569,28 @@ describe SideJob::Job do
     end
   end
 
-  describe '#state' do
+  describe '#info' do
     before do
       now = Time.now
       allow(Time).to receive(:now) { now }
+      @job = SideJob.queue('testq', 'TestWorker', args: [123], by: 'me')
+    end
+
+    it 'returns all basic job info' do
+      expect(@job.info).to eq({queue: 'testq', class: 'TestWorker', args: [123],
+                               created_by: 'me', created_at: SideJob.timestamp, ran_at: nil})
+    end
+  end
+
+  describe '#state' do
+    before do
       @job = SideJob.queue('testq', 'TestWorker')
     end
 
-    it 'returns job state with common and internal keys' do
+    it 'returns all job state' do
       @job.set({abc: 123})
-      expect(@job.state).to eq({"queue"=>"testq", "class"=>"TestWorker", "args"=>nil, "created_by"=>nil, "created_at"=>SideJob.timestamp, 'status' => 'queued', 'abc' => 123})
+      @job.set({xyz: 456})
+      expect(@job.state).to eq({'abc' => 123, 'xyz' => 456})
     end
   end
 
@@ -606,7 +618,7 @@ describe SideJob::Job do
 
     it 'always returns the latest value' do
       expect(@job.get(:field3)).to eq 123
-      SideJob.redis.hmset @job.redis_key, :field3, '789'
+      SideJob.find(@job.id).set(field3: 789)
       expect(@job.get(:field3)).to eq 789
     end
   end
@@ -631,7 +643,7 @@ describe SideJob::Job do
       3.times do |i|
         @job.set key: [i]
         expect(@job.get(:key)).to eq [i]
-        expect(JSON.parse(SideJob.redis.hget(@job.redis_key, 'key'))).to eq [i]
+        expect(JSON.parse(SideJob.redis.hget("#{@job.redis_key}:state", 'key'))).to eq [i]
       end
     end
 

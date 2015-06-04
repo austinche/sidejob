@@ -54,7 +54,13 @@ module SideJob
     SideJob.redis.sadd 'jobs', id
     job = SideJob::Job.new(id)
 
-    job.set({queue: queue, class: klass, args: args, status: 'completed', created_by: by, created_at: SideJob.timestamp})
+    redis_key = job.redis_key
+    SideJob.redis.multi do |multi|
+      multi.set "#{redis_key}:worker", {queue: queue, class: klass, args: args}.to_json
+      multi.set "#{redis_key}:status", 'completed'
+      multi.set "#{redis_key}:created_at", SideJob.timestamp
+      multi.set "#{redis_key}:created_by", by
+    end
 
     if parent
       raise 'Missing name option for job with a parent' unless name

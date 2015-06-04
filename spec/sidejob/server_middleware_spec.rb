@@ -73,7 +73,7 @@ describe SideJob::ServerMiddleware do
     it 'sets the ran_at time at the beginning of the run' do
       now = Time.now
       allow(Time).to receive(:now) { now }
-      process(@job) { |worker| @ran_at = worker.get(:ran_at) }
+      process(@job) { |worker| @ran_at = worker.info[:ran_at] }
       expect(@ran_at).to eq SideJob.timestamp
       expect(@job.status).to eq 'completed'
     end

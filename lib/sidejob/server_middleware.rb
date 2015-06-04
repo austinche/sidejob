@@ -87,7 +87,7 @@ module SideJob
         @worker.terminate
       else
         # normal run
-        @worker.set ran_at: SideJob.timestamp
+        SideJob.redis.set "#{@worker.redis_key}:ran_at", SideJob.timestamp
         @worker.status = 'running'
         yield
         @worker.status = 'completed' if @worker.status == 'running'

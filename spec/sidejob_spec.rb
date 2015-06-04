@@ -54,13 +54,13 @@ describe SideJob do
       now = Time.now
       allow(Time).to receive(:now) { now }
       job = SideJob.queue('testq', 'TestWorker')
-      expect(job.get(:created_at)).to eq(SideJob.timestamp)
+      expect(job.info[:created_at]).to eq(SideJob.timestamp)
     end
 
     it 'can specify job args' do
       job = SideJob.queue('testq', 'TestWorker', args: [1,2])
       expect(job.status).to eq 'queued'
-      expect(job.get(:args)).to eq [1,2]
+      expect(job.info[:args]).to eq [1,2]
       expect_any_instance_of(TestWorker).to receive(:perform).with(1, 2)
       SideJob::Worker.drain_queue
     end
@@ -109,7 +109,7 @@ describe SideJob do
 
     it 'can specify a by string' do
       job = SideJob.queue('testq', 'TestWorker', by: 'test:sidejob')
-      expect(job.get(:created_by)).to eq 'test:sidejob'
+      expect(job.info[:created_by]).to eq 'test:sidejob'
     end
 
     it 'defaults to empty by string' do
