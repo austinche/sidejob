@@ -72,6 +72,74 @@ describe SideJob::Job do
     end
   end
 
+  describe '#aliases' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+    end
+
+    it 'returns empty array if no aliases' do
+      expect(@job.aliases).to eq []
+    end
+
+    it 'returns all aliases' do
+      @job.add_alias('abc')
+      @job.add_alias('xyz')
+      expect(@job.aliases).to match_array ['abc', 'xyz']
+    end
+  end
+
+  describe '#add_alias' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+      @job.add_alias('abc')
+    end
+
+    it 'adds an alias' do
+      expect(SideJob.redis.smembers("#{@job.redis_key}:aliases")).to eq ['abc']
+      expect(SideJob.redis.hgetall('jobs:aliases')).to eq({'abc' => @job.id.to_s})
+      @job.add_alias('xyz')
+      expect(SideJob.redis.smembers("#{@job.redis_key}:aliases")).to match_array ['abc', 'xyz']
+      expect(SideJob.redis.hgetall('jobs:aliases')).to eq({'abc' => @job.id.to_s, 'xyz' => @job.id.to_s})
+      expect(@job.aliases).to match_array ['abc', 'xyz']
+    end
+
+    it 'does nothing if name is already alias' do
+      @job.add_alias('abc')
+      expect(SideJob.redis.smembers("#{@job.redis_key}:aliases")).to eq ['abc']
+      expect(SideJob.redis.hgetall('jobs:aliases')).to eq({'abc' => @job.id.to_s})
+    end
+
+    it 'raises error if name is an alias for another job' do
+      @job2 = SideJob.queue('testq', 'TestWorker')
+      expect { @job2.alias_as('abc') }.to raise_error
+    end
+
+    it 'raises error if name is invalid' do
+      expect { @job.add_alias('1234') }.to raise_error
+      expect { @job.add_alias('!') }.to raise_error
+      expect { @job.add_alias('') }.to raise_error
+      expect { @job.add_alias(nil) }.to raise_error
+    end
+  end
+
+  describe '#remove_alias' do
+    before do
+      @job = SideJob.queue('testq', 'TestWorker')
+      @job.add_alias('abc')
+    end
+
+    it 'removes an existing alias' do
+      @job.add_alias('xyz')
+      expect(@job.aliases).to match_array ['abc', 'xyz']
+      @job.remove_alias('xyz')
+      expect(@job.aliases).to match_array ['abc']
+    end
+
+    it 'throws an error if alias does not exist' do
+      expect { @job.remove_alias('xyz') }.to raise_error
+    end
+  end
+
   describe '#run' do
     before do
       @job = SideJob.queue('testq', 'TestWorker')
@@ -373,6 +441,7 @@ describe SideJob::Job do
 
     it 'recursively deletes jobs' do
       child = SideJob.queue('testq', 'TestWorker', parent: @job, name: 'child')
+      child.add_alias('myjob')
       expect(@job.status).to eq('queued')
       expect(child.status).to eq('queued')
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be > 0
@@ -382,6 +451,7 @@ describe SideJob::Job do
       expect(SideJob.redis {|redis| redis.keys('job:*').length}).to be(0)
       expect(@job.exists?).to be false
       expect(child.exists?).to be false
+      expect(SideJob.find('myjob')).to be nil
     end
 
     it 'deletes data on input and output ports' do
@@ -400,6 +470,15 @@ describe SideJob::Job do
       child.status = 'terminated'
       child.delete
       expect(@job.children.size).to eq 0
+    end
+
+    it 'removes any aliases' do
+      @job.add_alias 'job'
+      @job.status = 'terminated'
+      expect(SideJob.find('job')).to eq @job
+      @job.delete
+      expect(SideJob.find('job')).to be nil
+      expect(SideJob.redis.hget('jobs:aliases', 'job')).to be nil
     end
   end
 

@@ -33,6 +33,7 @@ module SideJob
     # Retrieve the job's status.
     # @return [String] Job status
     def status
+      check_exists
       get(:status)
     end
 
@@ -40,6 +41,41 @@ module SideJob
     # @param status [String] The new job status
     def status=(status)
       set({status: status})
+    end
+
+    # Returns all aliases for the job.
+    # @return [Array<String>] Job aliases
+    def aliases
+      SideJob.redis.smembers "#{redis_key}:aliases"
+    end
+
+    # Add an alias for the job.
+    # @param name [String] Alias for the job. Must begin with an alphabetic character.
+    # @raise [RuntimeError] Error if name is invalid or the name already refers to another job
+    def add_alias(name)
+      check_exists
+      raise "#{name} is not a valid alias" unless name =~ /^[[:alpha:]]/
+      current = SideJob.redis.hget('jobs:aliases', name)
+      if current
+        raise "#{name} is already used by job #{current}"  if current.to_i != id
+      else
+        SideJob.redis.multi do |multi|
+          multi.hset 'jobs:aliases', name, id
+          multi.sadd "#{redis_key}:aliases", name
+        end
+      end
+    end
+
+    # Remove an alias for the job.
+    # @param name [String] Alias to remove for the job
+    # @raise [RuntimeError] Error if name is not an alias for this job
+    def remove_alias(name)
+      check_exists
+      raise "#{name} is not an alias for job #{id}" unless SideJob.redis.sismember("#{redis_key}:aliases", name)
+      SideJob.redis.multi do |multi|
+        multi.hdel 'jobs:aliases', name
+        multi.srem "#{redis_key}:aliases", name
+      end
     end
 
     # Run the job.
@@ -53,8 +89,6 @@ module SideJob
     # @param wait [Float] Run in the specified number of seconds
     # @return [SideJob::Job, nil] The job that was run or nil if no job was run
     def run(parent: false, force: false, at: nil, wait: nil)
-      check_exists
-
       if parent
         pj = self.parent
         return pj ? pj.run(force: force, at: at, wait: wait) : nil
@@ -110,6 +144,7 @@ module SideJob
     # Queues a child job, setting parent and by to self.
     # @see SideJob.queue
     def queue(queue, klass, **options)
+      check_exists
       SideJob.queue(queue, klass, options.merge({parent: self, by: "job:#{id}"}))
     end
 
@@ -129,9 +164,7 @@ module SideJob
     # Returns the parent job.
     # @return [SideJob::Job, nil] Parent job or nil if none
     def parent
-      parent = get(:parent)
-      parent = SideJob.find(parent) if parent
-      parent
+      SideJob.find(get(:parent))
     end
 
     # Disown a child job so that it no longer has a parent.
@@ -157,6 +190,7 @@ module SideJob
     # @param orphan [SideJob::Job] Job that has no parent
     # @param name [String] Name of child job (must be unique among children)
     def adopt(orphan, name)
+      check_exists
       raise "Job #{id} cannot adopt itself as a child" if orphan == self
       raise "Job #{id} cannot adopt job #{orphan.id} as it already has a parent" unless orphan.parent.nil?
       raise "Job #{id} cannot adopt job #{orphan.id} as child name #{name} is not unique" if name.nil? || ! child(name).nil?
@@ -176,14 +210,16 @@ module SideJob
       parent.disown(self) if parent
 
       children = self.children
+      aliases = self.aliases
 
       # delete all SideJob keys and disown all children
       ports = inports.map(&:redis_key) + outports.map(&:redis_key)
       SideJob.redis.multi do |multi|
         multi.srem 'jobs', id
         multi.del redis_key
-        multi.del ports + %w{children inports outports inports:default outports:default inports:channels outports:channels}.map {|x| "#{redis_key}:#{x}" }
+        multi.del ports + %w{aliases children inports outports inports:default outports:default inports:channels outports:channels}.map {|x| "#{redis_key}:#{x}" }
         children.each_value { |child| multi.hdel child.redis_key, 'parent' }
+        aliases.each { |name| multi.hdel('jobs:aliases', name) }
       end
 
       # recursively delete all children
@@ -239,8 +275,8 @@ module SideJob
     # Returns the entirety of the job's state with both standard and custom keys.
     # @return [Hash{String => Object}] Job state
     def state
+      check_exists
       state = SideJob.redis.hgetall(redis_key)
-      raise "Job #{id} does not exist!" if ! state
       state.update(state) {|k,v| JSON.parse("[#{v}]")[0]}
       state
     end
@@ -276,6 +312,7 @@ module SideJob
     # @param retry_delay [Float] Maximum seconds to wait (actual will be randomized) before retry getting lock
     # @return [String, nil] Lock token that should be passed to {#unlock} or nil if lock was not acquired
     def lock(ttl, retries: 3, retry_delay: 0.2)
+      check_exists
       retries.times do
         token = SecureRandom.uuid
         if SideJob.redis.set("#{redis_key}:lock", token, {nx: true, ex: ttl})
@@ -291,6 +328,7 @@ module SideJob
     # @param ttl [Fixnum] Refresh lock expiration for the given time in seconds
     # @return [Boolean] Whether the timeout was set
     def refresh_lock(ttl)
+      check_exists
       SideJob.redis.expire "#{redis_key}:lock", ttl
     end
 
@@ -298,6 +336,7 @@ module SideJob
     # @param token [String] Token returned by {#lock}
     # @return [Boolean] Whether the job was unlocked
     def unlock(token)
+      check_exists
       return SideJob.redis.eval('
         if redis.call("get",KEYS[1]) == ARGV[1] then
           return redis.call("del",KEYS[1])
@@ -344,6 +383,7 @@ module SideJob
     # @param type [:in, :out] Input or output ports
     # @param ports [Hash{Symbol,String => Hash}] Port configuration. Port name to options.
     def set_ports(type, ports)
+      check_exists
       current = SideJob.redis.smembers("#{redis_key}:#{type}ports") || []
       config = SideJob::Worker.config(get(:queue), get(:class))
 
@@ -400,9 +440,9 @@ module SideJob
   class Job
     include JobMethods
 
-    # @param id [Integer] Job id
-    def initialize(id)
-      @id = id.to_i
+    # @param alias_or_id [String, Integer] Job alias or id
+    def initialize(alias_or_id)
+      @id = (SideJob.redis.hget('jobs:aliases', alias_or_id.to_s) || alias_or_id).to_i
       check_exists
     end
   end

@@ -18,6 +18,7 @@ Jobs
     * This ID is used as Sidekiq's jid
     * Note: a job can be queued multiple times on Sidekiq's queues
     * Therefore, Sidekiq's jids are not unique
+* Jobs can also have any number of globally unique string names as aliases
 * Jobs have a queue and class name
 * Jobs have any number of input and output ports
 * A job can have any number of named child jobs
@@ -114,8 +115,9 @@ Additional keys used by SideJob:
 
 * workers:(queue) - Hash mapping class name to worker configuration. A worker should define
   the inports and outports hashes that map port names to port options.
-* jobs:last_id - Stores the last job ID (we use incrementing integers from 1)
-* jobs - Set with all job ids
+* jobs - Set with all job ids.
+* jobs:last_id - Stores the last job ID (we use incrementing integers from 1).
+* jobs:aliases - Hash mapping a name to job id.
 * job:(id) - Hash containing job state. Each value is JSON encoded.
     * status - job status
     * queue - queue name
@@ -126,6 +128,7 @@ Additional keys used by SideJob:
     * created_by - string indicating the entity that created the job. SideJob uses job:(id) for jobs created by another job.
     * ran_at - timestamp of the start of the last run
     * Any additional keys used by the worker to track internal job state
+* job:(id):aliases - Set with job aliases
 * job:(id):in:(inport) and job:(id):out:(outport) - List with unread port data. New data is pushed on the right.
 * job:(id):inports and job:(id):outports - Set containing all existing port names.
 * job:(id):inports:default and job:(id):outports:default - Hash mapping port name to JSON encoded default value for port.

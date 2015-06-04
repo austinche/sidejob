@@ -124,6 +124,12 @@ describe SideJob do
       expect(SideJob.find(job.id)).to eq(job)
     end
 
+    it 'returns a job object by alias' do
+      job = SideJob.queue('testq', 'TestWorker')
+      job.add_alias 'myjob'
+      expect(SideJob.find('myjob')).to eq(job)
+    end
+
     it 'returns nil if the job does not exist' do
       expect(SideJob.find('job')).to be_nil
     end

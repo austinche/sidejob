@@ -50,7 +50,7 @@ module SideJob
 
     # To prevent race conditions, we generate the id and set all data in redis before queuing the job to sidekiq
     # Otherwise, sidekiq may start the job too quickly
-    id = SideJob.redis.incr('jobs:last_id').to_s
+    id = SideJob.redis.incr('jobs:last_id')
     SideJob.redis.sadd 'jobs', id
     job = SideJob::Job.new(id)
 
@@ -68,12 +68,11 @@ module SideJob
     job.run(at: at)
   end
 
-  # Finds a job by id
-  # @param job_id [Integer, nil] Job Id
+  # Finds a job by name or id.
+  # @param name_or_id [String, Integer] Job name or id
   # @return [SideJob::Job, nil] Job object or nil if it doesn't exist
-  def self.find(job_id)
-    return nil unless job_id
-    job = SideJob::Job.new(job_id) rescue nil
+  def self.find(name_or_id)
+    SideJob::Job.new(name_or_id) rescue nil
   end
 
   # Returns the current timestamp as a iso8601 string
