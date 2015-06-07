@@ -34,7 +34,7 @@ module SideJob
       if token
         begin
           SideJob.redis.del "#{@worker.redis_key}:lock:worker"
-          SideJob.log_context(job: @worker.id) do
+          SideJob.context(job: @worker.id) do
             case @worker.status
               when 'queued'
                 run_worker { yield }

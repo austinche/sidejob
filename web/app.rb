@@ -178,7 +178,7 @@ class SideJob::Web < Sinatra::Base
     begin
       request.body.rewind
       params = JSON.parse(request.body.read) rescue {}
-      SideJob.log_context(params['log_context'] || {}) do
+      SideJob.context(params['context'] || {}) do
         (yield params).to_json
       end
     rescue => e

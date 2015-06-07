@@ -87,21 +87,21 @@ module SideJob
     Time.now.utc.iso8601(9)
   end
 
-  # Publishes a log message
+  # Publishes a log message using the current SideJob context.
   # @param entry [Hash] Log entry
   def self.log(entry)
-    context = (Thread.current[:sidejob_log_context] || {}).merge(timestamp: SideJob.timestamp)
+    context = (Thread.current[:sidejob_context] || {}).merge(timestamp: SideJob.timestamp)
     SideJob.publish '/sidejob/log', context.merge(entry)
   end
 
-  # Adds the given metadata to all {SideJob.log} calls within the block.
-  # @param metadata [Hash] Metadata to be merged with each log entry
-  def self.log_context(metadata, &block)
-    previous = Thread.current[:sidejob_log_context]
-    Thread.current[:sidejob_log_context] = (previous || {}).merge(metadata.symbolize_keys)
+  # Adds to the current SideJob context within the block.
+  # @param data [Hash] Data to be merged into the current context
+  def self.context(data, &block)
+    previous = Thread.current[:sidejob_context]
+    Thread.current[:sidejob_context] = (previous || {}).merge(data.symbolize_keys)
     yield
   ensure
-    Thread.current[:sidejob_log_context] = previous
+    Thread.current[:sidejob_context] = previous
   end
 
   # Publishes a message up the channel hierarchy to jobs by writing to ports subscribed to the channel.

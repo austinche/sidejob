@@ -377,13 +377,13 @@ describe SideJob::Port do
       @out1.connect_to(@port1)
     end
 
-    it 'can use SideJob.log_context to specify additional metadata' do
+    it 'can use SideJob.context to add context to log entry' do
       now = Time.now
       allow(Time).to receive(:now) { now }
       @out1.write 1
       @out1.write [2,3]
       expect(SideJob).to receive(:publish).with('/sidejob/log', {user: 'test', read: [{job: @out1.job.id, outport: :out1, data: [1,[2,3]]}], write: [{job: @out1.job.id, inport: :port1, data: [1,[2,3]]}], timestamp: SideJob.timestamp})
-      SideJob.log_context(user: 'test') do
+      SideJob.context(user: 'test') do
         @out1.connect_to(@port1)
       end
     end
@@ -495,13 +495,13 @@ describe SideJob::Port do
       end
     end
 
-    it 'works with SideJob.log_context' do
+    it 'works with SideJob.context' do
       expect(SideJob).to receive(:publish).with('/sidejob/log', {
           user: 'foo',
           read: [{job: @port1.job.id, inport: :port1, data: ['abc']}],
           write: [{job: @port1.job.id, inport: :port1, data: ['abc']}],
           timestamp: SideJob.timestamp})
-      SideJob.log_context(user: 'foo') do
+      SideJob.context(user: 'foo') do
         SideJob::Port.log_group do
           @port1.write 'abc'
           @port1.read

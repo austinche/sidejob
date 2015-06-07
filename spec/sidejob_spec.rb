@@ -150,22 +150,22 @@ describe SideJob do
     end
   end
 
-  describe '.log_context' do
+  describe '.context' do
     before do
       now = Time.now
       allow(Time).to receive(:now) { now }
     end
 
-    it 'adds metadata to logs within the group' do
+    it 'adds data to logs within the group' do
       expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, data2: 2, abc: 123, timestamp: SideJob.timestamp})
-      SideJob.log_context(data1: 1, data2: 2) do
+      SideJob.context(data1: 1, data2: 2) do
         SideJob.log({abc: 123})
       end
     end
 
-    it 'does not add metadata to logs outside of the group' do
+    it 'does not add data to logs outside of the group' do
       expect(SideJob).to receive(:publish).with('/sidejob/log', {abc: 123, timestamp: SideJob.timestamp})
-      SideJob.log_context(data1: 1, data2: 2) {}
+      SideJob.context(data1: 1, data2: 2) {}
       SideJob.log({abc: 123})
     end
 
@@ -174,9 +174,9 @@ describe SideJob do
       expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, data2: 2, timestamp: SideJob.timestamp, x: 2})
       expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, timestamp: SideJob.timestamp, x: 3})
       expect(SideJob).to receive(:publish).with('/sidejob/log', {timestamp: SideJob.timestamp, x: 4})
-      SideJob.log_context(data1: 1) do
+      SideJob.context(data1: 1) do
         SideJob.log({x: 1})
-        SideJob.log_context(data2: 2) do
+        SideJob.context(data2: 2) do
           SideJob.log({x: 2})
         end
         SideJob.log({x: 3})
