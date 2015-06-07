@@ -1,8 +1,10 @@
+require 'delegate'
+
 module SideJob
   # Represents an input or output port from a Job
   class Port
     # Returned by {#read} and {#default} to indicate no data
-    class None < Object; end
+    class None; end
 
     attr_reader :job, :type, :name
 
@@ -39,11 +41,10 @@ module SideJob
       size > 0 || default?
     end
 
-    # Returns the port default value. To distinguish a null default value vs no default, use {#default?}.
-    # @return [Object, None] The default value on the port or {SideJob::Port::None} if none
+    # Returns the port default value. See {.decode_data} for details about the return value.
+    # @return [Delegator, None] The default value on the port or {SideJob::Port::None} if none
     def default
-      val = SideJob.redis.hget("#{@job.redis_key}:#{type}ports:default", @name)
-      val ? parse_json(val) : None
+      self.class.decode_data SideJob.redis.hget("#{@job.redis_key}:#{type}ports:default", @name)
     end
 
     # Returns if the port has a default value.
@@ -58,7 +59,7 @@ module SideJob
       if val == None
         SideJob.redis.hdel "#{@job.redis_key}:#{type}ports:default", @name
       else
-        SideJob.redis.hset "#{@job.redis_key}:#{type}ports:default", @name, val.to_json
+        SideJob.redis.hset "#{@job.redis_key}:#{type}ports:default", @name, self.class.encode_data(val)
       end
     end
 
@@ -93,7 +94,7 @@ module SideJob
       if Thread.current[:sidejob_port_write_default]
         self.default = data
       else
-        SideJob.redis.rpush redis_key, data.to_json
+        SideJob.redis.rpush redis_key, self.class.encode_data(data)
       end
       @job.run(parent: type != :in) # run job if inport otherwise run parent
       log(write: [ { port: self, data: [data] } ])
@@ -105,12 +106,14 @@ module SideJob
       end
     end
 
-    # Reads the oldest data from the port. Returns the default value if no data and there is a default.
-    # @return [Object, None] First data from port or {SideJob::Port::None} if there is no data and no default.
+    # Reads the oldest data from the port. See {.decode_data} for details about the wrapped return value.
+    # Returns the {#default} if there is no port data and there is a default.
+    # Returns {SideJob::Port::None} if there is no port data and no default.
+    # @return [Delegator, None] First data from port or {SideJob::Port::None} if there is no data and no default
     def read
       data = SideJob.redis.lpop(redis_key)
       if data
-        data = parse_json(data)
+        data = self.class.decode_data(data)
       elsif default?
         data = default
       else
@@ -165,7 +168,7 @@ module SideJob
         end
       end
 
-      data.map! {|x| parse_json x}
+      data.map! {|x| self.class.decode_data(x)}
       if data.length > 0
         log(read: [{ port: self, data: data }], write: ports.map { |port| {port: port, data: data} })
 
@@ -222,6 +225,42 @@ module SideJob
       end
     end
 
+    # Encodes data as JSON with the current SideJob context.
+    # @param data [Object] JSON encodable data
+    # @return [String] The encoded JSON value
+    def self.encode_data(data)
+      if Thread.current[:sidejob_context]
+        { context: Thread.current[:sidejob_context], data: data }.to_json
+      else
+        { data: data }.to_json
+      end
+    end
+
+    # Decodes data encoded with {.encode_data}.
+    # The value is returned as a Delegator object that behaves mostly like the underlying value.
+    # Use {Delegator#__getobj__} to get directly at the underlying value.
+    # The returned delegator object has a sidejob_context method that returns the SideJob context.
+    # @param data [String, nil] Data to decode
+    # @return [Delegator, None] The decoded value or {SideJob::Port::None} if data is nil
+    def self.decode_data(data)
+      if data
+        data = JSON.parse(data)
+        klass = Class.new(SimpleDelegator) do
+          # Allow comparing two SimpleDelegator objects
+          def ==(obj)
+            return self.__getobj__ == obj.__getobj__ if obj.is_a?(SimpleDelegator)
+            super
+          end
+        end
+        klass.send(:define_method, :sidejob_context) do
+          data['context'] || {}
+        end
+        klass.new(data['data'])
+      else
+        None
+      end
+    end
+
     private
 
     def self._really_log(entry)
@@ -250,13 +289,6 @@ module SideJob
       if ! Thread.current[:sidejob_port_group]
         self.class._really_log(entry)
       end
-    end
-
-    # Wrapper around JSON.parse to also handle primitive types.
-    # @param data [String] Data to parse
-    # @return [Object, nil]
-    def parse_json(data)
-      JSON.parse("[#{data}]")[0]
     end
 
     # Check if the port exists, dynamically creating it if it does not exist and a * port exists for the job

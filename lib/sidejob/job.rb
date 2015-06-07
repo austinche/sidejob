@@ -423,7 +423,7 @@ module SideJob
         # replace port defaults
         defaults = ports.map do |port, options|
           if options.has_key?('default')
-            [port, options['default'].to_json]
+            [port, SideJob::Port.encode_data(options['default'])]
           else
             nil
           end

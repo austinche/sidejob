@@ -119,8 +119,8 @@ describe SideJob::Port do
 
     it 'can return null default value' do
       @port1.default = nil
-      expect(@port1.default).to be nil
-      expect(@port1.default?).to be true
+      expect(@port1.default).to eq nil
+      expect(@port1.default?).to eq true
     end
   end
 
@@ -190,9 +190,9 @@ describe SideJob::Port do
 
   describe '#write' do
     it 'can write different types of data to a port' do
-      ['abc', 123, true, false, nil, {abc: 123}, [1, {foo: true}]].each {|x| @port1.write x}
-      data = SideJob.redis.lrange(@port1.redis_key, 0, -1)
-      expect(data).to eq(['"abc"', '123', 'true', 'false', 'null', '{"abc":123}', '[1,{"foo":true}]'])
+      data = ['abc', 123, true, false, nil, {'abc' => 123}, [1, {'foo' => true}]]
+      data.each {|x| @port1.write x}
+      expect(@port1.entries).to eq(data)
     end
 
     it 'logs writes' do
@@ -277,7 +277,7 @@ describe SideJob::Port do
 
     it 'can use false default value' do
       port = @job.input(:default_false)
-      expect(port.read).to be false
+      expect(port.read).to eq false
     end
 
     it 'logs reads' do
@@ -521,6 +521,44 @@ describe SideJob::Port do
         data['x'].push 3
         @port1.write data
         expect(@port1.read).to eq data
+      end
+    end
+  end
+
+  describe '.encode_data' do
+    it 'encodes data with no context' do
+      expect(JSON.parse(SideJob::Port.encode_data(5))).to eq({ 'data' => 5 })
+    end
+
+    it 'handles context' do
+      SideJob.context({xyz: 456}) do
+        expect(JSON.parse(SideJob::Port.encode_data([1,2]))).to eq({ 'context' => {'xyz' => 456}, 'data' => [1,2] })
+      end
+    end
+  end
+
+  describe '.decode_data' do
+    it 'returns None if no data' do
+      expect(SideJob::Port.decode_data(nil)).to be SideJob::Port::None
+    end
+
+    it 'decodes object with no context' do
+      x = SideJob::Port.decode_data(SideJob::Port.encode_data(1.23))
+      expect(x.sidejob_context).to eq({})
+    end
+
+    it 'handles context' do
+      SideJob.context({abc: 'foo'}) do
+        SideJob.context({xyz: 456}) do
+          x = SideJob::Port.decode_data(SideJob::Port.encode_data(nil))
+          expect(x.sidejob_context).to eq({'abc' => 'foo', 'xyz' => 456})
+        end
+      end
+    end
+
+    it 'decoded data should equal original data' do
+      ['abc', [1,2], {'abc' => [1,2]}, 1, 1.23, true, false, nil].each do |x|
+        expect(SideJob::Port.decode_data(SideJob::Port.encode_data(x))).to eq x
       end
     end
   end
