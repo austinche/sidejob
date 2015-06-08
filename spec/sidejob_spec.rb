@@ -217,6 +217,14 @@ describe SideJob do
       expect(job.input(:yourport).entries).to eq [[1,2]]
     end
 
+    it 'includes original channel in context' do
+      job = SideJob.queue('testq', 'TestWorker', inports: {myport: {channels: ['/namespace']}})
+      SideJob.publish('/namespace/mychannel', [1,2])
+      data = job.input(:myport).read
+      expect(data).to eq [1,2]
+      expect(data.sidejob_context).to eq({'channel' => '/namespace/mychannel'})
+    end
+
     it 'removes jobs that are no longer subscribed' do
       job = SideJob.queue('testq', 'TestWorker', inports: {myport: {channels: ['/namespace/mychannel']}})
       job.input(:myport).channels = []

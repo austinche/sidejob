@@ -114,32 +114,36 @@ module SideJob
 
     job_subs = {}
 
-    # walk up the channel hierarchy
-    Pathname.new(channel).ascend do |channel|
-      channel = channel.to_s
-      jobs = SideJob.redis.smembers "channel:#{channel}"
-      jobs.each do |id|
-        job = SideJob.find(id)
-        if ! job_subs.has_key?(id)
-          job_subs[id] = {}
-          if job
-            SideJob.redis.hgetall("#{job.redis_key}:inports:channels").each_pair do |port, channels|
-              channels = JSON.parse(channels)
-              channels.each do |ch|
-                job_subs[id][ch] ||= []
-                job_subs[id][ch] << port
+    # Set the context to the original channel so that a job that subscribes to a higher channel can determine
+    # the original channel that the message was sent to.
+    SideJob.context({channel: channel}) do
+      # walk up the channel hierarchy
+      Pathname.new(channel).ascend do |channel|
+        channel = channel.to_s
+        jobs = SideJob.redis.smembers "channel:#{channel}"
+        jobs.each do |id|
+          job = SideJob.find(id)
+          if ! job_subs.has_key?(id)
+            job_subs[id] = {}
+            if job
+              SideJob.redis.hgetall("#{job.redis_key}:inports:channels").each_pair do |port, channels|
+                channels = JSON.parse(channels)
+                channels.each do |ch|
+                  job_subs[id][ch] ||= []
+                  job_subs[id][ch] << port
+                end
               end
             end
           end
-        end
 
-        if job && job_subs[id] && job_subs[id][channel]
-          job_subs[id][channel].each do |port|
-            job.input(port).write message
+          if job && job_subs[id] && job_subs[id][channel]
+            job_subs[id][channel].each do |port|
+              job.input(port).write message
+            end
+          else
+            # Job is gone or no longer subscribed to this channel
+            SideJob.redis.srem "channel:#{channel}", id
           end
-        else
-          # Job is gone or no longer subscribed to this channel
-          SideJob.redis.srem "channel:#{channel}", id
         end
       end
     end
