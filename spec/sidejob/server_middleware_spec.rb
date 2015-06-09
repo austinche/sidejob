@@ -1,6 +1,17 @@
 require 'spec_helper'
 
 describe SideJob::ServerMiddleware do
+  class TestWorkerStartup
+    include SideJob::Worker
+    register
+    attr_accessor :startup_called
+    def startup
+      @startup_called = true
+    end
+    def perform
+    end
+  end
+
   class TestWorkerShutdown
     include SideJob::Worker
     register
@@ -186,6 +197,14 @@ describe SideJob::ServerMiddleware do
         worker.suspend
       end
       expect(@job.status).to eq 'queued'
+    end
+  end
+
+  describe 'handles job startup' do
+    it 'calls worker startup method' do
+      @job = SideJob.queue(@queue, 'TestWorkerStartup')
+      worker = process(@job) { }
+      expect(worker.startup_called).to be true
     end
   end
 

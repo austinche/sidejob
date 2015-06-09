@@ -76,6 +76,7 @@ Workers
 * Workers are required to register themselves
 * A Sidekiq process should only handle a single queue so all registered workers in the process are for the same queue
 * It should have a perform method that is called on each run
+* It may have a startup method that is called once before the first run of the job
 * It may have a shutdown method that is called before the job is terminated
 * Workers should be idempotent as they may be run more than once for the same state
 * SideJob ensures only one worker thread runs for a given job at a time

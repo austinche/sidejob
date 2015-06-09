@@ -87,6 +87,10 @@ module SideJob
         @worker.terminate
       else
         # normal run
+
+        # if ran_at is not set, then this is the first run of the job, so call the startup method if it exists
+        @worker.startup if @worker.respond_to?(:startup) && ! SideJob.redis.exists("#{@worker.redis_key}:ran_at")
+
         SideJob.redis.set "#{@worker.redis_key}:ran_at", SideJob.timestamp
         @worker.status = 'running'
         yield
