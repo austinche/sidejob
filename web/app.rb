@@ -12,9 +12,25 @@ class SideJob::Web < Sinatra::Base
     200
   end
 
-  # provide some limited info for now
+  # only provide version for now
   get '/' do
-    { version: '1.0' }.to_json
+    { version: SideJob::VERSION }.to_json
+  end
+
+  # publish a message to a channel
+  post '/publish' do
+    api_call do |params|
+      SideJob.publish params['channel'], params['message']
+      nil
+    end
+  end
+
+  # add a log entry
+  post '/log' do
+    api_call do |params|
+      SideJob.log(params['entry'])
+      nil
+    end
   end
 
   # queue a new job
@@ -80,12 +96,13 @@ class SideJob::Web < Sinatra::Base
           if data == SideJob::Port::None
             {}
           else
-            { data: data }
+            { data: data, context: data.sidejob_context }
           end
 
         # read all and return an array of data
         when 'entries'
-          { entries: port.entries }
+          entries = port.entries
+          { entries: entries.map {|x| { data: x.data, context: x.sidejob_context } } }
 
         # port write
         when 'write'
@@ -152,13 +169,6 @@ class SideJob::Web < Sinatra::Base
     job_api do |job, params|
       job.disown(params['name'])
       nil
-    end
-  end
-
-  # add a log entry
-  post '/logs' do
-    api_call do |params|
-      SideJob.log(params['entry'])
     end
   end
 
