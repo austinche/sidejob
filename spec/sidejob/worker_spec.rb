@@ -20,6 +20,11 @@ describe SideJob::Worker do
       SideJob::Worker.register_all('q1')
       expect(SideJob.redis.hget('workers:q1', 'foo')).to be nil
     end
+
+    it 'publishes message containing worker registry' do
+      expect(SideJob).to receive(:publish).with('/sidejob/workers/q1', SideJob::Worker.registry, disable_log: true)
+      SideJob::Worker.register_all('q1')
+    end
   end
 
   describe '.config' do

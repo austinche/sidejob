@@ -68,6 +68,7 @@ SideJob uses channels starting with /sidejob. The channels used by sidejob:
 * `/sidejob/log` : Log message
     * { timestamp: (date), job: (id), read: [{ job: (id), (in|out)port: (port), data: [...] }, ...], write: [{ job: (id), (in|out)port: (port), data: [...] }, ...] }
     * { timestamp: (date), job: (id), error: (message), backtrace: (exception backtrace) }
+* `/sidejob/workers/[queue]` : Worker registry updated for the queue
 
 Workers
 -------

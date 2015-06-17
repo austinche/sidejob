@@ -16,6 +16,7 @@ module SideJob
           multi.del "workers:#{queue}"
           multi.hmset "workers:#{queue}", @registry.map {|key, val| [key, val.to_json]}.flatten(1) if @registry.size > 0
         end
+        SideJob.publish "/sidejob/workers/#{queue}", @registry, disable_log: true
       end
 
       # Returns the configuration registered for a worker.
