@@ -75,18 +75,14 @@ describe SideJob::Worker do
     end
 
     it 'logs input and output from them' do
-      now = Time.now
-      allow(Time).to receive(:now) { now }
       @job.input(:in1).write 1
       @job.input(:in1).write 2
       @job.input(:in2).write ['a', 'b']
       @job.input(:in2).write ['c', 'd']
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {
-          timestamp: SideJob.timestamp,
+      expect(SideJob).to receive(:log).with({
           read: [{job: @job.id, inport: :in1, data: [1]}, {job: @job.id, inport: :in2, data: [['a', 'b']]}],
           write: [{job: @job.id, outport: :out1, data: [[1, 'a']]}]})
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {
-          timestamp: SideJob.timestamp,
+      expect(SideJob).to receive(:log).with({
           read: [{job: @job.id, inport: :in1, data: [2]}, {job: @job.id, inport: :in2, data: [['c', 'd']]}],
           write: [{job: @job.id, outport: :out1, data: [[2, 'c']]}]})
       @worker.for_inputs(:in1, :in2) do |in1, in2|

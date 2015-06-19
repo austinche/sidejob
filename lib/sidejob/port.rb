@@ -89,19 +89,25 @@ module SideJob
 
     # Write data to the port. If port in an input port, runs the job.
     # @param data [Object] JSON encodable data to write to the port
-    def write(data)
+    # @param options [Hash] Additional options to be used for reading/writing the data
+    #   - :disable_log - if true, do not log the writing or reading of the data
+    def write(data, options={})
+      options = options.symbolize_keys
+
       # For {SideJob::Worker#for_inputs}, if this is set, we instead set the port default on writes
       if Thread.current[:sidejob_port_write_default]
         self.default = data
       else
-        SideJob.redis.rpush redis_key, self.class.encode_data(data)
+        SideJob.redis.rpush redis_key, self.class.encode_data(data, options)
       end
+
       @job.run(parent: type != :in) # run job if inport otherwise run parent
-      log(write: [ { port: self, data: [data] } ])
+
+      log(write: [ { port: self, data: [data] } ]) unless options[:disable_log]
 
       if type == :out
         channels.each do |chan|
-          SideJob.publish chan, data
+          SideJob.publish chan, data, options
         end
       end
     end
@@ -120,7 +126,7 @@ module SideJob
         return None
       end
 
-      log(read: [ { port: self, data: [data] } ])
+      log(read: [ { port: self, data: [data] } ]) unless data.sidejob_options['disable_log']
 
       data
     end
@@ -176,7 +182,7 @@ module SideJob
         ports.each do |port|
           if port.type == :out
             port.channels.each do |chan|
-              data.each { |x| SideJob.publish chan, x }
+              data.each { |x| SideJob.publish chan, x, x.sidejob_options }
             end
           end
         end
@@ -227,19 +233,20 @@ module SideJob
 
     # Encodes data as JSON with the current SideJob context.
     # @param data [Object] JSON encodable data
+    # @param options [Hash] Options to encode with the data
     # @return [String] The encoded JSON value
-    def self.encode_data(data)
-      if Thread.current[:sidejob_context]
-        { context: Thread.current[:sidejob_context], data: data }.to_json
-      else
-        { data: data }.to_json
-      end
+    def self.encode_data(data, options={})
+      encoded = { data: data }
+      encoded[:context] = Thread.current[:sidejob_context] if Thread.current[:sidejob_context]
+      encoded[:options] = options if options && options.length > 0
+      encoded.to_json
     end
 
     # Decodes data encoded with {.encode_data}.
     # The value is returned as a Delegator object that behaves mostly like the underlying value.
     # Use {Delegator#__getobj__} to get directly at the underlying value.
-    # The returned delegator object has a sidejob_context method that returns the SideJob context.
+    # The returned delegator object has a sidejob_context method that returns the SideJob context
+    # and a sidejob_options method that returns the data options.
     # @param data [String, nil] Data to decode
     # @return [Delegator, None] The decoded value or {SideJob::Port::None} if data is nil
     def self.decode_data(data)
@@ -254,6 +261,9 @@ module SideJob
         end
         klass.send(:define_method, :sidejob_context) do
           data['context'] || {}
+        end
+        klass.send(:define_method, :sidejob_options) do
+          data['options'] || {}
         end
         klass.new(data['data'])
       else

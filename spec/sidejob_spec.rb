@@ -145,8 +145,13 @@ describe SideJob do
     it 'adds a timestamp to log entries' do
       now = Time.now
       allow(Time).to receive(:now) { now }
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {abc: 123, timestamp: SideJob.timestamp})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {abc: 123, timestamp: SideJob.timestamp}, {disable_log: true})
       SideJob.log({abc: 123})
+    end
+
+    it 'does not generate an infinite publish loop for port subscriptions on /sidejob/log' do
+      job = SideJob.queue('testq', 'TestWorker', inports: {port1: {channels: ['/sidejob/log', '/']}})
+      SideJob.log({test: 1})
     end
   end
 
@@ -157,23 +162,23 @@ describe SideJob do
     end
 
     it 'adds data to logs within the group' do
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, data2: 2, abc: 123, timestamp: SideJob.timestamp})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, data2: 2, abc: 123, timestamp: SideJob.timestamp}, {disable_log: true})
       SideJob.context(data1: 1, data2: 2) do
         SideJob.log({abc: 123})
       end
     end
 
     it 'does not add data to logs outside of the group' do
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {abc: 123, timestamp: SideJob.timestamp})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {abc: 123, timestamp: SideJob.timestamp}, {disable_log: true})
       SideJob.context(data1: 1, data2: 2) {}
       SideJob.log({abc: 123})
     end
 
     it 'can be nested' do
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, timestamp: SideJob.timestamp, x: 1})
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, data2: 2, timestamp: SideJob.timestamp, x: 2})
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, timestamp: SideJob.timestamp, x: 3})
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {timestamp: SideJob.timestamp, x: 4})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, timestamp: SideJob.timestamp, x: 1}, {disable_log: true})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, data2: 2, timestamp: SideJob.timestamp, x: 2}, {disable_log: true})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, timestamp: SideJob.timestamp, x: 3}, {disable_log: true})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {timestamp: SideJob.timestamp, x: 4}, {disable_log: true})
       SideJob.context(data1: 1) do
         SideJob.log({x: 1})
         SideJob.context(data2: 2) do

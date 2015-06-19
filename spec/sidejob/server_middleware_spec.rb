@@ -159,13 +159,16 @@ describe SideJob::ServerMiddleware do
       now = Time.now
       allow(Time).to receive(:now) { now }
       SideJob::ServerMiddleware.raise_errors = false
-      expect(SideJob).to receive(:publish) do |channel, message|
-        expect(channel).to eq '/sidejob/log'
-        expect(message[:job]).to eq @job.id
-        expect(message[:error]).to eq 'oops'
+      logged = false
+      expect(SideJob).to receive(:log) do |message|
+        if message[:error]
+          logged = true
+          expect(message[:error]).to eq 'oops'
+        end
       end
       process(@job) { raise 'oops' }
       expect(@job.status).to eq 'failed'
+      expect(logged).to be true
     end
 
     it 'does not set status to failed if status is terminating' do
@@ -233,12 +236,15 @@ describe SideJob::ServerMiddleware do
     it 'logs but ignores exceptions thrown during shutdown' do
       @job = SideJob.queue(@queue, 'TestWorkerShutdownError')
       @job.status = 'terminating'
-      expect(SideJob).to receive(:publish) do |channel, message|
-        expect(channel).to eq '/sidejob/log'
-        expect(message[:job]).to eq @job.id
-        expect(message[:error]).to eq 'shutdown error'
+      logged = false
+      expect(SideJob).to receive(:log) do |message|
+        if message[:error]
+          logged = true
+          expect(message[:error]).to eq 'shutdown error'
+        end
       end
       worker = process(@job) { raise 'not reached' }
+      expect(logged).to be true
     end
   end
 end
