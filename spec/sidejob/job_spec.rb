@@ -65,10 +65,24 @@ describe SideJob::Job do
   end
 
   describe '#status=' do
-    it 'sets status' do
+    before do
       @job = SideJob.queue('testq', 'TestWorker')
+    end
+
+    it 'sets status' do
       @job.status = 'newstatus'
       expect(@job.status).to eq 'newstatus'
+    end
+
+    it 'publishes a message with status change' do
+      expect(SideJob).to receive(:publish).with("/sidejob/job/#{@job.id}", {status: 'newstatus'}, {disable_log: true, disable_notify: true})
+      @job.status = 'newstatus'
+    end
+
+    it 'does not publish a message if status does not change' do
+      @job.status = 'newstatus'
+      expect(SideJob).not_to receive(:publish)
+      @job.status = 'newstatus'
     end
   end
 
@@ -439,6 +453,12 @@ describe SideJob::Job do
       expect(@job.exists?).to be false
     end
 
+    it 'publishes a message when deleted' do
+      @job.status = 'terminated'
+      expect(@job).to receive(:publish).with({deleted: true}, {disable_log: true})
+      expect(@job.delete).to be true
+    end
+
     it 'recursively deletes jobs' do
       child = SideJob.queue('testq', 'TestWorker', parent: @job, name: 'child')
       child.add_alias('myjob')
@@ -720,6 +740,16 @@ describe SideJob::Job do
       token = @job.lock(100)
       expect(@job.unlock("#{token}x")).to be false
       expect(SideJob.redis.exists("#{@job.redis_key}:lock")).to be true
+    end
+  end
+
+  describe '#publish' do
+    it 'calls SideJob.publish' do
+      @job = SideJob.queue('testq', 'TestWorker')
+      message = {abc: 123}
+      options = {disable_log: true}
+      expect(SideJob).to receive(:publish).with("/sidejob/job/#{@job.id}", message, options)
+      @job.publish(message, options)
     end
   end
 end

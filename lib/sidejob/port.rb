@@ -87,10 +87,11 @@ module SideJob
       end
     end
 
-    # Write data to the port. If port in an input port, runs the job.
+    # Write data to the port. If port in an input port, runs the job, otherwise run the parent job.
     # @param data [Object] JSON encodable data to write to the port
     # @param options [Hash] Additional options to be used for reading/writing the data
     #   - :disable_log - if true, do not log the writing or reading of the data
+    #   - :disable_notify - if true, do not notify (run) the job
     def write(data, options={})
       options = options.symbolize_keys
 
@@ -101,7 +102,8 @@ module SideJob
         SideJob.redis.rpush redis_key, self.class.encode_data(data, options)
       end
 
-      @job.run(parent: type != :in) # run job if inport otherwise run parent
+      # run job if inport otherwise run parent
+      @job.run(parent: type != :in) unless options[:disable_notify]
 
       log(write: [ { port: self, data: [data] } ]) unless options[:disable_log]
 

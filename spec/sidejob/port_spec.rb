@@ -233,6 +233,17 @@ describe SideJob::Port do
       expect(parent.status).to eq 'queued'
     end
 
+    it 'can disable running job' do
+      parent = SideJob.queue('testq', 'TestWorker')
+      parent.adopt(@job, 'child')
+      parent.status = 'completed'
+      @job.status = 'completed'
+      @port1.write 3, disable_notify: true
+      @out1.write 3, disable_notify: true
+      expect(@job.status).to eq 'completed'
+      expect(parent.status).to eq 'completed'
+    end
+
     it 'publishes writes to associated output port channel' do
       data = {'abc' => [1,2]}
       @out1.channels = ['mychannel']

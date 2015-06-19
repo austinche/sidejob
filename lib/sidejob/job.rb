@@ -41,7 +41,9 @@ module SideJob
     # @param status [String] The new job status
     def status=(status)
       check_exists
-      SideJob.redis.set "#{redis_key}:status", status
+      oldstatus = SideJob.redis.getset("#{redis_key}:status", status)
+      # we have to disable_notify otherwise any job that listens to its own status changes will have an infinite run loop
+      publish({status: status}, {disable_log: true, disable_notify: true}) if oldstatus != status
     end
 
     # Returns all aliases for the job.
@@ -228,6 +230,7 @@ module SideJob
         child.delete
       end
 
+      publish({deleted: true}, {disable_log: true})
       return true
     end
 
@@ -363,6 +366,13 @@ module SideJob
         else
           return 0
         end', { keys: ["#{redis_key}:lock"], argv: [token] }) == 1
+    end
+
+    # Publishes a message to the job's channel.
+    # @param message [Object] JSON encodable message
+    # @param options [Hash] Options for the data written to the port (see {SideJob::Port#write})
+    def publish(message, options={})
+      SideJob.publish "/sidejob/job/#{id}", message, options
     end
 
     private
