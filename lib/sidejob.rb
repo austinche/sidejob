@@ -88,9 +88,21 @@ module SideJob
   end
 
   # Publishes a log message using the current SideJob context.
-  # @param entry [Hash] Log entry
+  # @param entry [Hash|Exception|String] Log entry
   def self.log(entry)
     context = (Thread.current[:sidejob_context] || {}).merge(timestamp: SideJob.timestamp)
+
+    if entry.is_a?(Exception)
+      exception = entry
+      entry = { error: exception.message }
+      if exception.backtrace
+        # only store the backtrace until the first sidekiq line
+        entry[:backtrace] = exception.backtrace.take_while {|l| l !~ /sidekiq/}.join("\n")
+      end
+    elsif entry.is_a?(String)
+      entry = { message: entry }
+    end
+
     # Set disable_log to prevent infinite publish loop for input ports subscribed to /sidejob/log which could generate log entries
     SideJob.publish '/sidejob/log', context.merge(entry), disable_log: true
   end

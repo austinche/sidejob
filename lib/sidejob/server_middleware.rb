@@ -113,8 +113,7 @@ module SideJob
       if SideJob::ServerMiddleware.raise_errors
         raise exception
       else
-        # only store the backtrace until the first sidekiq line
-        SideJob.log({ error: exception.message, backtrace: exception.backtrace.take_while {|l| l !~ /sidekiq/}.join("\n") })
+        SideJob.log exception
       end
     end
   end

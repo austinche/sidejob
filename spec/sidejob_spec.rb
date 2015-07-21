@@ -142,11 +142,26 @@ describe SideJob do
   end
 
   describe '.log' do
-    it 'adds a timestamp to log entries' do
+    it 'can log arbitrary entry hash' do
       now = Time.now
       allow(Time).to receive(:now) { now }
       expect(SideJob).to receive(:publish).with('/sidejob/log', {abc: 123, timestamp: SideJob.timestamp}, {disable_log: true})
       SideJob.log({abc: 123})
+    end
+
+    it 'can log exceptions' do
+      now = Time.now
+      allow(Time).to receive(:now) { now }
+      exception = RuntimeError.new('err')
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {error: 'err', timestamp: SideJob.timestamp}, {disable_log: true})
+      SideJob.log(exception)
+    end
+
+    it 'can log string messages' do
+      now = Time.now
+      allow(Time).to receive(:now) { now }
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {message: 'hello', timestamp: SideJob.timestamp}, {disable_log: true})
+      SideJob.log 'hello'
     end
 
     it 'does not generate an infinite publish loop for port subscriptions on /sidejob/log' do

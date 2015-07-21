@@ -65,9 +65,10 @@ up the hierarchy. For example, a message sent to the channel `/namespace/event` 
 
 SideJob uses channels starting with /sidejob. The channels used by sidejob:
 
-* `/sidejob/log` : Log message
-    * { timestamp: (date), job: (id), read: [{ job: (id), (in|out)port: (port), data: [...] }, ...], write: [{ job: (id), (in|out)port: (port), data: [...] }, ...] }
-    * { timestamp: (date), job: (id), error: (message), backtrace: (exception backtrace) }
+* `/sidejob/log` : Log message. In the context of a running job, the job id will be included in the log entry.
+    * { timestamp: (date), read: [{ job: (id), (in|out)port: (port), data: [...] }, ...], write: [{ job: (id), (in|out)port: (port), data: [...] }, ...] }
+    * { timestamp: (date), error: (message), backtrace: (exception backtrace) }
+    * { timestamp: (date), message: (message) }
 * `/sidejob/workers/[queue]` : Worker registry updated for the queue
 * `/sidejob/job/[id]` : Job messages
 
