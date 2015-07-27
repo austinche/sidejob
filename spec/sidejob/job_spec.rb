@@ -75,7 +75,7 @@ describe SideJob::Job do
     end
 
     it 'publishes a message with status change' do
-      expect(SideJob).to receive(:publish).with("/sidejob/job/#{@job.id}", {status: 'newstatus'}, {disable_log: true, disable_notify: true})
+      expect(SideJob).to receive(:publish).with("/sidejob/job/#{@job.id}", {status: 'newstatus'})
       @job.status = 'newstatus'
     end
 
@@ -83,6 +83,10 @@ describe SideJob::Job do
       @job.status = 'newstatus'
       expect(SideJob).not_to receive(:publish)
       @job.status = 'newstatus'
+    end
+
+    it 'does not publish a message if worker has status_publish: false' do
+
     end
   end
 
@@ -455,7 +459,7 @@ describe SideJob::Job do
 
     it 'publishes a message when deleted' do
       @job.status = 'terminated'
-      expect(@job).to receive(:publish).with({deleted: true}, {disable_log: true})
+      expect(@job).to receive(:publish).with({deleted: true})
       expect(@job.delete).to be true
     end
 
@@ -747,9 +751,8 @@ describe SideJob::Job do
     it 'calls SideJob.publish' do
       @job = SideJob.queue('testq', 'TestWorker')
       message = {abc: 123}
-      options = {disable_log: true}
-      expect(SideJob).to receive(:publish).with("/sidejob/job/#{@job.id}", message, options)
-      @job.publish(message, options)
+      expect(SideJob).to receive(:publish).with("/sidejob/job/#{@job.id}", message)
+      @job.publish(message)
     end
   end
 end

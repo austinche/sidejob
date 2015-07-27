@@ -103,8 +103,10 @@ module SideJob
       entry = { message: entry }
     end
 
-    # Set disable_log to prevent infinite publish loop for input ports subscribed to /sidejob/log which could generate log entries
-    SideJob.publish '/sidejob/log', context.merge(entry), disable_log: true
+    # Disable logging to prevent infinite publish loop for input ports subscribed to /sidejob/log which could generate log entries
+    SideJob::Port.group(log: false) do
+      SideJob.publish '/sidejob/log', context.merge(entry)
+    end
   end
 
   # Adds to the current SideJob context within the block.
@@ -121,8 +123,7 @@ module SideJob
   # Also publishes to the destination channel only via normal redis pubsub.
   # @param channel [String] Channel is path-like, separated by / to indicate hierarchy
   # @param message [Object] JSON encodable message
-  # @param options [Hash] Options for the data written to the port (see {SideJob::Port#write})
-  def self.publish(channel, message, options={})
+  def self.publish(channel, message)
     # We don't publish at every level up hierarchy via redis pubsub since a client can use redis psubscribe
     SideJob.redis.publish channel, message.to_json
 
@@ -152,7 +153,7 @@ module SideJob
 
           if job && job_subs[id] && job_subs[id][channel]
             job_subs[id][channel].each do |port|
-              job.input(port).write message, options
+              job.input(port).write message
             end
           else
             # Job is gone or no longer subscribed to this channel

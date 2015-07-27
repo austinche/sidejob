@@ -22,7 +22,7 @@ describe SideJob::Worker do
     end
 
     it 'publishes message containing worker registry' do
-      expect(SideJob).to receive(:publish).with('/sidejob/workers/q1', SideJob::Worker.registry, disable_log: true)
+      expect(SideJob).to receive(:publish).with('/sidejob/workers/q1', SideJob::Worker.registry)
       SideJob::Worker.register_all('q1')
     end
   end

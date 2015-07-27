@@ -89,27 +89,23 @@ module SideJob
 
     # Write data to the port. If port in an input port, runs the job, otherwise run the parent job.
     # @param data [Object] JSON encodable data to write to the port
-    # @param options [Hash] Additional options to be used for reading/writing the data
-    #   - :disable_log - if true, do not log the writing or reading of the data
-    #   - :disable_notify - if true, do not notify (run) the job
-    def write(data, options={})
-      options = options.symbolize_keys
-
-      # For {SideJob::Worker#for_inputs}, if this is set, we instead set the port default on writes
-      if Thread.current[:sidejob_port_write_default]
+    def write(data)
+      options = (Thread.current[:sidejob_port_group] || {})[:options] || {}
+      # For {SideJob::Worker#for_inputs}, if this option is set, we set the port default instead of pushing to the port
+      if options[:set_default]
         self.default = data
       else
-        SideJob.redis.rpush redis_key, self.class.encode_data(data, options)
+        SideJob.redis.rpush redis_key, self.class.encode_data(data)
       end
 
       # run job if inport otherwise run parent
-      @job.run(parent: type != :in) unless options[:disable_notify]
+      @job.run(parent: type != :in) unless options[:notify] == false
 
-      log(write: [ { port: self, data: [data] } ]) unless options[:disable_log]
+      log(write: [ { port: self, data: [data] } ]) unless options[:log] == false
 
       if type == :out
         channels.each do |chan|
-          SideJob.publish chan, data, options
+          SideJob.publish chan, data
         end
       end
     end
@@ -119,6 +115,7 @@ module SideJob
     # Returns {SideJob::Port::None} if there is no port data and no default.
     # @return [Delegator, None] First data from port or {SideJob::Port::None} if there is no data and no default
     def read
+      options = (Thread.current[:sidejob_port_group] || {})[:options] || {}
       data = SideJob.redis.lpop(redis_key)
       if data
         data = self.class.decode_data(data)
@@ -128,7 +125,7 @@ module SideJob
         return None
       end
 
-      log(read: [ { port: self, data: [data] } ]) unless data.sidejob_options['disable_log']
+      log(read: [ { port: self, data: [data] } ]) unless options[:log] == false || data.sidejob_options['log'] == false
 
       data
     end
@@ -184,7 +181,7 @@ module SideJob
         ports.each do |port|
           if port.type == :out
             port.channels.each do |chan|
-              data.each { |x| SideJob.publish chan, x, x.sidejob_options }
+              data.each { |x| SideJob.publish chan, x }
             end
           end
         end
@@ -221,26 +218,62 @@ module SideJob
       redis_key.hash
     end
 
-    # Groups all port reads and writes within the block into a single logged event.
-    def self.log_group(&block)
-      outermost = ! Thread.current[:sidejob_port_group]
+    # Creates a group for port reads and write.
+    # All events inside the block are combined into a single logged event.
+    # Nested groups are not logged until the outermost group closes.
+    # Can pass additional options that are used for port read/writes inside the group.
+    # The default for all options is nil which means to inherit the current option value or its default.
+    # @param log [Boolean] If false, do not log the writing or reading of the data (default true)
+    # @param notify [Boolean] If false, do not notify (run) the port's job
+    # @param set_default [Boolean] If true, instead of writing to port, set default value
+    def self.group(log: nil, notify: nil, set_default: nil, &block)
+      previous_group = if Thread.current[:sidejob_port_group]
+                         Thread.current[:sidejob_port_group].dup
+                       else
+                         nil
+                       end
+
       Thread.current[:sidejob_port_group] ||= {read: {}, write: {}} # port -> [data]
+
+      options = if previous_group && previous_group[:options]
+                  previous_group[:options].dup
+                else
+                  {}
+                end
+      options[:log] = log unless log.nil?
+      options[:notify] = notify unless notify.nil?
+      options[:set_default] = set_default unless set_default.nil?
+      Thread.current[:sidejob_port_group][:options] = options
+
       yield
     ensure
-      if outermost
-        self._really_log Thread.current[:sidejob_port_group]
-        Thread.current[:sidejob_port_group] = nil
+      if ! previous_group
+        group = Thread.current[:sidejob_port_group]
+        if group && (group[:read].length > 0 || group[:write].length > 0)
+          log_entry = {}
+          %i{read write}.each do |type|
+            log_entry[type] = group[type].map do |port, data|
+              x = {job: port.job.id, data: data}
+              x[:"#{port.type}port"] = port.name
+              x
+            end
+          end
+
+          SideJob.log log_entry
+        end
       end
+      Thread.current[:sidejob_port_group] = previous_group
     end
 
     # Encodes data as JSON with the current SideJob context.
     # @param data [Object] JSON encodable data
-    # @param options [Hash] Options to encode with the data
     # @return [String] The encoded JSON value
-    def self.encode_data(data, options={})
+    def self.encode_data(data)
       encoded = { data: data }
       encoded[:context] = Thread.current[:sidejob_context] if Thread.current[:sidejob_context]
-      encoded[:options] = options if options && options.length > 0
+      if Thread.current[:sidejob_port_group] && Thread.current[:sidejob_port_group][:options]
+        encoded[:options] = Thread.current[:sidejob_port_group][:options]
+      end
       encoded.to_json
     end
 
@@ -275,31 +308,18 @@ module SideJob
 
     private
 
-    def self._really_log(entry)
-      return unless entry && (entry[:read].length > 0 || entry[:write].length > 0)
-
-      log_entry = {}
-      %i{read write}.each do |type|
-        log_entry[type] = entry[type].map do |port, data|
-          x = {job: port.job.id, data: data}
-          x[:"#{port.type}port"] = port.name
-          x
-        end
-      end
-
-      SideJob.log log_entry
-    end
-
     def log(data)
-      entry = Thread.current[:sidejob_port_group] ? Thread.current[:sidejob_port_group] : {read: {}, write: {}}
-      %i{read write}.each do |type|
-        (data[type] || []).each do |x|
-          entry[type][x[:port]] ||= []
-          entry[type][x[:port]].concat JSON.parse(x[:data].to_json) # serialize/deserialize to do a deep copy
+      if Thread.current[:sidejob_port_group]
+        %i{read write}.each do |type|
+          (data[type] || []).each do |x|
+            Thread.current[:sidejob_port_group][type][x[:port]] ||= []
+            Thread.current[:sidejob_port_group][type][x[:port]].concat JSON.parse(x[:data].to_json) # serialize/deserialize to do a deep copy
+          end
         end
-      end
-      if ! Thread.current[:sidejob_port_group]
-        self.class._really_log(entry)
+      else
+        SideJob::Port.group do
+          log(data)
+        end
       end
     end
 

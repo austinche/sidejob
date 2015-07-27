@@ -42,8 +42,11 @@ module SideJob
     def status=(status)
       check_exists
       oldstatus = SideJob.redis.getset("#{redis_key}:status", status)
-      # we have to disable_notify otherwise any job that listens to its own status changes will have an infinite run loop
-      publish({status: status}, {disable_log: true, disable_notify: true}) if oldstatus != status
+      if oldstatus != status && worker_config['status_publish'] != false
+        SideJob::Port.group(log: false) do
+          publish({status: status})
+        end
+      end
     end
 
     # Returns all aliases for the job.
@@ -230,7 +233,7 @@ module SideJob
         child.delete
       end
 
-      publish({deleted: true}, {disable_log: true})
+      publish({deleted: true})
       return true
     end
 
@@ -370,9 +373,8 @@ module SideJob
 
     # Publishes a message to the job's channel.
     # @param message [Object] JSON encodable message
-    # @param options [Hash] Options for the data written to the port (see {SideJob::Port#write})
-    def publish(message, options={})
-      SideJob.publish "/sidejob/job/#{id}", message, options
+    def publish(message)
+      SideJob.publish "/sidejob/job/#{id}", message
     end
 
     private
@@ -384,13 +386,12 @@ module SideJob
       return if SideJob.redis.exists "#{redis_key}:lock:worker"
 
       worker = JSON.parse(SideJob.redis.get("#{redis_key}:worker"))
-
       # Don't need to queue if the job is already in the queue (this does not include scheduled jobs)
       # When Sidekiq pulls job out from scheduled set, we can still get the same job queued multiple times
       # but the server middleware handles it
       return if Sidekiq::Queue.new(worker['queue']).find_job(@id)
 
-      if ! SideJob.redis.hexists("workers:#{worker['queue']}", worker['class'])
+      if ! SideJob::Worker.config(worker['queue'], worker['class'])
         self.status = 'terminated'
         raise "Worker no longer registered for #{klass} in queue #{worker['queue']}"
       end
@@ -404,6 +405,13 @@ module SideJob
       SideJob.redis.smembers("#{redis_key}:#{type}ports").reject {|name| name == '*'}.map {|name| SideJob::Port.new(self, type, name)}
     end
 
+    # Return the worker configuration
+    # @return [Hash] Worker config for the job
+    def worker_config
+      worker = JSON.parse(SideJob.redis.get("#{redis_key}:worker"))
+      SideJob::Worker.config(worker['queue'], worker['class']) || {}
+    end
+
     # Sets the input/outputs ports for the job and overwrites all current options.
     # The ports are merged with the worker configuration.
     # Any current ports that are not in the new port set are deleted (including any data on those ports).
@@ -412,11 +420,9 @@ module SideJob
     def set_ports(type, ports)
       check_exists
       current = SideJob.redis.smembers("#{redis_key}:#{type}ports") || []
-      worker = JSON.parse(SideJob.redis.get("#{redis_key}:worker"))
-      config = SideJob::Worker.config(worker['queue'], worker['class'])
 
       ports ||= {}
-      ports = (config["#{type}ports"] || {}).merge(ports.dup.stringify_keys)
+      ports = (worker_config["#{type}ports"] || {}).merge(ports.dup.stringify_keys)
       ports.each_key do |port|
         ports[port] = ports[port].stringify_keys
       end

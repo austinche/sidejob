@@ -145,7 +145,7 @@ describe SideJob do
     it 'can log arbitrary entry hash' do
       now = Time.now
       allow(Time).to receive(:now) { now }
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {abc: 123, timestamp: SideJob.timestamp}, {disable_log: true})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {abc: 123, timestamp: SideJob.timestamp})
       SideJob.log({abc: 123})
     end
 
@@ -153,14 +153,14 @@ describe SideJob do
       now = Time.now
       allow(Time).to receive(:now) { now }
       exception = RuntimeError.new('err')
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {error: 'err', timestamp: SideJob.timestamp}, {disable_log: true})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {error: 'err', timestamp: SideJob.timestamp})
       SideJob.log(exception)
     end
 
     it 'can log string messages' do
       now = Time.now
       allow(Time).to receive(:now) { now }
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {message: 'hello', timestamp: SideJob.timestamp}, {disable_log: true})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {message: 'hello', timestamp: SideJob.timestamp})
       SideJob.log 'hello'
     end
 
@@ -177,23 +177,23 @@ describe SideJob do
     end
 
     it 'adds data to logs within the group' do
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, data2: 2, abc: 123, timestamp: SideJob.timestamp}, {disable_log: true})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, data2: 2, abc: 123, timestamp: SideJob.timestamp})
       SideJob.context(data1: 1, data2: 2) do
         SideJob.log({abc: 123})
       end
     end
 
     it 'does not add data to logs outside of the group' do
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {abc: 123, timestamp: SideJob.timestamp}, {disable_log: true})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {abc: 123, timestamp: SideJob.timestamp})
       SideJob.context(data1: 1, data2: 2) {}
       SideJob.log({abc: 123})
     end
 
     it 'can be nested' do
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, timestamp: SideJob.timestamp, x: 1}, {disable_log: true})
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, data2: 2, timestamp: SideJob.timestamp, x: 2}, {disable_log: true})
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, timestamp: SideJob.timestamp, x: 3}, {disable_log: true})
-      expect(SideJob).to receive(:publish).with('/sidejob/log', {timestamp: SideJob.timestamp, x: 4}, {disable_log: true})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, timestamp: SideJob.timestamp, x: 1})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, data2: 2, timestamp: SideJob.timestamp, x: 2})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {data1: 1, timestamp: SideJob.timestamp, x: 3})
+      expect(SideJob).to receive(:publish).with('/sidejob/log', {timestamp: SideJob.timestamp, x: 4})
       SideJob.context(data1: 1) do
         SideJob.log({x: 1})
         SideJob.context(data2: 2) do

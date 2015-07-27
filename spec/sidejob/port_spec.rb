@@ -197,7 +197,7 @@ describe SideJob::Port do
 
     it 'logs writes' do
       expect(SideJob).to receive(:log).with({read: [], write: [{job: @port1.job.id, inport: :port1, data: ['abc', 123]}]})
-      SideJob::Port.log_group do
+      SideJob::Port.group do
         @port1.write 'abc'
         @port1.write 123
       end
@@ -205,7 +205,9 @@ describe SideJob::Port do
 
     it 'can disable logging for both reading and writing' do
       expect(SideJob).not_to receive(:log)
-      @port1.write 'abc', disable_log: true
+      SideJob::Port.group(log: false) do
+        @port1.write 'abc'
+      end
       expect(@port1.read).to eq 'abc'
     end
 
@@ -238,8 +240,10 @@ describe SideJob::Port do
       parent.adopt(@job, 'child')
       parent.status = 'completed'
       @job.status = 'completed'
-      @port1.write 3, disable_notify: true
-      @out1.write 3, disable_notify: true
+      SideJob::Port.group(notify: false) do
+        @port1.write 3
+        @out1.write 3
+      end
       expect(@job.status).to eq 'completed'
       expect(parent.status).to eq 'completed'
     end
@@ -247,9 +251,9 @@ describe SideJob::Port do
     it 'publishes writes to associated output port channel' do
       data = {'abc' => [1,2]}
       @out1.channels = ['mychannel']
-      expect(SideJob).to receive(:publish).with('mychannel', data, {abc: 123})
+      expect(SideJob).to receive(:publish).with('mychannel', data)
       expect(SideJob).to receive(:publish)
-      @out1.write data, abc: 123
+      @out1.write data
     end
 
     it 'does not publish writes to associated input port channel' do
@@ -298,7 +302,16 @@ describe SideJob::Port do
     it 'logs reads' do
       ['abc', 123].each {|x| @port1.write x}
       expect(SideJob).to receive(:log).with({read: [{job: @port1.job.id, inport: :port1, data: ['abc', 123]}], write: []})
-      SideJob::Port.log_group do
+      SideJob::Port.group do
+        expect(@port1.read).to eq('abc')
+        expect(@port1.read).to eq(123)
+      end
+    end
+
+    it 'can disable read logging' do
+      ['abc', 123].each {|x| @port1.write x}
+      expect(SideJob).not_to receive(:log)
+      SideJob::Port.group(log: false) do
         expect(@port1.read).to eq('abc')
         expect(@port1.read).to eq(123)
       end
@@ -398,12 +411,12 @@ describe SideJob::Port do
       @out1.channels = ['channel1']
       @port1.channels = ['channel2']
       @default.channels = ['channel3']
-      @default.write 1, {abc: 123}
-      @default.write [2,3], disable_log: true
+      @default.write 1
+      @default.write [2,3]
 
       allow(SideJob).to receive(:publish)
-      expect(SideJob).to receive(:publish).with('channel1', 1, {'abc' => 123})
-      expect(SideJob).to receive(:publish).with('channel1', [2,3], {'disable_log' => true})
+      expect(SideJob).to receive(:publish).with('channel1', 1)
+      expect(SideJob).to receive(:publish).with('channel1', [2,3])
       @default.connect_to dest
     end
   end
@@ -457,10 +470,10 @@ describe SideJob::Port do
     end
   end
 
-  describe '.log_group' do
+  describe '.group' do
     it 'does not log anything if no port operations occur within the block' do
       expect(SideJob).not_to receive(:log)
-      SideJob::Port.log_group {}
+      SideJob::Port.group {}
     end
 
     it 'groups all port logs within the block' do
@@ -469,7 +482,7 @@ describe SideJob::Port do
           write: [{job: @port1.job.id, inport: :port1, data: ['abc', 'def']},
                   {job: @out1.job.id, outport: :out1, data: ['xyz']}],
       })
-      SideJob::Port.log_group do
+      SideJob::Port.group do
         @port1.write 'abc'
         @port1.read
         @port1.write 'def'
@@ -482,9 +495,9 @@ describe SideJob::Port do
           read: [],
           write: [{job: @port1.job.id, inport: :port1, data: ['hello', 2]}],
       })
-      SideJob::Port.log_group do
+      SideJob::Port.group do
         @port1.write 'hello'
-        SideJob::Port.log_group do
+        SideJob::Port.group do
           @port1.write 2
         end
       end
@@ -498,9 +511,9 @@ describe SideJob::Port do
           user: 'foo',
           read: [{job: @port1.job.id, inport: :port1, data: ['abc']}],
           write: [{job: @port1.job.id, inport: :port1, data: ['abc']}],
-          timestamp: SideJob.timestamp}, {disable_log: true})
+          timestamp: SideJob.timestamp})
       SideJob.context(user: 'foo') do
-        SideJob::Port.log_group do
+        SideJob::Port.group do
           @port1.write 'abc'
           @port1.read
         end
@@ -513,13 +526,31 @@ describe SideJob::Port do
           write: [{job: @port1.job.id, inport: :port1, data: [{'x' => [1,2]},{'x' => [1,2,3]}]}],
       })
       data = {'x' => [1,2]}
-      SideJob::Port.log_group do
+      SideJob::Port.group do
         @port1.write data
         expect(@port1.read).to eq data
         data['x'].push 3
         @port1.write data
         expect(@port1.read).to eq data
       end
+    end
+
+    it 'can set options' do
+      SideJob::Port.group(log: true, notify: false, set_default: true) do
+        expect(Thread.current[:sidejob_port_group][:options]).to eq({log: true, notify: false, set_default: true})
+      end
+      expect(Thread.current[:sidejob_port_group]).to be nil
+    end
+
+    it 'can merge options in nested groups' do
+      SideJob::Port.group(log: false) do
+        expect(Thread.current[:sidejob_port_group][:options]).to eq({log: false})
+        SideJob::Port.group(notify: true) do
+          expect(Thread.current[:sidejob_port_group][:options]).to eq({log: false, notify: true})
+        end
+        expect(Thread.current[:sidejob_port_group][:options]).to eq({log: false})
+      end
+      expect(Thread.current[:sidejob_port_group]).to be nil
     end
   end
 
@@ -534,8 +565,10 @@ describe SideJob::Port do
       end
     end
 
-    it 'handles options' do
-      expect(JSON.parse(SideJob::Port.encode_data([1,2], {xyz: 456}))).to eq({ 'options' => {'xyz' => 456}, 'data' => [1,2] })
+    it 'handles port group options' do
+      SideJob::Port.group(log: true, notify: false) do
+        expect(JSON.parse(SideJob::Port.encode_data([1,2]))).to eq({ 'options' => {'log' => true, 'notify' => false}, 'data' => [1,2] })
+      end
     end
   end
 
@@ -558,9 +591,10 @@ describe SideJob::Port do
       end
     end
 
-    it 'handles options' do
-      x = SideJob::Port.decode_data(SideJob::Port.encode_data(123, {'abc' => 456}))
-      expect(x.sidejob_options).to eq({'abc' => 456})
+    it 'handles port group options' do
+      SideJob::Port.group(log: true, notify: false) do
+        expect(SideJob::Port.decode_data(SideJob::Port.encode_data([1,2])).sidejob_options).to eq({ 'log' => true, 'notify' => false})
+      end
     end
 
     it 'decoded data should equal original data' do

@@ -16,7 +16,9 @@ module SideJob
           multi.del "workers:#{queue}"
           multi.hmset "workers:#{queue}", @registry.map {|key, val| [key, val.to_json]}.flatten(1) if @registry.size > 0
         end
-        SideJob.publish "/sidejob/workers/#{queue}", @registry, disable_log: true
+        SideJob::Port.group(log: false) do
+          SideJob.publish "/sidejob/workers/#{queue}", @registry
+        end
       end
 
       # Returns the configuration registered for a worker.
@@ -84,7 +86,7 @@ module SideJob
       return unless inputs.length > 0
       ports = inputs.map {|name| input(name)}
       loop do
-        SideJob::Port.log_group do
+        SideJob::Port.group do
           info = ports.map {|port| [ port.size > 0, port.default? ] }
 
           return unless info.any? {|x| x[0] || x[1]} # Nothing to do if there's no data to read
@@ -98,11 +100,8 @@ module SideJob
             last_default = get(:for_inputs) || []
             return unless defaults != last_default
             set({for_inputs: defaults})
-            begin
-              Thread.current[:sidejob_port_write_default] = true
+            SideJob::Port.group(set_default: true) do
               yield *defaults
-            ensure
-              Thread.current[:sidejob_port_write_default] = nil
             end
             return
           else
